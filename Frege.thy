@@ -6,8 +6,6 @@ begin
   evaluation of which we supply later in a Frege *)
 
 datatype formula = 
-  Bot |
-  Top |
   Atom string |
   Conn string "formula list"
 
@@ -15,16 +13,17 @@ record rule =
   prems :: "formula list"
   concl :: "formula"
 
-(* If a connective is not in our alphabet we want arity = 0 and eval = \<lambda> l. false*)
+record alphabet = 
+  conns :: "string set"
+  conn_evals :: "string \<Rightarrow> (bool list \<Rightarrow> bool)"
+
 record frege =
   rules :: "rule set"
-  conn_eval :: "string \<Rightarrow> (bool list \<Rightarrow> bool)"
+  alphabet :: "alphabet"
 
 fun eval :: "frege \<Rightarrow> (string \<Rightarrow> bool) \<Rightarrow> formula \<Rightarrow> bool" where
-  "eval F v (Bot) = False" |  
-  "eval F v (Top) = True" |
   "eval F v (Atom a) = v a" |
-  "eval F v (Conn c fs) = (conn_eval F c) (map (eval F v) fs)"
+  "eval F v (Conn c fs) = (conn_evals (alphabet F) c) (map (eval F v) fs)"
 
 record frege_proof =
   assumptions :: "formula set"
@@ -33,8 +32,6 @@ record frege_proof =
 
 fun sub_formula :: "(string \<Rightarrow> formula) \<Rightarrow> formula \<Rightarrow> formula" where
   "sub_formula sub (Atom a) = sub a" |
-  "sub_formula sub Bot = Bot" |
-  "sub_formula sub Top = Top" |
   "sub_formula sub (Conn c fs) = Conn c (map (sub_formula sub) fs)"
 
 fun sub_rule :: "(string \<Rightarrow> formula) \<Rightarrow> rule \<Rightarrow> rule" where
@@ -56,13 +53,14 @@ definition valid_proof :: "frege \<Rightarrow> frege_proof \<Rightarrow> bool" w
 
 definition sound_rule :: "frege \<Rightarrow> rule \<Rightarrow> bool" where
   "sound_rule F r \<longleftrightarrow> 
-    (\<forall> val. \<forall> f \<in> set (prems r). eval F val f \<longrightarrow> eval F val (concl r))"
+    (\<forall> val. (\<forall> form \<in> set (prems r). eval F val form) \<longrightarrow> eval F val (concl r))"
 
 fun len_formula :: "formula \<Rightarrow> nat" where
-  "len_formula Bot = 1" |
-  "len_formula Top = 1" |
   "len_formula (Atom s) = 1" |
   "len_formula (Conn s fs) = 1 + sum_list (map (\<lambda> f. len_formula f) fs)"
+
+fun len_proof :: "frege_proof \<Rightarrow> nat" where
+  "len_proof pr = sum_list (map len_formula (steps pr))"
 
 locale frege_system = 
   fixes F :: frege
@@ -75,13 +73,18 @@ begin
 
 end
 
+definition simulates :: "frege \<Rightarrow> frege \<Rightarrow> bool" where
+ "simulates F1 F2 \<longleftrightarrow> (\<exists> f g p q. \<forall> w \<tau>. (thesis w = g \<tau> \<and> valid_proof F1 w) \<longrightarrow> 
+    valid_proof F2 (f w \<tau>) \<and> thesis (f w \<tau>) = \<tau> \<and> 
+    len_formula (g \<tau>) \<le> poly p (len_formula \<tau>) \<and>
+    len_proof w \<le> poly q (len_proof (f w \<tau>)))"
+
+
+(* A theorem on (only) simulation of Frege systems. For p-simulation we need f and
+  g to be polynomial time*)
 theorem Reckhow:
-  fixes p q :: "int poly"
   assumes "frege_system F1 \<and> frege_system F2"
-  shows "\<exists> f g p q. \<forall> w \<tau>. thesis w = g \<tau> \<and> valid_proof F1 w \<Longrightarrow> 
-valid_proof F2 (f w \<tau>) \<and> thesis (f w \<tau>) = \<tau> \<and> 
-len_formula (g \<tau>) \<le> poly p (len_formula \<tau>) \<and>
-len_proof w \<le> poly q (len_proof f w \<tau>)"
+  shows "simulates F1 F2"
 proof
   sorry
 
