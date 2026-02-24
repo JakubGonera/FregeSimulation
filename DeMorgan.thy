@@ -10,6 +10,7 @@ locale alphabet_de_morgan =
   | ''or''  \<Rightarrow> (\<lambda>args. case args of [x, y] \<Rightarrow> x \<or> y | _ \<Rightarrow> undefined)
   | ''and'' \<Rightarrow> (\<lambda>args. case args of [x, y] \<Rightarrow> x \<and> y | _ \<Rightarrow> undefined)
   | _ \<Rightarrow> undefined)"
+  and "frege_system F" and "alphabet F = a"
 begin
 
 definition modus_ponens :: rule where
@@ -29,87 +30,58 @@ function rule_to_taut :: "rule \<Rightarrow> formula" where
 termination
   by (relation "measure (\<lambda>r. length (prems r))") auto
 
+(*
+1. Either one of the premises is false, then the formula is true (\<not>f \<or> ...)
+  - rule = \<lparr> prems = f_1 @ [f] @ f_2, concl = c\<rparr>
+  - induction on the length of premises
+    - either f # fs where f is false, or false in fs and length is smaller
+2. Or all of the premises are true and by soundness the conclusion is also true (\<not>f \<or> ... \<or> q)
+*)
 
-fun (sequential) disj_to_set :: "formula \<Rightarrow> formula set" where
-  "disj_to_set f = (
-    case f of 
-      Conn ''or'' [g, h] \<Rightarrow> disj_to_set g \<union> disj_to_set h
-    | _ \<Rightarrow> {f}
-  )"
-
-lemma disj_true_in_set:
-  assumes "frege_system F" and "alphabet F = a"
-  shows "f \<in> disj_to_set g \<Longrightarrow> eval F val f \<Longrightarrow> eval F val g"
+lemma premise_false:
+  fixes val :: "string \<Rightarrow> bool"
+  and r :: "rule"
+assumes "\<exists> f \<in> set (prems r). \<not> eval F val f"
+  and "prems r \<noteq> []"
+shows "eval F val (rule_to_taut r)"
   using assms
-proof (induct g)
-  case (Atom x)
-  then show ?case by simp
+proof (induction "prems r" arbitrary: r)
+  case Nil
+  thus ?case by auto
 next
-  case (Conn c fs)
-  then show ?case
-  proof (cases "c =''or'' \<and> (\<exists>g1 g2. fs = [g1, g2])")
+  case (Cons p ps)
+  show ?case
+  proof (cases "\<not> eval F val p")
     case True
-    then obtain g1 g2 where g_def: "Conn c fs = Conn ''or'' [g1, g2]" by auto
-    have IH1: "f \<in> disj_to_set g1 \<Longrightarrow> eval F val f \<Longrightarrow> eval F val g1" using Conn.hyps assms g_def
-      by simp
-    have IH2: "f \<in> disj_to_set g2 \<Longrightarrow> eval F val f \<Longrightarrow> eval F val g2" using Conn.hyps assms g_def
-      by simp
-
-    from Conn.prems g_def have "f \<in> disj_to_set g1 \<union> disj_to_set g2" by simp
-    then consider "f \<in> disj_to_set g1" | "f \<in> disj_to_set g2" by blast
-    then show ?thesis
-    proof cases
-      case 1
-      with IH1 Conn.prems(2) have "eval F val g1" by simp
-      thus ?thesis using g_def \<open>alphabet F = a\<close> conn_evals_def by (simp add: alphabet_def)
-    next
-      case 2
-      with IH2 Conn.prems(2) have "eval F val g2" by simp
-      thus ?thesis using g_def \<open>alphabet F = a\<close> conn_evals_def by (simp add: alphabet_def)
-    qed
+    have "r = \<lparr>prems = p # ps, concl = concl r\<rparr>" using Cons.hyps by auto
+    hence "eval F val (rule_to_taut r) = eval F val (rule_to_taut \<lparr>prems = p # ps, concl = concl r\<rparr>)" by simp
+    also have "... = eval F val (Conn ''or'' [Conn ''not'' [p], rule_to_taut \<lparr>prems = ps, concl = concl r\<rparr>])"
+      by auto
+    also have "... = (eval F val (Conn ''not'' [p]) \<or> eval F val (rule_to_taut \<lparr>prems = ps, concl = concl r\<rparr>))"
+      using alphabet_de_morgan_axioms alphabet_de_morgan_def by auto
+    also have "... = ((\<not> eval F val p) \<or> eval F val (rule_to_taut \<lparr>prems = ps, concl = concl r\<rparr>))"
+      using alphabet_de_morgan_axioms alphabet_de_morgan_def by auto
+    also have "... = True" using True by auto
+    finally show ?thesis by auto
   next
     case False
-    have "disj_to_set (Conn c fs) = {Conn c fs}"
-    
 
-    (* Now finish: if f \<in> {Conn c fs}, then f = Conn c fs *)
-    with Conn.prems(1) have "f = Conn c fs" by simp
-    then show ?thesis using Conn.prems(2) by simp
-
-
-lemma sound_rule_tautology:
-  assumes "frege_system F" and "alphabet F = a"
-  and "r \<in> rules F" and "flat = rule_to_taut r"
-  shows "\<exists> pr. thesis pr = flat \<and> valid_proof F pr"
-proof -
-  (* Need to show: this formula is true for each valuation (soundness)
-     and from impl_compl there exists a proof
-  *)
-  fix val :: "string \<Rightarrow> bool"
-
-  consider (case1) "\<exists> p \<in> set (prems r). \<not> eval F val p" | (case2) "\<forall> p \<in> set (prems r). eval F val p"
-    by blast
-
-  then have "eval F val flat"
-  proof cases
-    case case1
-    then obtain p where "p \<in> set (prems r)" and p_false: "\<not> eval F val p" by blast
-    then have "eval F val (Conn ''not'' [p]) = (conn_evals (a) ''not'') [eval F val p]"
-      using assms by (simp)
-    also have "... = (case [eval F val p] of [x] \<Rightarrow> \<not> x | _ \<Rightarrow> undefined)"
-      by (simp add: conn_evals_def)
-    also have "... = (\<not> eval F val p)" by simp
-    finally have "eval F val (Conn ''not'' [p])"
-      using p_false by simp
-    
   
 
-  (*have "\<forall> val. eval F val (flat)"
-  proof
-    from assms have "sound_rule F r" using frege_system.sound by blast
-    hence *)
-      
+lemma sound_rule_gives_tautology:
+  assumes "r \<in> rules F"
+shows "\<forall> val. eval F val (rule_to_taut r)"
+  sorry
 
+lemma rule_exists_proof:
+  assumes "r \<in> rules F" and "f_rule = rule_to_taut r"
+shows "\<exists> pr. valid_proof F pr \<and>  assumptions pr = {} \<and> thesis pr = f_rule"
+proof -
+  have "\<forall> val. (\<forall> f \<in> {}. eval F val f) \<longrightarrow> eval F val f_rule" 
+    using sound_rule_gives_tautology assms by auto
+  thus ?thesis using alphabet_de_morgan_axioms alphabet_de_morgan_def frege_system.impl_complete
+    by auto
+qed
 
 
 lemma simulation_de_morgan_right:
@@ -117,20 +89,13 @@ lemma simulation_de_morgan_right:
   and as_de_morgan: "alphabet F1 = a \<and> alphabet F2 = a"
   and as_modus: "rules F1 = {modus_ponens}"
   shows "simulates F1 F2"
-proof
   sorry
-
-
-
-
-
 
 lemma simulation_de_morgan_left:
   assumes as_frege: "frege_system F1 \<and> frege_system F2"
   and as_de_morgan: "alphabet F1 = a \<and> alphabet F2 = a"
   and as_modus: "rules F1 = {modus_ponens}"
   shows "simulates F2 F1"
-proof
   sorry
 
 end
