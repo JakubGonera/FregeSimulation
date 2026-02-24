@@ -21,9 +21,9 @@ record frege =
   rules :: "rule set"
   alphabet :: "alphabet"
 
-fun eval :: "frege \<Rightarrow> (string \<Rightarrow> bool) \<Rightarrow> formula \<Rightarrow> bool" where
-  "eval F v (Atom a) = v a" |
-  "eval F v (Conn c fs) = (conn_evals (alphabet F) c) (map (eval F v) fs)"
+fun eval :: "alphabet \<Rightarrow> (string \<Rightarrow> bool) \<Rightarrow> formula \<Rightarrow> bool" where
+  "eval al v (Atom a) = v a" |
+  "eval al v (Conn c fs) = (conn_evals al c) (map (eval al v) fs)"
 
 record frege_proof =
   assumptions :: "formula set"
@@ -53,7 +53,7 @@ definition valid_proof :: "frege \<Rightarrow> frege_proof \<Rightarrow> bool" w
 
 definition sound_rule :: "frege \<Rightarrow> rule \<Rightarrow> bool" where
   "sound_rule F r \<longleftrightarrow> 
-    (\<forall> val. (\<forall> form \<in> set (prems r). eval F val form) \<longrightarrow> eval F val (concl r))"
+    (\<forall> val. (\<forall> form \<in> set (prems r). eval (alphabet F) val form) \<longrightarrow> eval (alphabet F) val (concl r))"
 
 fun len_formula :: "formula \<Rightarrow> nat" where
   "len_formula (Atom s) = 1" |
@@ -65,7 +65,7 @@ fun len_proof :: "frege_proof \<Rightarrow> nat" where
 locale frege_system = 
   fixes F :: frege
   assumes sound: "\<forall> r \<in> rules F. sound_rule F r"
-  and impl_complete: "\<forall> fs th val. ((\<forall> f \<in> fs. eval F val f) \<longrightarrow> eval F val th) 
+  and impl_complete: "\<forall> fs th val. ((\<forall> f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th) 
                           \<longrightarrow> (\<exists> pr. valid_proof F pr
                                    \<and> assumptions pr = fs 
                                    \<and> thesis pr = th)"
