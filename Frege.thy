@@ -69,6 +69,7 @@ locale frege_system =
                           \<longrightarrow> (\<exists> pr. valid_proof F pr
                                    \<and> assumptions pr = fs 
                                    \<and> thesis pr = th)"
+  and finite: "finite (rules F)"
 begin
 
 end
