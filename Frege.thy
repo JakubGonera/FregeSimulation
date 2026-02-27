@@ -62,6 +62,10 @@ fun len_formula :: "formula \<Rightarrow> nat" where
 fun len_proof :: "frege_proof \<Rightarrow> nat" where
   "len_proof pr = sum_list (map len_formula (steps pr))"
 
+definition len_sub :: "(string \<Rightarrow> formula) \<Rightarrow> nat" where
+  "len_sub sub =
+     (\<Sum> s \<in> {s. len_formula (sub s) \<noteq> 0}. len_formula (sub s))"
+
 locale frege_system = 
   fixes F :: frege
   assumes sound: "\<forall> r \<in> rules F. sound_rule F r"

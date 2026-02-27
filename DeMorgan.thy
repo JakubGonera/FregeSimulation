@@ -145,6 +145,9 @@ to a chain of implications, and now it has a proof in a system F which only has 
 as a rule, but uses the same de_morgan alphabet
 *)
 
+definition proof_of :: "frege \<Rightarrow> frege_proof \<Rightarrow> formula \<Rightarrow> bool" where
+  "proof_of frege pr f \<longleftrightarrow> valid_proof frege pr \<and> assumptions pr = {} \<and> thesis pr = f"
+
 lemma rule_exists_proof:
   assumes "r \<in> rules F'" and "f_rule = rule_to_taut r"
 shows "\<exists> pr. valid_proof F pr \<and>  assumptions pr = {} \<and> thesis pr = f_rule"
@@ -156,19 +159,63 @@ proof -
   thus ?thesis using de_morgan_frege_def dm1 frege_system.impl_complete by simp
 qed
 
+lemma "\<exists> f. \<forall> rule sub.
+          proof_of F (f rule sub) (concl (sub_rule sub rule))"
+  sorry
 
+definition first_step where
+  "first_step = (SOME f. \<forall> rule sub.
+          proof_of F (f rule sub) (concl (sub_rule sub rule)))"
+
+lemma "\<exists> g. \<forall> rule sub. len_proof (first_step rule sub) \<le> (g rule) * len_sub sub"
+  sorry
+
+definition rule_proof_cost where
+  "rule_proof_cost rule = (SOME g. \<forall> rule sub. 
+          len_proof (first_step rule sub) \<le> (g rule) * len_sub sub)"
+
+fun peel :: "formula \<Rightarrow> formula \<Rightarrow> frege_proof" where
+  "peel x y =
+   (if x = y then \<lparr>assumptions = {}, thesis = x, steps = [x]\<rparr>
+    else case x of
+      Conn ''or'' [Conn ''not'' [a], b] \<Rightarrow> combine_proofs \<lparr>assumptions = {a}, thesis = b, steps = [b]\<rparr> (peel b y)
+    | _ \<Rightarrow> (undefined))"
+
+fun second_step :: "rule \<Rightarrow> frege_proof" where
+  "second_step rule = peel (rule_to_taut rule) (concl rule)"
+
+fun sim_right :: "frege_proof \<Rightarrow> formula \<Rightarrow> frege_proof" where
+    "sim_right pr th =
+     fold
+       (\<lambda>step acc.
+          let pr1 = first_step rule some_sub;
+              pr2 = second_step rule
+          in combine_proofs (combine_proofs acc pr1) pr2)
+       (steps pr)
+       \<lparr>assumptions = assumptions pr,
+        thesis = th,
+        steps = []\<rparr>"
+
+(*
+Simulating F' via F:
+- for each step in F' we first derive the flattened rule with substitutions
+  - in: rule, substitution out: proof of rule_to_taut[sub] with no assumptions, of size \<le> c * sum_len(sub)
+- then we peel off each premise with modus ponens
+
+
+*)
+
+
+
+(* Those statement are not quite right as F can also have a finite number of axiom schemes *)
 lemma simulation_de_morgan_right:
-  assumes as_frege: "frege_system F1 \<and> frege_system F2"
-  and as_de_morgan: "alphabet F1 = a \<and> alphabet F2 = a"
-  and as_modus: "rules F1 = {modus_ponens}"
-  shows "simulates F1 F2"
+  assumes modus: "rules F = {modus_ponens}"
+  shows "simulates F F'"
   sorry
 
 lemma simulation_de_morgan_left:
-  assumes as_frege: "frege_system F1 \<and> frege_system F2"
-  and as_de_morgan: "alphabet F1 = a \<and> alphabet F2 = a"
-  and as_modus: "rules F1 = {modus_ponens}"
-  shows "simulates F2 F1"
+  assumes modus: "rules F = {modus_ponens}"
+  shows "simulates F' F"
   sorry
 
 end
