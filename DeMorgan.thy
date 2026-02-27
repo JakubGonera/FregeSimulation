@@ -184,30 +184,32 @@ fun peel :: "formula \<Rightarrow> formula \<Rightarrow> frege_proof" where
 fun second_step :: "rule \<Rightarrow> frege_proof" where
   "second_step rule = peel (rule_to_taut rule) (concl rule)"
 
+definition derived_with :: "nat \<Rightarrow> frege_proof \<Rightarrow> rule \<Rightarrow> (string \<Rightarrow> formula) \<Rightarrow> bool" where
+  "derived_with i pr r s \<longleftrightarrow> (let sub_r = sub_rule s r in 
+                       (concl sub_r) = steps pr ! i \<and> 
+                       (\<forall> f1 \<in> set (prems sub_r). \<exists> f2 \<in> set (take i (steps pr)). f1 = f2))"
+
+definition choose_rule_sub where
+  "choose_rule_sub i pr =
+     (SOME (r,s). derived_with i pr r s)"
+
 fun sim_right :: "frege_proof \<Rightarrow> formula \<Rightarrow> frege_proof" where
     "sim_right pr th =
      fold
-       (\<lambda>step acc.
-          let pr1 = first_step rule some_sub;
-              pr2 = second_step rule
+       (\<lambda>i acc.
+          let step = (steps pr) ! i in
+          if step \<in> assumptions pr then 
+            combine_proofs acc \<lparr>assumptions = {}, thesis = step, steps = [step]\<rparr>
+          else
+            let (r, s) = choose_rule_sub i pr in
+            let pr1 = first_step r s;
+                pr2 = second_step (sub_rule s r)
           in combine_proofs (combine_proofs acc pr1) pr2)
-       (steps pr)
+       [0..<length (steps pr)]
        \<lparr>assumptions = assumptions pr,
         thesis = th,
         steps = []\<rparr>"
 
-(*
-Simulating F' via F:
-- for each step in F' we first derive the flattened rule with substitutions
-  - in: rule, substitution out: proof of rule_to_taut[sub] with no assumptions, of size \<le> c * sum_len(sub)
-- then we peel off each premise with modus ponens
-
-
-*)
-
-
-
-(* Those statement are not quite right as F can also have a finite number of axiom schemes *)
 lemma simulation_de_morgan_right:
   assumes modus: "rules F = {modus_ponens}"
   shows "simulates F F'"
