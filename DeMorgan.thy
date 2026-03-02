@@ -252,6 +252,8 @@ definition rule_proof_cost where
   "rule_proof_cost rule = (SOME g. \<forall> rule sub. 
           len_proof (first_step rule sub) \<le> (g rule) * len_sub sub)"
 
+(* peel only returns Some if the input formula is equal to the expected end, or we can peel off
+with modus ponens and arrive at the expected formula. *)
 fun peel :: "dformula \<Rightarrow> dformula \<Rightarrow> dproof option" where
   "peel x y =
    (if x = y then Some \<lparr>assumptions = {x}, thesis = x, steps = [x]\<rparr>
@@ -294,109 +296,20 @@ next
         by (auto simp: valid_proof_def)
     next
       case False
-      have c_def: "c = Or"
-      proof (rule ccontr)
-        assume c_not_or: "c \<noteq> Or"
-        have "peel (Conn c fs) y = None"
-          using False c_not_or by simp
-        with peel_some show False by simp
-      qed
-
-      have fs2_ex: "\<exists>u v. fs = [u, v]"
-      proof (cases fs)
-        case Nil
-        with peel_some False c_def show ?thesis
-          by simp
-      next
-        case (Cons f fs')
-        have fs_cons: "fs = f # fs'"
-          using Cons by simp
-        show ?thesis
-        proof (cases fs')
-          case Nil
-          with peel_some False c_def Cons show ?thesis
-            by (cases f) (simp_all split: list.splits)
-        next
-          case (Cons g rest)
-          have fs'_cons: "fs' = g # rest"
-            using Cons by simp
-          show ?thesis
-          proof (cases rest)
-            case Nil
-            have fs_eq: "fs = [f, g]"
-              using fs_cons fs'_cons Nil by simp
-            then show ?thesis
-              by blast
-          next
-            case (Cons h t)
-            have False
-              using peel_some False c_def fs_cons fs'_cons Cons
-              by (cases f) (simp_all split: list.splits)
-            then show ?thesis by blast
-          qed
-        qed
-      qed
-      then obtain u v where fs2: "fs = [u, v]" by blast
-
-      have u_ex: "\<exists>d a. u = Conn d [a]"
-      proof (cases u)
-        case (Atom s)
-        with peel_some False c_def fs2 show ?thesis
-          by simp
-      next
-        case (Conn d us)
-        then show ?thesis
-        proof (cases us)
-          case Nil
-          with peel_some False c_def fs2 Conn show ?thesis
-            by simp
-        next
-          case (Cons a us')
-          have us_cons: "us = a # us'"
-            using Cons by simp
-          then show ?thesis
-          proof (cases us')
-            case Nil
-            with Conn Cons show ?thesis
-              by blast
-          next
-            case (Cons b rest)
-            have False
-              using peel_some False c_def fs2 Conn us_cons Cons
-              by simp
-            then show ?thesis by blast
-          qed
-        qed
-      qed
-      then obtain d a where u_def: "u = Conn d [a]" by blast
-
-      have d_def: "d = Not"
-      proof (rule ccontr)
-        assume d_not: "d \<noteq> Not"
-        with peel_some False c_def fs2 u_def show False
-          by simp
-      qed
-
-      have rec_ex: "\<exists>q. peel v y = Some q"
-      proof (cases "peel v y")
-        case None
-        with peel_some False c_def fs2 u_def d_def show ?thesis
-          by simp
-      next
-        case (Some q')
-        then show ?thesis by auto
-      qed
-      then obtain q where rec_v: "peel v y = Some q" by blast
-
-      have fs_def: "fs = [Conn Not [a], v]"
-        using fs2 u_def d_def by simp
+      obtain a v q where
+        c_def: "c = Or"
+        and fs_def: "fs = [Conn Not [a], v]"
+        and rec_v: "peel v y = Some q"
+        using peel_some False
+        by (cases fs) (auto split: option.splits if_splits formula.splits list.splits)
       have p_def: "p = combine_proofs \<lparr>assumptions = {Conn c fs, a}, thesis = v, steps = [Conn c fs, a, v]\<rparr> q"
-        using peel_some False c_def fs2 u_def d_def rec_v
+        using peel_some False c_def fs_def rec_v
         by simp
      
 
       let ?sub = "\<lambda>s. if s = ''P'' then a else if s = ''Q'' then v else Atom s"
 
+      (* \<not>a \<or> v, a \<longrightarrow> v *)
       have der_v: "derived (rules F) [Conn c fs, a] v"
       proof -
         have "modus_ponens \<in> rules F"
@@ -473,18 +386,212 @@ next
   qed
 qed
 
-(* lemma second_step_proves:
-  fixes rule :: rule
+lemma r_t_t_peelable: "\<exists> p. peel (rule_to_taut rule) (concl rule) = Some p"
+proof (induction "prems rule" arbitrary: rule)
+  case Nil
+  hence "rule = \<lparr>prems = [], concl = concl rule\<rparr>" by simp
+  hence "rule_to_taut rule = rule_to_taut \<lparr>prems = [], concl = concl rule\<rparr>" by simp
+  hence "rule_to_taut rule = concl rule" by simp
+  hence "\<exists> p. peel (rule_to_taut rule) (concl rule) = Some p" by auto
+  thus ?case by simp
+next
+  case (Cons f fs)
+  have rule_eq: "rule = \<lparr>prems = f # fs, concl = concl rule\<rparr>"
+    using Cons by simp
+  let ?tail = "rule_to_taut \<lparr>prems = fs, concl = concl rule\<rparr>"
+  have "rule_to_taut rule = rule_to_taut \<lparr>prems = f # fs, concl = concl rule\<rparr>" 
+    using rule_eq by simp
+  hence rt_def: "rule_to_taut rule = Conn Or [Conn Not [f], ?tail]"
+    using rule_to_taut.simps by simp
+  have tail_peelable: "\<exists>q. peel ?tail (concl rule) = Some q"
+    using Cons by (metis rule.select_convs(1,2))
+  then obtain q where q_def: "peel ?tail (concl rule) = Some q"
+    by blast
+
+  show ?case
+  proof (cases "rule_to_taut rule = concl rule")
+    case True
+    then show ?thesis by auto
+  next
+    case False
+    have "peel (rule_to_taut rule) (concl rule) =
+          Some (combine_proofs
+                  \<lparr>assumptions = {rule_to_taut rule, f},
+                   thesis = ?tail,
+                   steps = [rule_to_taut rule, f, ?tail]\<rparr> q)"
+      using rt_def False q_def by simp
+    then show ?thesis by blast
+  qed
+qed
+
+lemma premise_shorter_than_rule_to_taut_aux:
+  assumes "x \<in> set ps"
+  shows "len_formula x < len_formula (rule_to_taut \<lparr>prems = ps, concl = c\<rparr>)"
+  using assms
+proof (induction ps)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons f fs)
+  show ?case
+  proof (cases "x = f")
+    case True
+    then show ?thesis by simp
+  next
+    case False
+    then have x_in_fs: "x \<in> set fs"
+      using Cons.prems by simp
+    have ih: "len_formula x < len_formula (rule_to_taut \<lparr>prems = fs, concl = c\<rparr>)"
+      using Cons.IH[OF x_in_fs] .
+    have tail_lt:
+      "len_formula (rule_to_taut \<lparr>prems = fs, concl = c\<rparr>) <
+       len_formula (rule_to_taut \<lparr>prems = f # fs, concl = c\<rparr>)"
+      by simp
+    from ih tail_lt show ?thesis by arith
+  qed
+qed
+
+lemma premise_shorter_than_rule_to_taut:
+  assumes "x \<in> set (prems r)"
+  shows "len_formula x < len_formula (rule_to_taut r)"
+proof (cases r)
+  case (fields prems concl)
+  then show ?thesis
+    using premise_shorter_than_rule_to_taut_aux[of x prems concl] assms by simp
+qed
+
+lemma peel_thesis:
+  assumes "peel x y = Some p"
+  shows "thesis p = y"
+  using assms
+proof (induction x arbitrary: y p)
+  case (Atom a)
+  then show ?case
+    by (auto split: if_splits)
+next
+  case (Conn c fs)
+  show ?case
+  proof (cases "Conn c fs = y")
+    case True
+    have "p = \<lparr>assumptions = {y}, thesis = y, steps = [y]\<rparr>"
+      using Conn.prems True by simp
+    then show ?thesis
+      by simp
+  next
+    case False
+    have peel_nonbase:
+      "(if c = Or then
+         (case fs of
+            [Conn d [a], b] \<Rightarrow>
+              (if d = Not then
+                 (case peel b y of
+                    Some q \<Rightarrow> Some (combine_proofs \<lparr>assumptions = {Conn c fs, a}, thesis = b, steps = [Conn c fs, a, b]\<rparr> q)
+                  | None \<Rightarrow> None)
+               else None)
+          | _ \<Rightarrow> None)
+       else None) = Some p"
+      using Conn.prems False by simp
+
+    obtain d a b q where
+      c_def: "c = Or"
+      and fs_def: "fs = [Conn d [a], b]"
+      and d_def: "d = Not"
+      and rec: "peel b y = Some q"
+      and p_def: "p = combine_proofs \<lparr>assumptions = {Conn c fs, a}, thesis = b, steps = [Conn c fs, a, b]\<rparr> q"
+      using peel_nonbase
+      by (cases fs) (auto split: option.splits if_splits formula.splits list.splits)
+
+    have b_in_fs: "b \<in> set fs"
+      using fs_def by simp
+    have th_q: "thesis q = y"
+      using Conn.IH[OF b_in_fs, of y q] rec by simp
+
+    show ?thesis
+      using p_def th_q by simp
+  qed
+qed
+
+lemma peel_rule_to_taut_assumptions:
+  assumes "peel (rule_to_taut rule) (concl rule) = Some p"
+  shows "assumptions p = {rule_to_taut rule} \<union> set (prems rule)"
+proof -
+  obtain ps c where rule_def: "rule = \<lparr>prems = ps, concl = c\<rparr>"
+    by (cases rule) auto
+  have assm0: "peel (rule_to_taut \<lparr>prems = ps, concl = c\<rparr>) c = Some p"
+    using assms rule_def by simp
+  have "assumptions p = {rule_to_taut \<lparr>prems = ps, concl = c\<rparr>} \<union> set ps"
+    using assm0
+  proof (induction ps arbitrary: p)
+    case Nil
+    then have p_def: "p = \<lparr>assumptions = {c}, thesis = c, steps = [c]\<rparr>"
+      by simp
+    then show ?case by simp
+  next
+    case (Cons f fs)
+    let ?tail = "\<lparr>prems = fs, concl = c\<rparr>"
+    have rt_def: "rule_to_taut \<lparr>prems = f # fs, concl = c\<rparr> = Conn Or [Conn Not [f], rule_to_taut ?tail]"
+      by simp
+    have tail_ge: "len_formula (rule_to_taut ?tail) \<ge> len_formula c"
+    proof (induction fs)
+      case Nil
+      then show ?case by simp
+    next
+      case (Cons g gs)
+      then show ?case by simp
+    qed
+    have rt_ne_c: "rule_to_taut \<lparr>prems = f # fs, concl = c\<rparr> \<noteq> c"
+    proof
+      assume eq: "rule_to_taut \<lparr>prems = f # fs, concl = c\<rparr> = c"
+      have "len_formula (rule_to_taut \<lparr>prems = f # fs, concl = c\<rparr>) > len_formula c"
+        using tail_ge by simp
+      moreover have "len_formula (rule_to_taut \<lparr>prems = f # fs, concl = c\<rparr>) = len_formula c"
+        using eq by simp
+      ultimately show False by simp
+    qed
+    from Cons.prems obtain q where
+      q_def: "peel (rule_to_taut ?tail) c = Some q"
+      and p_def: "p = combine_proofs \<lparr>assumptions = {rule_to_taut \<lparr>prems = f # fs, concl = c\<rparr>, f},
+                                      thesis = rule_to_taut ?tail,
+                                      steps = [rule_to_taut \<lparr>prems = f # fs, concl = c\<rparr>, f, rule_to_taut ?tail]\<rparr> q"
+      using rt_def rt_ne_c by (auto split: option.splits if_splits)
+    have q_assm: "assumptions q = {rule_to_taut ?tail} \<union> set fs"
+      using Cons.IH[OF q_def] by simp
+    have tail_notin_fs: "rule_to_taut ?tail \<notin> set fs"
+    proof
+      assume "rule_to_taut ?tail \<in> set fs"
+      then have "len_formula (rule_to_taut ?tail) < len_formula (rule_to_taut ?tail)"
+        using premise_shorter_than_rule_to_taut[of "rule_to_taut ?tail" ?tail] by simp
+      then show False by simp
+    qed
+    show ?case
+      using p_def q_assm tail_notin_fs by auto
+  qed
+  then show ?thesis
+    using rule_def by simp
+qed
+
+lemma second_step_proves:
+  fixes rule :: drule
   assumes "pr = second_step rule"
   shows "valid_proof F pr \<and> 
          assumptions pr = {rule_to_taut rule} \<union> set (prems rule) \<and> 
          thesis pr = concl rule"
 proof -
-  have "\<exists> p. peel (rule_to_taut rule) (concl rule) = Some p"
-  have "valid_proof F pr"
-*)
-
-
+  obtain p where peel_res: "peel (rule_to_taut rule) (concl rule) = Some p"
+    using r_t_t_peelable by blast
+  have step_eq: "second_step rule = p"
+    using peel_res by simp
+  have pr_eq: "pr = p"
+    using assms step_eq by simp
+  have vp: "valid_proof F p"
+    using peel_valid peel_res by simp
+  have assm_p: "assumptions p = {rule_to_taut rule} \<union> set (prems rule)"
+    using peel_rule_to_taut_assumptions peel_res by simp
+  have th_p: "thesis p = concl rule"
+    using peel_thesis peel_res by simp
+  show ?thesis
+    using pr_eq vp assm_p th_p by simp
+qed
 
 (* Predicate for a step being derived with a rule, a substitution, and as i-th step of a proof. *)
 definition derived_with :: "nat \<Rightarrow> dproof \<Rightarrow> drule \<Rightarrow> (string \<Rightarrow> dformula) \<Rightarrow> bool" where

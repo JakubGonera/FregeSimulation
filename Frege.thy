@@ -250,7 +250,7 @@ proof -
   have sub_formula_comp:
     "sub_formula s1 (sub_formula s2 f) =
       sub_formula (\<lambda>a. sub_formula s1 (s2 a)) f"
-    for s1 s2 f
+    for s1 s2 :: "'v \<Rightarrow> ('v, 'c) formula" and f :: "('v, 'c) formula"
     by (induction f) simp_all
 
   have derived_substitution:
