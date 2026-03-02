@@ -8,6 +8,16 @@ function rule_to_taut :: "rule \<Rightarrow> formula" where
 termination
   by (relation "measure (\<lambda>r. length (prems r))") auto
 
+definition modus_ponens :: rule where
+  "modus_ponens = \<lparr> 
+    prems = [
+      Atom ''P'', 
+      Conn ''or'' [Conn ''not'' [Atom ''P''], Atom ''Q'']
+    ], 
+    concl = Atom ''Q'' 
+  \<rparr>"
+
+
 locale de_morgan_frege =
   fixes F :: frege
   assumes alph: "a = alphabet F" 
@@ -21,15 +31,6 @@ locale de_morgan_frege =
   | _ \<Rightarrow> undefined)"
   and "frege_system F" and "alphabet F = a"
 begin
-
-definition modus_ponens :: rule where
-  "modus_ponens = \<lparr> 
-    prems = [
-      Atom ''P'', 
-      Conn ''or'' [Conn ''not'' [Atom ''P''], Atom ''Q'']
-    ], 
-    concl = Atom ''Q'' 
-  \<rparr>"
 
 (*
 1. Either one of the premises is false, then the formula is true (\<not>f \<or> ...)
@@ -137,6 +138,7 @@ end
 locale de_morgan_sim =
   fixes F :: frege and F' :: frege
   assumes dm1: "de_morgan_frege F" and dm2: "de_morgan_frege F'"
+  and "modus_ponens \<in> rules F"
 begin
 
 (*
@@ -232,16 +234,241 @@ definition rule_proof_cost where
   "rule_proof_cost rule = (SOME g. \<forall> rule sub. 
           len_proof (first_step rule sub) \<le> (g rule) * len_sub sub)"
 
-fun peel :: "formula \<Rightarrow> formula \<Rightarrow> frege_proof" where
+fun peel :: "formula \<Rightarrow> formula \<Rightarrow> frege_proof option" where
   "peel x y =
-   (if x = y then \<lparr>assumptions = {}, thesis = x, steps = [x]\<rparr>
+   (if x = y then Some \<lparr>assumptions = {x}, thesis = x, steps = [x]\<rparr>
     else case x of
-      Conn ''or'' [Conn ''not'' [a], b] \<Rightarrow> combine_proofs \<lparr>assumptions = {a}, thesis = b, steps = [b]\<rparr> (peel b y)
-    | _ \<Rightarrow> (undefined))"
+      Atom _ \<Rightarrow> None
+    | Conn c fs \<Rightarrow>
+        (if c = ''or'' then
+           (case fs of
+              [Conn d [a], b] \<Rightarrow>
+                (if d = ''not'' then
+                   (case peel b y of
+                      Some p \<Rightarrow> Some (combine_proofs \<lparr>assumptions = {x, a}, thesis = b, steps = [x, a, b]\<rparr> p)
+                    | None \<Rightarrow> None)
+                 else None)
+            | _ \<Rightarrow> None)
+         else None))"
 
+(* We prove from the flattened rule the conclusion, peeling with modus ponens each implication.
+Note that we add each premise to assumptions and then include it as a step to immediately
+derive from it the peeled formula.*)
 fun second_step :: "rule \<Rightarrow> frege_proof" where
-  "second_step rule = peel (rule_to_taut rule) (concl rule)"
+  "second_step rule = (case peel (rule_to_taut rule) (concl rule) of
+                      Some p \<Rightarrow> p
+                    | None \<Rightarrow> undefined)"
 
+lemma peel_valid: "peel x y = Some p \<longrightarrow> valid_proof F p"
+proof (induction x arbitrary: y p)
+  case (Atom a)
+  show ?case
+    by (auto simp: valid_proof_def split: if_splits)
+next
+  case (Conn c fs)
+  show ?case
+  proof
+    assume peel_some: "peel (Conn c fs) y = Some p"
+    show "valid_proof F p"
+    proof (cases "Conn c fs = y")
+      case True
+      with peel_some show ?thesis
+        by (auto simp: valid_proof_def)
+    next
+      case False
+      have c_def: "c = ''or''"
+      proof (rule ccontr)
+        assume c_not_or: "c \<noteq> ''or''"
+        have "peel (Conn c fs) y = None"
+          using False c_not_or by simp
+        with peel_some show False by simp
+      qed
+
+      have fs2_ex: "\<exists>u v. fs = [u, v]"
+      proof (cases fs)
+        case Nil
+        with peel_some False c_def show ?thesis
+          by simp
+      next
+        case (Cons f fs')
+        have fs_cons: "fs = f # fs'"
+          using Cons by simp
+        show ?thesis
+        proof (cases fs')
+          case Nil
+          with peel_some False c_def Cons show ?thesis
+            by (cases f) (simp_all split: list.splits)
+        next
+          case (Cons g rest)
+          have fs'_cons: "fs' = g # rest"
+            using Cons by simp
+          show ?thesis
+          proof (cases rest)
+            case Nil
+            have fs_eq: "fs = [f, g]"
+              using fs_cons fs'_cons Nil by simp
+            then show ?thesis
+              by blast
+          next
+            case (Cons h t)
+            have False
+              using peel_some False c_def fs_cons fs'_cons Cons
+              by (cases f) (simp_all split: list.splits)
+            then show ?thesis by blast
+          qed
+        qed
+      qed
+      then obtain u v where fs2: "fs = [u, v]" by blast
+
+      have u_ex: "\<exists>d a. u = Conn d [a]"
+      proof (cases u)
+        case (Atom s)
+        with peel_some False c_def fs2 show ?thesis
+          by simp
+      next
+        case (Conn d us)
+        then show ?thesis
+        proof (cases us)
+          case Nil
+          with peel_some False c_def fs2 Conn show ?thesis
+            by simp
+        next
+          case (Cons a us')
+          have us_cons: "us = a # us'"
+            using Cons by simp
+          then show ?thesis
+          proof (cases us')
+            case Nil
+            with Conn Cons show ?thesis
+              by blast
+          next
+            case (Cons b rest)
+            have False
+              using peel_some False c_def fs2 Conn us_cons Cons
+              by simp
+            then show ?thesis by blast
+          qed
+        qed
+      qed
+      then obtain d a where u_def: "u = Conn d [a]" by blast
+
+      have d_def: "d = ''not''"
+      proof (rule ccontr)
+        assume d_not: "d \<noteq> ''not''"
+        with peel_some False c_def fs2 u_def show False
+          by simp
+      qed
+
+      have rec_ex: "\<exists>q. peel v y = Some q"
+      proof (cases "peel v y")
+        case None
+        with peel_some False c_def fs2 u_def d_def show ?thesis
+          by simp
+      next
+        case (Some q')
+        then show ?thesis by auto
+      qed
+      then obtain q where rec_v: "peel v y = Some q" by blast
+
+      have fs_def: "fs = [Conn ''not'' [a], v]"
+        using fs2 u_def d_def by simp
+      have p_def: "p = combine_proofs \<lparr>assumptions = {Conn c fs, a}, thesis = v, steps = [Conn c fs, a, v]\<rparr> q"
+        using peel_some False c_def fs2 u_def d_def rec_v
+        by simp
+     
+
+      let ?sub = "\<lambda>s. if s = ''P'' then a else if s = ''Q'' then v else Atom s"
+
+      have der_v: "derived (rules F) [Conn c fs, a] v"
+      proof -
+        have "modus_ponens \<in> rules F"
+          using de_morgan_sim_axioms unfolding de_morgan_sim_def by auto
+        moreover have
+          "let sub_r = sub_rule ?sub modus_ponens in
+             concl sub_r = v \<and>
+             (\<forall>f1\<in>set (prems sub_r). \<exists>f2\<in>set [Conn c fs, a]. f1 = f2)"
+          unfolding modus_ponens_def
+          using c_def fs_def
+          by simp
+        ultimately show ?thesis
+          unfolding derived_def
+          by (intro bexI[of _ modus_ponens] exI[of _ ?sub]) simp
+      qed
+
+      have seed_valid:
+        "valid_proof F \<lparr>assumptions = {Conn c fs, a}, thesis = v, steps = [Conn c fs, a, v]\<rparr>"
+      proof -
+        have steps_ok:
+          "\<forall>i<length [Conn c fs, a, v].
+             [Conn c fs, a, v] ! i \<in> {Conn c fs, a} \<or>
+             derived (rules F) (take i [Conn c fs, a, v]) ([Conn c fs, a, v] ! i)"
+        proof (intro allI impI)
+          fix i
+          assume i_lt: "i < length [Conn c fs, a, v]"
+          show "[Conn c fs, a, v] ! i \<in> {Conn c fs, a} \<or>
+                derived (rules F) (take i [Conn c fs, a, v]) ([Conn c fs, a, v] ! i)"
+          proof (cases i)
+            case 0
+            then show ?thesis by simp
+          next
+            case (Suc j)
+            have i_suc: "i = Suc j"
+              using Suc by simp
+            then show ?thesis
+            proof (cases j)
+              case 0
+              then show ?thesis using Suc by simp
+            next
+              case (Suc k)
+              have i_eq: "i = Suc (Suc k)"
+                using i_suc Suc by simp
+              have "k < 1"
+                using i_lt i_eq by simp
+              then have "k = 0"
+                by simp
+              have i_two: "i = 2"
+                using i_suc Suc \<open>k = 0\<close> by simp
+              show ?thesis
+                using der_v i_two by simp
+            qed
+          qed
+        qed
+        show ?thesis
+          unfolding valid_proof_def
+          using steps_ok by simp
+      qed
+
+      have v_in_fs: "v \<in> set fs"
+        using fs_def by simp
+      have q_valid: "valid_proof F q"
+        using Conn.IH[OF v_in_fs, of y q] rec_v by simp
+
+      have fsys: "frege_system F"
+        using dm1 unfolding de_morgan_frege_def by simp
+      have comb_valid:
+        "valid_proof F (combine_proofs \<lparr>assumptions = {Conn c fs, a}, thesis = v, steps = [Conn c fs, a, v]\<rparr> q)"
+        using fsys seed_valid q_valid frege_system.combining_valid_proofs by blast
+
+      show ?thesis
+        using p_def comb_valid by simp
+    qed
+  qed
+qed
+
+(* lemma second_step_proves:
+  fixes rule :: rule
+  assumes "pr = second_step rule"
+  shows "valid_proof F pr \<and> 
+         assumptions pr = {rule_to_taut rule} \<union> set (prems rule) \<and> 
+         thesis pr = concl rule"
+proof -
+  have "\<exists> p. peel (rule_to_taut rule) (concl rule) = Some p"
+  have "valid_proof F pr"
+*)
+
+
+
+(* Predicate for a step being derived with a rule, a substitution, and as i-th step of a proof. *)
 definition derived_with :: "nat \<Rightarrow> frege_proof \<Rightarrow> rule \<Rightarrow> (string \<Rightarrow> formula) \<Rightarrow> bool" where
   "derived_with i pr r s \<longleftrightarrow> (let sub_r = sub_rule s r in 
                        (concl sub_r) = steps pr ! i \<and> 
