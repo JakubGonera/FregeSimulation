@@ -5,49 +5,50 @@ begin
 (* A formula can be built over arbitrary connectives, 
   evaluation of which we supply later in a Frege *)
 
-datatype formula = 
-  Atom string |
-  Conn string "formula list"
+datatype ('v, 'c) formula =
+  Atom 'v |
+  Conn 'c "(('v, 'c) formula list)"
 
-record rule =
-  prems :: "formula list"
-  concl :: "formula"
+record ('v, 'c) rule =
+  prems :: "(('v, 'c) formula) list"
+  concl :: "('v, 'c) formula"
 
-record alphabet = 
-  conns :: "string set"
-  conn_evals :: "string \<Rightarrow> (bool list \<Rightarrow> bool)"
+record 'c alphabet =
+  conns :: "'c set"
+  arity :: "'c \<Rightarrow> nat"
+  conn_evals :: "'c \<Rightarrow> (bool list \<Rightarrow> bool)"
 
-record frege =
-  rules :: "rule set"
-  alphabet :: "alphabet"
+record ('v, 'c) frege =
+  rules :: "(('v, 'c) rule) set"
+  alphabet :: "'c alphabet"
 
-fun eval :: "alphabet \<Rightarrow> (string \<Rightarrow> bool) \<Rightarrow> formula \<Rightarrow> bool" where
+fun eval :: "'c alphabet \<Rightarrow> ('v \<Rightarrow> bool) \<Rightarrow> ('v, 'c) formula \<Rightarrow> bool" where
   "eval al v (Atom a) = v a" |
   "eval al v (Conn c fs) = (conn_evals al c) (map (eval al v) fs)"
 
-record frege_proof =
-  assumptions :: "formula set"
-  thesis :: "formula"
-  steps :: "formula list"
+record ('v, 'c) frege_proof =
+  assumptions :: "(('v, 'c) formula) set"
+  thesis :: "('v, 'c) formula"
+  steps :: "(('v, 'c) formula) list"
 
-fun sub_formula :: "(string \<Rightarrow> formula) \<Rightarrow> formula \<Rightarrow> formula" where
+fun sub_formula :: "('v \<Rightarrow> ('v, 'c) formula) \<Rightarrow> ('v, 'c) formula \<Rightarrow> ('v, 'c) formula" where
   "sub_formula sub (Atom a) = sub a" |
   "sub_formula sub (Conn c fs) = Conn c (map (sub_formula sub) fs)"
 
-fun sub_rule :: "(string \<Rightarrow> formula) \<Rightarrow> rule \<Rightarrow> rule" where
+fun sub_rule :: "('v \<Rightarrow> ('v, 'c) formula) \<Rightarrow> ('v, 'c) rule \<Rightarrow> ('v, 'c) rule" where
   "sub_rule sub r = \<lparr>
     prems = map (sub_formula sub) (prems r),
     concl = sub_formula sub (concl r)
   \<rparr>"
 
-fun sub_proof :: "(string \<Rightarrow> formula) \<Rightarrow> frege_proof \<Rightarrow> frege_proof" where
+fun sub_proof :: "('v \<Rightarrow> ('v, 'c) formula) \<Rightarrow> ('v, 'c) frege_proof \<Rightarrow> ('v, 'c) frege_proof" where
   "sub_proof sub pr = \<lparr>
     assumptions = (sub_formula sub)` (assumptions pr),
     thesis = sub_formula sub (thesis pr),
     steps = map (sub_formula sub) (steps pr)
 \<rparr>"
 
-definition derived :: "rule set \<Rightarrow> formula list \<Rightarrow> formula \<Rightarrow> bool" where
+definition derived :: "(('v, 'c) rule) set \<Rightarrow> (('v, 'c) formula) list \<Rightarrow> ('v, 'c) formula \<Rightarrow> bool" where
   "derived rs fs f \<longleftrightarrow> (\<exists> r \<in> rs. \<exists> sub. let sub_r = sub_rule sub r in 
                        (concl sub_r) = f \<and> 
                        (\<forall> f1 \<in> set (prems sub_r). \<exists> f2 \<in> set fs. f1 = f2))"
@@ -87,34 +88,34 @@ proof -
 qed
 
 
-definition valid_proof :: "frege \<Rightarrow> frege_proof \<Rightarrow> bool" where
+definition valid_proof :: "('v, 'c) frege \<Rightarrow> ('v, 'c) frege_proof \<Rightarrow> bool" where
   "valid_proof F pr \<longleftrightarrow> 
     thesis pr = last (steps pr) \<and> steps pr \<noteq> []
     \<and> (\<forall>i < length (steps pr). 
  steps pr ! i \<in> assumptions pr \<or> derived (rules F) (take i (steps pr)) (steps pr ! i))"
 
-fun combine_proofs :: "frege_proof \<Rightarrow> frege_proof \<Rightarrow> frege_proof" where
+fun combine_proofs :: "('v, 'c) frege_proof \<Rightarrow> ('v, 'c) frege_proof \<Rightarrow> ('v, 'c) frege_proof" where
   "combine_proofs pr1 pr2 = \<lparr>assumptions = assumptions pr1 \<union> (assumptions pr2 - set (steps pr1)),
                              thesis = thesis pr2,
                              steps = steps pr1 @ steps pr2\<rparr>"
 
-definition sound_rule :: "frege \<Rightarrow> rule \<Rightarrow> bool" where
+definition sound_rule :: "('v, 'c) frege \<Rightarrow> ('v, 'c) rule \<Rightarrow> bool" where
   "sound_rule F r \<longleftrightarrow> 
     (\<forall> val. (\<forall> form \<in> set (prems r). eval (alphabet F) val form) \<longrightarrow> eval (alphabet F) val (concl r))"
 
-fun len_formula :: "formula \<Rightarrow> nat" where
+fun len_formula :: "('v, 'c) formula \<Rightarrow> nat" where
   "len_formula (Atom s) = 1" |
   "len_formula (Conn s fs) = 1 + sum_list (map (\<lambda> f. len_formula f) fs)"
 
-fun len_proof :: "frege_proof \<Rightarrow> nat" where
+fun len_proof :: "('v, 'c) frege_proof \<Rightarrow> nat" where
   "len_proof pr = sum_list (map len_formula (steps pr))"
 
-definition len_sub :: "(string \<Rightarrow> formula) \<Rightarrow> nat" where
+definition len_sub :: "('v \<Rightarrow> ('v, 'c) formula) \<Rightarrow> nat" where
   "len_sub sub =
      (\<Sum> s \<in> {s. len_formula (sub s) \<noteq> 0}. len_formula (sub s))"
 
-locale frege_system = 
-  fixes F :: frege
+locale frege_system =
+  fixes F :: "('v, 'c) frege"
   assumes sound: "\<forall> r \<in> rules F. sound_rule F r"
   and impl_complete: "\<forall> fs th val. ((\<forall> f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th) 
                           \<longrightarrow> (\<exists> pr. valid_proof F pr
@@ -124,7 +125,7 @@ locale frege_system =
 begin
 
 lemma combining_valid_proofs_pr1:
-  fixes pr1 :: frege_proof and pr2 :: frege_proof
+  fixes pr1 :: "('v, 'c) frege_proof" and pr2 :: "('v, 'c) frege_proof"
   assumes "valid_proof F pr1 \<and> valid_proof F pr2"
   and "comb = combine_proofs pr1 pr2"
   and "i < length (steps pr1)"
@@ -138,22 +139,30 @@ proof -
   have "take i (steps pr1) = take i (steps comb)" using assms by simp
   hence 3: "derived (rules F) (take i (steps pr1)) (steps pr1 ! i) \<longrightarrow> 
          derived (rules F) (take i (steps comb)) (steps comb ! i)" using 1 by simp
+  have vp1: "valid_proof F pr1"
+    using assms(1) by simp
   have "steps pr1 ! i \<in> assumptions pr1 \<or> 
         derived (rules F) (take i (steps pr1)) (steps pr1 ! i)" 
-    using assms valid_proof_def by simp
+    using vp1 assms(3) unfolding valid_proof_def by simp
   thus ?thesis using 2 3 by blast
 qed
 
 lemma combining_valid_proofs:
-  fixes pr1 :: frege_proof and pr2 :: frege_proof
+  fixes pr1 :: "('v, 'c) frege_proof" and pr2 :: "('v, 'c) frege_proof"
   assumes "valid_proof F pr1 \<and> valid_proof F pr2"
   and "comb = combine_proofs pr1 pr2"
   shows "valid_proof F comb"
 proof -
  have app: "steps comb = (steps pr1) @ (steps pr2)" using assms(2) by simp
-  hence "last (steps comb) = last (steps pr2)" using assms(1) valid_proof_def by simp
-  hence a: "thesis comb = last (steps comb) \<and> steps comb \<noteq> []" 
-    using assms valid_proof_def by simp
+  have vp2: "valid_proof F pr2" using assms(1) by simp
+  hence "last (steps comb) = last (steps pr2)"
+    using app unfolding valid_proof_def by simp
+  have th2: "thesis pr2 = last (steps pr2)"
+    using vp2 unfolding valid_proof_def by simp
+  have nz2: "steps pr2 \<noteq> []"
+    using vp2 unfolding valid_proof_def by simp
+  have a: "thesis comb = last (steps comb) \<and> steps comb \<noteq> []"
+    using assms(2) th2 nz2 app by simp
 
   have b: "\<forall> i < length (steps comb). (steps comb ! i \<in> assumptions comb \<or>
                                     derived (rules F) (take i (steps comb)) (steps comb ! i))"
@@ -210,21 +219,31 @@ proof -
         have 32: "derived (rules F) (take (i - ?j) (steps pr2)) (steps pr2 ! (i - ?j)) \<longrightarrow> 
               derived (rules F) (take i (steps comb)) (steps comb ! i)" using 12 02 derived_mono
           by (metis drop_take set_drop_subset)
+        have vp2: "valid_proof F pr2"
+          using assms(1) by simp
+        have i_bound: "i < ?j + length (steps pr2)"
+          using i_in_range app by simp
+        have j_le_i: "?j \<le> i"
+          using False by simp
+        have idx2: "i - ?j < length (steps pr2)"
+          using i_bound j_le_i by arith
         have "steps pr2 ! (i - ?j) \<in> assumptions pr2 \<or> 
               derived (rules F) (take (i - ?j) (steps pr2)) (steps pr2 ! (i - ?j))" 
-          using assms(1) False valid_proof_def i_in_range app by simp
+          using vp2 idx2 unfolding valid_proof_def by simp
         thus "steps comb ! i \<in> assumptions comb \<or> 
               derived (rules F) (take i (steps comb)) (steps comb ! i)" using 22 32 repeat_proof by auto
       qed
     qed
   qed
 
-  show ?thesis using a b valid_proof_def by simp
+  show ?thesis
+    unfolding valid_proof_def
+    using a b by simp
 qed
 
 lemma proof_substitution:
-  fixes pr :: frege_proof 
-    and sub :: "string \<Rightarrow> formula"
+  fixes pr :: "('v, 'c) frege_proof"
+    and sub :: "'v \<Rightarrow> ('v, 'c) formula"
   assumes "valid_proof F pr"
   shows "valid_proof F (sub_proof sub pr)"
 proof -
@@ -249,8 +268,14 @@ proof -
     let ?s' = "\<lambda>a. sub_formula sub (s a)"
     have concl_sub: "concl (sub_rule ?s' r) = sub_formula sub f"
     proof -
+      have c1: "concl (sub_rule ?s' r) = sub_formula ?s' (concl r)"
+        by simp
+      have c2: "sub_formula ?s' (concl r) = sub_formula sub (sub_formula s (concl r))"
+        using sub_formula_comp[of sub s "concl r"] by simp
+      have c3: "concl (sub_rule s r) = sub_formula s (concl r)"
+        by simp
       have "concl (sub_rule ?s' r) = sub_formula sub (concl (sub_rule s r))"
-        using sub_formula_comp by (cases r) simp
+        using c1 c2 c3 by simp
       also have "... = sub_formula sub f"
         using concl_eq by simp
       finally show ?thesis .
@@ -259,15 +284,27 @@ proof -
       "\<forall>p \<in> set (prems (sub_rule ?s' r)). \<exists>q \<in> set (map (sub_formula sub) fs). p = q"
     proof
       fix p
-      assume "p \<in> set (prems (sub_rule ?s' r))"
-      then have p_in:
-        "p \<in> set (map (sub_formula sub) (prems (sub_rule s r)))"
-        using sub_formula_comp by (cases r) simp
-      then obtain p0 where
-        p0_in: "p0 \<in> set (prems (sub_rule s r))"
-        and p_eq: "p = sub_formula sub p0"
+      assume p_sub: "p \<in> set (prems (sub_rule ?s' r))"
+      have prems_comp:
+        "prems (sub_rule ?s' r) = map (sub_formula sub) (prems (sub_rule s r))"
+      proof (cases r)
+        case (fields prems concl)
+        have comp_eq: "sub_formula ?s' = (sub_formula sub) \<circ> (sub_formula s)"
+          by (rule ext) (simp add: sub_formula_comp[symmetric])
+        have "map (sub_formula ?s') prems = map (sub_formula sub) (map (sub_formula s) prems)"
+          using comp_eq by simp
+        with fields show ?thesis
+          by simp
+      qed
+      from p_sub prems_comp obtain x where
+        x_in: "x \<in> set (prems r)"
+        and p_eq1: "p = sub_formula ?s' x"
         by auto
-      from prems_fs p0_in obtain q where "q \<in> set fs" and "p0 = q" by auto
+      have p0_in: "sub_formula s x \<in> set (prems (sub_rule s r))"
+        using x_in by simp
+      have p_eq: "p = sub_formula sub (sub_formula s x)"
+        using p_eq1 sub_formula_comp[of sub s x] by simp
+      from prems_fs p0_in obtain q where "q \<in> set fs" and "sub_formula s x = q" by auto
       thus "\<exists>q \<in> set (map (sub_formula sub) fs). p = q"
         using p_eq by auto
     qed
@@ -311,7 +348,7 @@ proof -
 qed
 end
 
-definition simulates :: "frege \<Rightarrow> frege \<Rightarrow> bool" where
+definition simulates :: "('v, 'c) frege \<Rightarrow> ('v, 'c) frege \<Rightarrow> bool" where
  "simulates F1 F2 \<longleftrightarrow> (\<exists> f g p q. \<forall> w \<tau>. (thesis w = g \<tau> \<and> valid_proof F1 w) \<longrightarrow> 
     valid_proof F2 (f w \<tau>) \<and> thesis (f w \<tau>) = \<tau> \<and> 
     len_formula (g \<tau>) \<le> poly p (len_formula \<tau>) \<and>

@@ -1,34 +1,42 @@
 theory DeMorgan imports Frege begin
 
-function rule_to_taut :: "rule \<Rightarrow> formula" where
+datatype dm_conn = Top | Bot | Not | Or | And
+
+type_synonym dformula = "(string, dm_conn) formula"
+type_synonym drule = "(string, dm_conn) rule"
+type_synonym dalphabet = "dm_conn alphabet"
+type_synonym dfrege = "(string, dm_conn) frege"
+type_synonym dproof = "(string, dm_conn) frege_proof"
+
+function rule_to_taut :: "drule \<Rightarrow> dformula" where
   "rule_to_taut \<lparr>prems = [], concl = c\<rparr> = c" |
   "rule_to_taut \<lparr>prems = f # fs, concl = c\<rparr> = 
-    Conn ''or'' [Conn ''not'' [f], rule_to_taut \<lparr>prems = fs, concl = c\<rparr>]"
+    Conn Or [Conn Not [f], rule_to_taut \<lparr>prems = fs, concl = c\<rparr>]"
   by pat_completeness auto
 termination
   by (relation "measure (\<lambda>r. length (prems r))") auto
 
-definition modus_ponens :: rule where
+definition modus_ponens :: drule where
   "modus_ponens = \<lparr> 
     prems = [
       Atom ''P'', 
-      Conn ''or'' [Conn ''not'' [Atom ''P''], Atom ''Q'']
+      Conn Or [Conn Not [Atom ''P''], Atom ''Q'']
     ], 
     concl = Atom ''Q'' 
   \<rparr>"
 
 
 locale de_morgan_frege =
-  fixes F :: frege
+  fixes F :: dfrege
   assumes alph: "a = alphabet F" 
-  and conns_def: "conns a = {''top'', ''bot'', ''not'', ''or'', ''and''}"
+  and conns_def: "conns a = {Top, Bot, Not, Or, And}"
+  and arity_def: "arity a = (\<lambda>c. case c of Top \<Rightarrow> 0 | Bot \<Rightarrow> 0 | Not \<Rightarrow> 1 | Or \<Rightarrow> 2 | And \<Rightarrow> 2)"
   and conn_evals_def: "conn_evals a = (\<lambda> c. case c of
-    ''top'' \<Rightarrow> (\<lambda>_. True)                \<comment> \<open>nullary: ignores input list\<close>
-  | ''bot'' \<Rightarrow> (\<lambda>_. False)               \<comment> \<open>nullary\<close>
-  | ''not'' \<Rightarrow> (\<lambda>args. case args of [x] \<Rightarrow> \<not> x | _ \<Rightarrow> undefined)
-  | ''or''  \<Rightarrow> (\<lambda>args. case args of [x, y] \<Rightarrow> x \<or> y | _ \<Rightarrow> undefined)
-  | ''and'' \<Rightarrow> (\<lambda>args. case args of [x, y] \<Rightarrow> x \<and> y | _ \<Rightarrow> undefined)
-  | _ \<Rightarrow> undefined)"
+    Top \<Rightarrow> (\<lambda>_. True)                \<comment> \<open>nullary: ignores input list\<close>
+  | Bot \<Rightarrow> (\<lambda>_. False)               \<comment> \<open>nullary\<close>
+  | Not \<Rightarrow> (\<lambda>args. case args of [x] \<Rightarrow> \<not> x | _ \<Rightarrow> undefined)
+  | Or  \<Rightarrow> (\<lambda>args. case args of [x, y] \<Rightarrow> x \<or> y | _ \<Rightarrow> undefined)
+  | And \<Rightarrow> (\<lambda>args. case args of [x, y] \<Rightarrow> x \<and> y | _ \<Rightarrow> undefined))"
   and "frege_system F" and "alphabet F = a"
 begin
 
@@ -50,10 +58,10 @@ proof
   proof -
     have "eval a val (rule_to_taut r) = eval a val (rule_to_taut \<lparr>prems = p # ps, concl = concl r\<rparr>)"
       using r_eq by simp
-    also have "... = eval a val (Conn ''or'' [Conn ''not'' [p],
+    also have "... = eval a val (Conn Or [Conn Not [p],
                             rule_to_taut \<lparr>prems = ps, concl = concl r\<rparr>])"
       by auto
-    also have "... = (eval a val (Conn ''not'' [p]) \<or> 
+    also have "... = (eval a val (Conn Not [p]) \<or> 
                       eval a val (rule_to_taut \<lparr>prems = ps, concl = concl r\<rparr>))"
       using de_morgan_frege_axioms de_morgan_frege_def by auto
     also have "... = ((\<not> eval a val p) \<or> 
@@ -65,7 +73,7 @@ qed
 
 lemma premise_false:
   fixes val :: "string \<Rightarrow> bool"
-  and r :: "rule"
+  and r :: drule
 assumes "\<exists> f \<in> set (prems r). \<not> eval a val f"
   and "prems r \<noteq> []"
 shows "eval a val (rule_to_taut r)"
@@ -91,7 +99,7 @@ qed
 
 lemma premises_true:
   fixes val :: "string \<Rightarrow> bool"
-  and r :: "rule"
+  and r :: drule
 assumes "eval a val (concl r)"
 shows "eval a val (rule_to_taut r)"
   using assms
@@ -136,7 +144,7 @@ qed
 end
 
 locale de_morgan_sim =
-  fixes F :: frege and F' :: frege
+  fixes F :: dfrege and F' :: dfrege
   assumes dm1: "de_morgan_frege F" and dm2: "de_morgan_frege F'"
   and "modus_ponens \<in> rules F"
 begin
@@ -147,7 +155,7 @@ to a chain of implications, and now it has a proof in a system F which only has 
 as a rule, but uses the same de_morgan alphabet
 *)
 
-definition proof_of :: "frege \<Rightarrow> frege_proof \<Rightarrow> formula \<Rightarrow> bool" where
+definition proof_of :: "dfrege \<Rightarrow> dproof \<Rightarrow> dformula \<Rightarrow> bool" where
   "proof_of frege pr f \<longleftrightarrow> valid_proof frege pr \<and> assumptions pr = {} \<and> thesis pr = f"
 
 lemma rule_exists_proof:
@@ -156,9 +164,19 @@ shows "\<exists> pr. valid_proof F pr \<and>  assumptions pr = {} \<and> thesis 
 proof -
   have "alphabet F = alphabet F'" 
     using de_morgan_sim_def de_morgan_sim_axioms de_morgan_frege.alph by simp
-  hence "\<forall> val. (\<forall> f \<in> {}. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val f_rule" 
+  hence all_val: "\<forall> val. eval (alphabet F) val f_rule"
     using de_morgan_frege.sound_rule_gives_tautology[of F' r] assms dm2 by simp
-  thus ?thesis using de_morgan_frege_def dm1 frege_system.impl_complete by simp
+  have fsys: "frege_system F"
+    using dm1 unfolding de_morgan_frege_def by simp
+  interpret fs: frege_system F
+    by (rule fsys)
+  have impl0:
+    "((\<forall>f\<in>{}. eval (alphabet F) (\<lambda>_. False) f) \<longrightarrow> eval (alphabet F) (\<lambda>_. False) f_rule)
+      \<longrightarrow> (\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = f_rule)"
+    using fs.impl_complete by blast
+  have "eval (alphabet F) (\<lambda>_. False) f_rule"
+    using all_val by simp
+  with impl0 show ?thesis by simp
 qed
 
 lemma first_step_exists: "\<exists> f. \<forall> sub. \<forall> rule \<in> rules F'.
@@ -234,16 +252,16 @@ definition rule_proof_cost where
   "rule_proof_cost rule = (SOME g. \<forall> rule sub. 
           len_proof (first_step rule sub) \<le> (g rule) * len_sub sub)"
 
-fun peel :: "formula \<Rightarrow> formula \<Rightarrow> frege_proof option" where
+fun peel :: "dformula \<Rightarrow> dformula \<Rightarrow> dproof option" where
   "peel x y =
    (if x = y then Some \<lparr>assumptions = {x}, thesis = x, steps = [x]\<rparr>
     else case x of
       Atom _ \<Rightarrow> None
     | Conn c fs \<Rightarrow>
-        (if c = ''or'' then
+        (if c = Or then
            (case fs of
               [Conn d [a], b] \<Rightarrow>
-                (if d = ''not'' then
+                (if d = Not then
                    (case peel b y of
                       Some p \<Rightarrow> Some (combine_proofs \<lparr>assumptions = {x, a}, thesis = b, steps = [x, a, b]\<rparr> p)
                     | None \<Rightarrow> None)
@@ -254,7 +272,7 @@ fun peel :: "formula \<Rightarrow> formula \<Rightarrow> frege_proof option" whe
 (* We prove from the flattened rule the conclusion, peeling with modus ponens each implication.
 Note that we add each premise to assumptions and then include it as a step to immediately
 derive from it the peeled formula.*)
-fun second_step :: "rule \<Rightarrow> frege_proof" where
+fun second_step :: "drule \<Rightarrow> dproof" where
   "second_step rule = (case peel (rule_to_taut rule) (concl rule) of
                       Some p \<Rightarrow> p
                     | None \<Rightarrow> undefined)"
@@ -276,9 +294,9 @@ next
         by (auto simp: valid_proof_def)
     next
       case False
-      have c_def: "c = ''or''"
+      have c_def: "c = Or"
       proof (rule ccontr)
-        assume c_not_or: "c \<noteq> ''or''"
+        assume c_not_or: "c \<noteq> Or"
         have "peel (Conn c fs) y = None"
           using False c_not_or by simp
         with peel_some show False by simp
@@ -352,9 +370,9 @@ next
       qed
       then obtain d a where u_def: "u = Conn d [a]" by blast
 
-      have d_def: "d = ''not''"
+      have d_def: "d = Not"
       proof (rule ccontr)
-        assume d_not: "d \<noteq> ''not''"
+        assume d_not: "d \<noteq> Not"
         with peel_some False c_def fs2 u_def show False
           by simp
       qed
@@ -370,7 +388,7 @@ next
       qed
       then obtain q where rec_v: "peel v y = Some q" by blast
 
-      have fs_def: "fs = [Conn ''not'' [a], v]"
+      have fs_def: "fs = [Conn Not [a], v]"
         using fs2 u_def d_def by simp
       have p_def: "p = combine_proofs \<lparr>assumptions = {Conn c fs, a}, thesis = v, steps = [Conn c fs, a, v]\<rparr> q"
         using peel_some False c_def fs2 u_def d_def rec_v
@@ -469,7 +487,7 @@ proof -
 
 
 (* Predicate for a step being derived with a rule, a substitution, and as i-th step of a proof. *)
-definition derived_with :: "nat \<Rightarrow> frege_proof \<Rightarrow> rule \<Rightarrow> (string \<Rightarrow> formula) \<Rightarrow> bool" where
+definition derived_with :: "nat \<Rightarrow> dproof \<Rightarrow> drule \<Rightarrow> (string \<Rightarrow> dformula) \<Rightarrow> bool" where
   "derived_with i pr r s \<longleftrightarrow> (let sub_r = sub_rule s r in 
                        (concl sub_r) = steps pr ! i \<and> 
                        (\<forall> f1 \<in> set (prems sub_r). \<exists> f2 \<in> set (take i (steps pr)). f1 = f2))"
@@ -478,7 +496,7 @@ definition choose_rule_sub where
   "choose_rule_sub i pr =
      (SOME (r,s). derived_with i pr r s)"
 
-fun sim_right :: "frege_proof \<Rightarrow> formula \<Rightarrow> frege_proof" where
+fun sim_right :: "dproof \<Rightarrow> dformula \<Rightarrow> dproof" where
     "sim_right pr th =
      fold
        (\<lambda>i acc.
