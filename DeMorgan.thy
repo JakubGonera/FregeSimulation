@@ -159,9 +159,67 @@ proof -
   thus ?thesis using de_morgan_frege_def dm1 frege_system.impl_complete by simp
 qed
 
-lemma "\<exists> f. \<forall> rule sub.
-          proof_of F (f rule sub) (concl (sub_rule sub rule))"
-  sorry
+lemma first_step_exists: "\<exists> f. \<forall> sub. \<forall> rule \<in> rules F'.
+          proof_of F (f rule sub) (rule_to_taut (sub_rule sub rule))"
+proof -
+  have sub_rule_to_taut:
+    "sub_formula sub (rule_to_taut r) = rule_to_taut (sub_rule sub r)"
+    for sub r
+  proof (induction r rule: rule_to_taut.induct)
+    case (1 c)
+    then show ?case by simp
+  next
+    case (2 f fs c)
+    then show ?case by simp
+  qed
+
+  have step_exists:
+    "\<forall>sub. \<forall>rule \<in> rules F'. \<exists>pr. proof_of F pr (rule_to_taut (sub_rule sub rule))"
+  proof (intro allI ballI)
+    fix sub rule
+    assume r_in: "rule \<in> rules F'"
+    have ex_pr:
+      "\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = rule_to_taut rule"
+      using rule_exists_proof[OF r_in refl] .
+    let ?pr = "SOME pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = rule_to_taut rule"
+    have pr_props: "valid_proof F ?pr \<and> assumptions ?pr = {} \<and> thesis ?pr = rule_to_taut rule"
+      using ex_pr by (rule someI_ex)
+    have pr_valid: "valid_proof F ?pr" using pr_props by auto
+    have pr_assm: "assumptions ?pr = {}" using pr_props by auto
+    have pr_thesis: "thesis ?pr = rule_to_taut rule" using pr_props by auto
+    have "frege_system F"
+      using dm1 unfolding de_morgan_frege_def by simp
+    then have sub_valid: "valid_proof F (sub_proof sub ?pr)"
+      using pr_valid frege_system.proof_substitution by auto
+    have "proof_of F (sub_proof sub ?pr) (rule_to_taut (sub_rule sub rule))"
+      unfolding proof_of_def
+      using sub_valid pr_assm pr_thesis sub_rule_to_taut by simp
+    then show "\<exists>pr. proof_of F pr (rule_to_taut (sub_rule sub rule))" by auto
+  qed
+
+  have per_sub:
+    "\<forall>sub. \<exists>h. \<forall>rule \<in> rules F'. proof_of F (h rule) (rule_to_taut (sub_rule sub rule))"
+  proof
+    fix sub
+    have "\<forall>rule \<in> rules F'. \<exists>pr. proof_of F pr (rule_to_taut (sub_rule sub rule))"
+      using step_exists by auto
+    then show "\<exists>h. \<forall>rule \<in> rules F'. proof_of F (h rule) (rule_to_taut (sub_rule sub rule))"
+      by (rule bchoice)
+  qed
+  from choice[OF per_sub]
+  obtain f where
+    f_prop: "\<forall>sub. \<forall>rule \<in> rules F'. proof_of F ((f sub) rule) (rule_to_taut (sub_rule sub rule))"
+    by auto
+  let ?g = "\<lambda>rule sub. (f sub) rule"
+  have g_prop: "\<forall>sub. \<forall>rule \<in> rules F'. proof_of F (?g rule sub) (rule_to_taut (sub_rule sub rule))"
+    using f_prop by auto
+  show ?thesis
+  proof (rule exI[of _ ?g])
+    show "\<forall>sub. \<forall>rule \<in> rules F'. proof_of F (?g rule sub) (rule_to_taut (sub_rule sub rule))"
+      using g_prop .
+  qed
+qed
+
 
 definition first_step where
   "first_step = (SOME f. \<forall> rule sub.

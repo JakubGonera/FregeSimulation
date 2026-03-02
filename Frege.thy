@@ -40,6 +40,13 @@ fun sub_rule :: "(string \<Rightarrow> formula) \<Rightarrow> rule \<Rightarrow>
     concl = sub_formula sub (concl r)
   \<rparr>"
 
+fun sub_proof :: "(string \<Rightarrow> formula) \<Rightarrow> frege_proof \<Rightarrow> frege_proof" where
+  "sub_proof sub pr = \<lparr>
+    assumptions = (sub_formula sub)` (assumptions pr),
+    thesis = sub_formula sub (thesis pr),
+    steps = map (sub_formula sub) (steps pr)
+\<rparr>"
+
 definition derived :: "rule set \<Rightarrow> formula list \<Rightarrow> formula \<Rightarrow> bool" where
   "derived rs fs f \<longleftrightarrow> (\<exists> r \<in> rs. \<exists> sub. let sub_r = sub_rule sub r in 
                        (concl sub_r) = f \<and> 
@@ -78,6 +85,7 @@ proof -
     using r_in concl_eq prems_gs
     by auto
 qed
+
 
 definition valid_proof :: "frege \<Rightarrow> frege_proof \<Rightarrow> bool" where
   "valid_proof F pr \<longleftrightarrow> 
@@ -212,6 +220,94 @@ proof -
   qed
 
   show ?thesis using a b valid_proof_def by simp
+qed
+
+lemma proof_substitution:
+  fixes pr :: frege_proof 
+    and sub :: "string \<Rightarrow> formula"
+  assumes "valid_proof F pr"
+  shows "valid_proof F (sub_proof sub pr)"
+proof -
+  have sub_formula_comp:
+    "sub_formula s1 (sub_formula s2 f) =
+      sub_formula (\<lambda>a. sub_formula s1 (s2 a)) f"
+    for s1 s2 f
+    by (induction f) simp_all
+
+  have derived_substitution:
+    "derived (rules F) fs f \<Longrightarrow>
+      derived (rules F) (map (sub_formula sub) fs) (sub_formula sub f)"
+    for fs f
+  proof -
+    assume der: "derived (rules F) fs f"
+    then obtain r s where
+      r_in: "r \<in> rules F"
+      and concl_eq: "concl (sub_rule s r) = f"
+      and prems_fs:
+        "\<forall>p \<in> set (prems (sub_rule s r)). \<exists>q \<in> set fs. p = q"
+      unfolding derived_def by auto
+    let ?s' = "\<lambda>a. sub_formula sub (s a)"
+    have concl_sub: "concl (sub_rule ?s' r) = sub_formula sub f"
+    proof -
+      have "concl (sub_rule ?s' r) = sub_formula sub (concl (sub_rule s r))"
+        using sub_formula_comp by (cases r) simp
+      also have "... = sub_formula sub f"
+        using concl_eq by simp
+      finally show ?thesis .
+    qed
+    have prems_sub:
+      "\<forall>p \<in> set (prems (sub_rule ?s' r)). \<exists>q \<in> set (map (sub_formula sub) fs). p = q"
+    proof
+      fix p
+      assume "p \<in> set (prems (sub_rule ?s' r))"
+      then have p_in:
+        "p \<in> set (map (sub_formula sub) (prems (sub_rule s r)))"
+        using sub_formula_comp by (cases r) simp
+      then obtain p0 where
+        p0_in: "p0 \<in> set (prems (sub_rule s r))"
+        and p_eq: "p = sub_formula sub p0"
+        by auto
+      from prems_fs p0_in obtain q where "q \<in> set fs" and "p0 = q" by auto
+      thus "\<exists>q \<in> set (map (sub_formula sub) fs). p = q"
+        using p_eq by auto
+    qed
+    show ?thesis
+      unfolding derived_def
+      using r_in concl_sub prems_sub by auto
+  qed
+
+  have steps_ok:
+    "\<forall>i < length (steps (sub_proof sub pr)).
+      steps (sub_proof sub pr) ! i \<in> assumptions (sub_proof sub pr) \<or>
+      derived (rules F) (take i (steps (sub_proof sub pr))) (steps (sub_proof sub pr) ! i)"
+  proof (intro allI impI)
+    fix i
+    assume i_lt: "i < length (steps (sub_proof sub pr))"
+    then have i_lt_pr: "i < length (steps pr)" by simp
+    have step:
+      "steps pr ! i \<in> assumptions pr \<or>
+       derived (rules F) (take i (steps pr)) (steps pr ! i)"
+      using assms i_lt_pr unfolding valid_proof_def by simp
+    from step show "steps (sub_proof sub pr) ! i \<in> assumptions (sub_proof sub pr) \<or>
+      derived (rules F) (take i (steps (sub_proof sub pr))) (steps (sub_proof sub pr) ! i)"
+    proof
+      assume "steps pr ! i \<in> assumptions pr"
+      thus ?thesis using i_lt by simp
+    next
+      assume "derived (rules F) (take i (steps pr)) (steps pr ! i)"
+      then have
+        "derived (rules F)
+          (map (sub_formula sub) (take i (steps pr)))
+          (sub_formula sub (steps pr ! i))"
+        using derived_substitution by blast
+      thus ?thesis
+        using i_lt by (simp add: take_map)
+    qed
+  qed
+
+  show ?thesis
+    using assms steps_ok
+    unfolding valid_proof_def by (simp add: last_map)
 qed
 end
 
