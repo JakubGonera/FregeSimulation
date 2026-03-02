@@ -479,36 +479,27 @@ next
       by simp
   next
     case False
-    have peel_nonbase:
-      "(if c = Or then
-         (case fs of
-            [Conn d [a], b] \<Rightarrow>
-              (if d = Not then
-                 (case peel b y of
-                    Some q \<Rightarrow> Some (combine_proofs \<lparr>assumptions = {Conn c fs, a}, thesis = b, steps = [Conn c fs, a, b]\<rparr> q)
-                  | None \<Rightarrow> None)
-               else None)
-          | _ \<Rightarrow> None)
-       else None) = Some p"
-      using Conn.prems False by simp
-
     obtain d a b q where
       c_def: "c = Or"
       and fs_def: "fs = [Conn d [a], b]"
       and d_def: "d = Not"
       and rec: "peel b y = Some q"
       and p_def: "p = combine_proofs \<lparr>assumptions = {Conn c fs, a}, thesis = b, steps = [Conn c fs, a, b]\<rparr> q"
-      using peel_nonbase
+      using Conn.prems False
       by (cases fs) (auto split: option.splits if_splits formula.splits list.splits)
 
-    have b_in_fs: "b \<in> set fs"
-      using fs_def by simp
-    have th_q: "thesis q = y"
-      using Conn.IH[OF b_in_fs, of y q] rec by simp
-
     show ?thesis
-      using p_def th_q by simp
+      using p_def Conn.IH[OF _ rec] fs_def by simp
   qed
+qed
+
+lemma rule_to_taut_notin_prems:
+  shows "rule_to_taut r \<notin> set (prems r)"
+proof
+  assume "rule_to_taut r \<in> set (prems r)"
+  then have "len_formula (rule_to_taut r) < len_formula (rule_to_taut r)"
+    using premise_shorter_than_rule_to_taut[of "rule_to_taut r" r] by simp
+  then show False by simp
 qed
 
 lemma peel_rule_to_taut_assumptions:
@@ -557,12 +548,7 @@ proof -
     have q_assm: "assumptions q = {rule_to_taut ?tail} \<union> set fs"
       using Cons.IH[OF q_def] by simp
     have tail_notin_fs: "rule_to_taut ?tail \<notin> set fs"
-    proof
-      assume "rule_to_taut ?tail \<in> set fs"
-      then have "len_formula (rule_to_taut ?tail) < len_formula (rule_to_taut ?tail)"
-        using premise_shorter_than_rule_to_taut[of "rule_to_taut ?tail" ?tail] by simp
-      then show False by simp
-    qed
+      using rule_to_taut_notin_prems[of ?tail] by simp
     show ?case
       using p_def q_assm tail_notin_fs by auto
   qed
@@ -579,18 +565,10 @@ lemma second_step_proves:
 proof -
   obtain p where peel_res: "peel (rule_to_taut rule) (concl rule) = Some p"
     using r_t_t_peelable by blast
-  have step_eq: "second_step rule = p"
-    using peel_res by simp
   have pr_eq: "pr = p"
-    using assms step_eq by simp
-  have vp: "valid_proof F p"
-    using peel_valid peel_res by simp
-  have assm_p: "assumptions p = {rule_to_taut rule} \<union> set (prems rule)"
-    using peel_rule_to_taut_assumptions peel_res by simp
-  have th_p: "thesis p = concl rule"
-    using peel_thesis peel_res by simp
+    using assms peel_res by simp
   show ?thesis
-    using pr_eq vp assm_p th_p by simp
+    using pr_eq peel_res peel_valid peel_rule_to_taut_assumptions peel_thesis by auto
 qed
 
 (* Predicate for a step being derived with a rule, a substitution, and as i-th step of a proof. *)
