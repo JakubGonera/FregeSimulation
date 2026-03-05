@@ -48,6 +48,22 @@ fun sub_proof :: "('v \<Rightarrow> ('v, 'c) formula) \<Rightarrow> ('v, 'c) fre
     steps = map (sub_formula sub) (steps pr)
 \<rparr>"
 
+fun var_set_form :: "('v, 'c) formula \<Rightarrow> 'v set" where
+  "var_set_form (Atom a) = {a}" |
+  "var_set_form (Conn c fs) = \<Union> (var_set_form ` (set fs))"
+
+fun var_set_rule :: "('v, 'c) rule \<Rightarrow> 'v set" where
+  "var_set_rule rule = \<Union> (var_set_form ` (set (prems rule))) \<union> var_set_form (concl rule)"
+
+fun var_set_proof :: "('v, 'c) frege_proof \<Rightarrow> 'v set" where
+  "var_set_proof pr = \<Union> (var_set_form ` (assumptions pr)) \<union> 
+                      \<Union> (var_set_form ` (set (steps pr))) \<union> 
+                         var_set_form (thesis pr)"
+
+definition rule_restricted_sub :: "('v, 'c) rule \<Rightarrow> ('v \<Rightarrow> ('v, 'c) formula) \<Rightarrow> bool" where
+  "rule_restricted_sub rule sub \<longleftrightarrow> (\<forall> v. v \<notin> var_set_rule rule \<longrightarrow> sub v = Atom v)"
+
+
 definition derived :: "(('v, 'c) rule) set \<Rightarrow> (('v, 'c) formula) list \<Rightarrow> ('v, 'c) formula \<Rightarrow> bool" where
   "derived rs fs f \<longleftrightarrow> (\<exists> r \<in> rs. \<exists> sub. let sub_r = sub_rule sub r in 
                        (concl sub_r) = f \<and> 
@@ -110,9 +126,189 @@ fun len_formula :: "('v, 'c) formula \<Rightarrow> nat" where
 fun len_proof :: "('v, 'c) frege_proof \<Rightarrow> nat" where
   "len_proof pr = sum_list (map len_formula (steps pr))"
 
-definition len_sub :: "('v \<Rightarrow> ('v, 'c) formula) \<Rightarrow> nat" where
-  "len_sub sub =
-     (\<Sum> s \<in> {s. len_formula (sub s) \<noteq> 0}. len_formula (sub s))"
+definition len_sub :: "'v set \<Rightarrow> ('v \<Rightarrow> ('v, 'c) formula) \<Rightarrow> nat" where
+  "len_sub var_set sub =
+     max 1 (\<Sum> v \<in> {v. v \<in> var_set}. len_formula (sub v))"
+
+lemma sub_formula_bound:
+  fixes f :: "('v, 'c) formula"
+  and sub :: "('v \<Rightarrow> ('v, 'c) formula)"
+  and var_set :: "'v set"
+  assumes "finite var_set" and "\<forall> v. v \<notin> var_set \<longrightarrow> sub v = Atom v"
+  shows "len_formula (sub_formula sub f) \<le> (len_formula f) * (len_sub var_set sub)"
+  using assms
+proof (induction f arbitrary: sub var_set)
+  case (Atom a)
+  have "len_formula (Atom a) = 1" by simp
+  thus ?case
+  proof (cases "a \<in> var_set")
+    case False
+    hence "sub_formula sub (Atom a) = Atom a" 
+      using assms by (simp add: Atom.prems(2))
+    thus ?thesis
+      by (simp add: len_sub_def) 
+  next
+    case True
+    have len_eq: "len_formula (sub_formula sub (Atom a)) = len_formula (sub a)" by simp
+    have "len_formula (sub a) \<le> len_sub var_set sub" using True len_sub_def[of var_set sub]
+      by (metis Atom.prems(1) Collect_mem_eq le_max_iff_disj sum_nonneg_leq_bound zero_le)
+    thus ?thesis using len_eq by simp
+  qed
+next
+  case (Conn c fs)
+  have sub_len_ge1: "1 \<le> len_sub var_set sub"
+    unfolding len_sub_def by simp
+  have ih_sum:
+    "sum_list (map (len_formula \<circ> sub_formula sub) fs)
+     \<le> sum_list (map (\<lambda>x. len_formula x * len_sub var_set sub) fs)"
+  proof -
+    have all_bound:
+      "\<forall>x \<in> set fs. len_formula (sub_formula sub x) \<le> len_formula x * len_sub var_set sub"
+      using Conn.IH Conn.prems by blast
+    from all_bound show ?thesis
+    proof (induction fs)
+      case Nil
+      then show ?case by simp
+    next
+      case (Cons f fs')
+      have f_bound: "len_formula (sub_formula sub f) \<le> len_formula f * len_sub var_set sub"
+        using Cons.prems by simp
+      have tail_all:
+        "\<forall>x \<in> set fs'. len_formula (sub_formula sub x) \<le> len_formula x * len_sub var_set sub"
+        using Cons.prems by simp
+      have tail_bound:
+        "sum_list (map (len_formula \<circ> sub_formula sub) fs')
+         \<le> sum_list (map (\<lambda>x. len_formula x * len_sub var_set sub) fs')"
+        using Cons.IH[OF tail_all] .
+      have tail_bound':
+        "(\<Sum>a\<leftarrow>fs'. len_formula (sub_formula sub a))
+         \<le> (\<Sum>x\<leftarrow>fs'. len_formula x * len_sub var_set sub)"
+      proof -
+        have lhs_eq:
+          "(\<Sum>a\<leftarrow>fs'. len_formula (sub_formula sub a)) =
+           sum_list (map (len_formula \<circ> sub_formula sub) fs')"
+          by (induction fs') simp_all
+        have rhs_eq:
+          "(\<Sum>x\<leftarrow>fs'. len_formula x * len_sub var_set sub) =
+           sum_list (map (\<lambda>x. len_formula x * len_sub var_set sub) fs')"
+          by (induction fs') simp_all
+        show ?thesis
+          using tail_bound lhs_eq rhs_eq by simp
+      qed
+      have comb_bound:
+        "len_formula (sub_formula sub f) + (\<Sum>a\<leftarrow>fs'. len_formula (sub_formula sub a))
+         \<le> len_formula f * len_sub var_set sub +
+            (\<Sum>x\<leftarrow>fs'. len_formula x * len_sub var_set sub)"
+        using add_mono[OF f_bound tail_bound'] by simp
+      show ?case
+        using comb_bound by simp
+    qed
+  qed
+  have left:
+    "len_formula (sub_formula sub (Conn c fs))
+     = 1 + sum_list (map (len_formula \<circ> sub_formula sub) fs)"
+    by simp
+  have right:
+    "(len_formula (Conn c fs)) * len_sub var_set sub
+     = (1 + sum_list (map len_formula fs)) * len_sub var_set sub"
+    by simp
+  have one_le:
+    "1 + sum_list (map (len_formula \<circ> sub_formula sub) fs)
+     \<le> len_sub var_set sub + sum_list (map (\<lambda>x. len_formula x * len_sub var_set sub) fs)"
+  proof -
+    have "1 + sum_list (map (len_formula \<circ> sub_formula sub) fs)
+          \<le> 1 + sum_list (map (\<lambda>x. len_formula x * len_sub var_set sub) fs)"
+      using ih_sum by simp
+    also have "\<dots> \<le> len_sub var_set sub + sum_list (map (\<lambda>x. len_formula x * len_sub var_set sub) fs)"
+      using sub_len_ge1 by simp
+    finally show ?thesis .
+  qed
+  have "\<dots> = (1 + sum_list (map len_formula fs)) * len_sub var_set sub"
+  proof -
+    have mul_sum:
+      "sum_list (map (\<lambda>x. len_formula x * len_sub var_set sub) fs) =
+       len_sub var_set sub * sum_list (map len_formula fs)"
+    proof (induction fs)
+      case Nil
+      then show ?case by simp
+    next
+      case (Cons a as)
+      then show ?case
+        by (simp add: algebra_simps)
+    qed
+    show ?thesis
+      using mul_sum by (simp add: algebra_simps)
+  qed
+  with left right one_le show ?case
+    using sub_len_ge1 by simp
+qed
+
+lemma sub_proof_bound:
+  fixes pr :: "('v, 'c) frege_proof"
+  and sub :: "('v \<Rightarrow> ('v, 'c) formula)"
+  and var_set :: "'v set"
+  assumes "finite var_set" and "\<forall> v. v \<notin> var_set \<longrightarrow> sub v = Atom v"
+  shows "len_proof (sub_proof sub pr) \<le> (len_proof pr) * (len_sub var_set sub)"
+proof -
+  let ?L = "len_sub var_set sub"
+  let ?steps = "steps pr"
+
+  have step_bound:
+    "\<forall>f \<in> set ?steps. len_formula (sub_formula sub f) \<le> len_formula f * ?L"
+    using assms sub_formula_bound by blast
+
+  have sum_bound_gen:
+    "sum_list (map (\<lambda>f. len_formula (sub_formula sub f)) xs)
+     \<le> sum_list (map (\<lambda>f. len_formula f * ?L) xs)"
+    for xs
+  proof (induction xs)
+    case Nil
+    then show ?case by simp
+  next
+    case (Cons f fs)
+    have f_bound: "len_formula (sub_formula sub f) \<le> len_formula f * ?L"
+      using assms sub_formula_bound[where f = f and sub = sub and var_set = var_set] by simp
+    have fs_bound:
+      "sum_list (map (\<lambda>f. len_formula (sub_formula sub f)) fs)
+       \<le> sum_list (map (\<lambda>f. len_formula f * ?L) fs)"
+      using Cons.IH by simp
+    have comb:
+      "len_formula (sub_formula sub f) + sum_list (map (\<lambda>f. len_formula (sub_formula sub f)) fs)
+       \<le> len_formula f * ?L + sum_list (map (\<lambda>f. len_formula f * ?L) fs)"
+      using add_mono[OF f_bound fs_bound] by simp
+    show ?case
+      using comb by simp
+  qed
+  have sum_bound:
+    "sum_list (map (\<lambda>f. len_formula (sub_formula sub f)) (steps pr))
+     \<le> sum_list (map (\<lambda>f. len_formula f * ?L) (steps pr))"
+    using sum_bound_gen[of "steps pr"] .
+
+  have scaled_sum_gen:
+    "sum_list (map (\<lambda>f. len_formula f * ?L) xs) = sum_list (map len_formula xs) * ?L"
+    for xs
+  proof (induction xs)
+    case Nil
+    then show ?case by simp
+  next
+    case (Cons f fs)
+    then show ?case
+      by (simp add: algebra_simps)
+  qed
+  have scaled_sum:
+    "sum_list (map (\<lambda>f. len_formula f * ?L) ?steps) = sum_list (map len_formula ?steps) * ?L"
+    using scaled_sum_gen[of ?steps] .
+
+  have lhs:
+    "len_proof (sub_proof sub pr) = sum_list (map (\<lambda>f. len_formula (sub_formula sub f)) ?steps)"
+    by (simp add: comp_def)
+  have rhs:
+    "len_proof pr * ?L = sum_list (map len_formula ?steps) * ?L"
+    by simp
+
+  show ?thesis
+    using lhs rhs sum_bound scaled_sum by simp
+qed
 
 locale frege_system =
   fixes F :: "('v, 'c) frege"
@@ -349,7 +545,7 @@ qed
 end
 
 definition simulates :: "('v, 'c) frege \<Rightarrow> ('v, 'c) frege \<Rightarrow> bool" where
- "simulates F1 F2 \<longleftrightarrow> (\<exists> f g p q. \<forall> w \<tau>. (thesis w = g \<tau> \<and> valid_proof F1 w) \<longrightarrow> 
+ "simulates F1 F2 \<longleftrightarrow> (\<exists> f g p q. \<forall> w \<tau>. (thesis w = g \<tau> \<and> valid_proof F1 w \<and> assumptions w = {}) \<longrightarrow> 
     valid_proof F2 (f w \<tau>) \<and> thesis (f w \<tau>) = \<tau> \<and> 
     len_formula (g \<tau>) \<le> poly p (len_formula \<tau>) \<and>
     len_proof w \<le> poly q (len_proof (f w \<tau>)))"
