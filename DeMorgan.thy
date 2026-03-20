@@ -191,76 +191,9 @@ definition rule_proof_fun where
   "rule_proof_fun = (SOME f. \<forall> rule \<in> rules F'.
           proof_of F (f rule) (rule_to_taut rule))"
 
-(*
-lemma first_step_exists: "\<exists> f. \<forall> sub. \<forall> rule \<in> rules F'.
-          proof_of F (f rule sub) (rule_to_taut (sub_rule sub rule))"
-proof -
-  have sub_rule_to_taut:
-    "sub_formula sub (rule_to_taut r) = rule_to_taut (sub_rule sub r)"
-    for sub r
-  proof (induction r rule: rule_to_taut.induct)
-    case (1 c)
-    then show ?case by simp
-  next
-    case (2 f fs c)
-    then show ?case by simp
-  qed
-
-  have step_exists:
-    "\<forall>sub. \<forall>rule \<in> rules F'. \<exists>pr. proof_of F pr (rule_to_taut (sub_rule sub rule))"
-  proof (intro allI ballI)
-    fix sub rule
-    assume r_in: "rule \<in> rules F'"
-    have ex_pr:
-      "\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = rule_to_taut rule"
-      using rule_exists_proof[OF r_in refl] .
-    let ?pr = "SOME pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = rule_to_taut rule"
-    have pr_props: "valid_proof F ?pr \<and> assumptions ?pr = {} \<and> thesis ?pr = rule_to_taut rule"
-      using ex_pr by (rule someI_ex)
-    have pr_valid: "valid_proof F ?pr" using pr_props by auto
-    have pr_assm: "assumptions ?pr = {}" using pr_props by auto
-    have pr_thesis: "thesis ?pr = rule_to_taut rule" using pr_props by auto
-    have "frege_system F"
-      using dm1 unfolding de_morgan_frege_def by simp
-    then have sub_valid: "valid_proof F (sub_proof sub ?pr)"
-      using pr_valid frege_system.proof_substitution by auto
-    have "proof_of F (sub_proof sub ?pr) (rule_to_taut (sub_rule sub rule))"
-      unfolding proof_of_def
-      using sub_valid pr_assm pr_thesis sub_rule_to_taut by simp
-    then show "\<exists>pr. proof_of F pr (rule_to_taut (sub_rule sub rule))" by auto
-  qed
-
-  have per_sub:
-    "\<forall>sub. \<exists>h. \<forall>rule \<in> rules F'. proof_of F (h rule) (rule_to_taut (sub_rule sub rule))"
-  proof
-    fix sub
-    have "\<forall>rule \<in> rules F'. \<exists>pr. proof_of F pr (rule_to_taut (sub_rule sub rule))"
-      using step_exists by auto
-    then show "\<exists>h. \<forall>rule \<in> rules F'. proof_of F (h rule) (rule_to_taut (sub_rule sub rule))"
-      by (rule bchoice)
-  qed
-  from choice[OF per_sub]
-  obtain f where
-    f_prop: "\<forall>sub. \<forall>rule \<in> rules F'. proof_of F ((f sub) rule) (rule_to_taut (sub_rule sub rule))"
-    by auto
-  let ?g = "\<lambda>rule sub. (f sub) rule"
-  have g_prop: "\<forall>sub. \<forall>rule \<in> rules F'. proof_of F (?g rule sub) (rule_to_taut (sub_rule sub rule))"
-    using f_prop by auto
-  show ?thesis
-  proof (rule exI[of _ ?g])
-    show "\<forall>sub. \<forall>rule \<in> rules F'. proof_of F (?g rule sub) (rule_to_taut (sub_rule sub rule))"
-      using g_prop .
-  qed
-qed
-*)
 
 fun first_step :: "drule \<Rightarrow> (string \<Rightarrow> dformula) \<Rightarrow> dproof" where
   "first_step rule sub = sub_proof sub (rule_proof_fun rule)"
-
-(*
-definition first_step where
-  "first_step = (SOME f. \<forall> sub. \<forall> rule \<in> rules F'.
-          proof_of F (f rule sub) (rule_to_taut (sub_rule sub rule)))"*)
 
 lemma first_step_proves:
   assumes "r \<in> rules F'"
@@ -305,14 +238,64 @@ proof -
 qed
 
 
-lemma first_step_bound: 
+lemma first_step_is_bound: 
   shows "\<exists> g :: (drule \<Rightarrow> int poly). \<forall> rule \<in> rules F'. \<forall>  sub. 
             rule_restricted_sub rule sub \<longrightarrow> 
             len_proof (first_step rule sub) \<le> poly (g rule) (len_sub (var_set_rule rule) sub)"
-  sorry
+proof -
+  have finite_var_set_form: "finite (var_set_form f)" for f :: dformula
+    by (induction f) auto
+  have finite_var_set_rule: "finite (var_set_rule r)" for r :: drule
+    by (cases r) (auto intro: finite_var_set_form)
 
-definition rule_proof_cost where
-  "rule_proof_cost rule = (SOME g. \<forall> rule \<in> rules F'. \<forall>  sub. 
+  let ?g = "\<lambda>rule. [:0, int (len_proof (rule_proof_fun rule)):]"
+
+  have bound_per_rule:
+    "\<forall>rule \<in> rules F'. \<forall>sub.
+      rule_restricted_sub rule sub \<longrightarrow>
+      len_proof (first_step rule sub) \<le> poly (?g rule) (len_sub (var_set_rule rule) sub)"
+  proof (intro ballI allI impI)
+    fix rule sub
+    assume "rule \<in> rules F'"
+    assume rsub: "rule_restricted_sub rule sub"
+    have restricted_sub: "\<forall>v. v \<notin> var_set_rule rule \<longrightarrow> sub v = Atom v"
+      using rsub unfolding rule_restricted_sub_def by simp
+
+    have nat_bound:
+      "len_proof (first_step rule sub)
+       \<le> len_proof (rule_proof_fun rule) * len_sub (var_set_rule rule) sub"
+      unfolding first_step.simps
+      using sub_proof_bound[of "var_set_rule rule" sub "rule_proof_fun rule"]
+      using finite_var_set_rule restricted_sub by simp
+
+    have poly_eval:
+      "poly (?g rule) (len_sub (var_set_rule rule) sub) =
+       int (len_proof (rule_proof_fun rule)) * int (len_sub (var_set_rule rule) sub)"
+      by simp
+
+    have int_bound:
+      "int (len_proof (first_step rule sub))
+       \<le> int (len_proof (rule_proof_fun rule) * len_sub (var_set_rule rule) sub)"
+      using nat_bound by (rule of_nat_mono)
+    have mult_cast:
+      "int (len_proof (rule_proof_fun rule) * len_sub (var_set_rule rule) sub) =
+       int (len_proof (rule_proof_fun rule)) * int (len_sub (var_set_rule rule) sub)"
+      by simp
+    have int_bound':
+      "int (len_proof (first_step rule sub))
+       \<le> int (len_proof (rule_proof_fun rule)) * int (len_sub (var_set_rule rule) sub)"
+      using int_bound mult_cast by simp
+
+    show "len_proof (first_step rule sub) \<le> poly (?g rule) (len_sub (var_set_rule rule) sub)"
+      using int_bound' poly_eval by (simp add: algebra_simps)
+  qed
+
+  show ?thesis
+    by (rule exI[of _ ?g]) (use bound_per_rule in simp)
+qed
+
+definition first_step_bound where
+  "first_step_bound rule = (SOME g. \<forall> rule \<in> rules F'. \<forall>  sub. 
             rule_restricted_sub rule sub \<longrightarrow> 
             len_proof (first_step rule sub) \<le> poly (g rule) (len_sub (var_set_rule rule) sub))"
 
@@ -635,15 +618,74 @@ proof -
     using pr_eq peel_res peel_valid peel_rule_to_taut_assumptions peel_thesis by auto
 qed
 
+lemma peel_bound:
+  assumes "peel x y = Some p"
+  shows "len_proof p \<le> (len_formula x)^2"
+  using assms
+proof (induction x arbitrary: y p)
+  case (Atom x)
+  assume "peel (Atom x) y = Some p"
+  hence "y = Atom x" using peel.elims by fastforce
+  hence "peel (Atom x) y = Some \<lparr>assumptions = {Atom x}, thesis = Atom x, steps = [Atom x]\<rparr>" by simp
+  hence "len_proof p = sum_list (map len_formula [Atom x])" using Atom by auto
+  thus ?case by simp
+next
+  case (Conn c fs)
+  show ?case
+  proof (cases "Conn c fs = y")
+    case True
+    hence "peel (Conn c fs) y = Some \<lparr>assumptions = {Conn c fs}, thesis = Conn c fs, steps = [Conn c fs]\<rparr>" 
+      by simp
+    hence "len_proof p = sum_list (map len_formula [Conn c fs])" using Conn.prems by auto
+    hence "len_proof p = len_formula (Conn c fs)" by simp
+    thus ?thesis
+      by (simp add: power2_nat_le_imp_le) 
+  next
+    case False
+    hence "\<exists> a b. Conn c fs = Conn Or [Conn Not [a], b]"
+      using Conn.prems
+      by (cases fs) (auto split: option.splits if_splits formula.splits list.splits)
+    obtain a b q where
+      c_def: "c = Or"
+      and fs_def: "fs = [Conn Not [a], b]"
+      and rec: "peel b y = Some q"
+      and p_def: "p = combine_proofs \<lparr>assumptions = {Conn c fs, a}, thesis = b, steps = [Conn c fs, a, b]\<rparr> q"
+      using Conn.prems False
+      by (cases fs) (auto split: option.splits if_splits formula.splits list.splits)
+    have b_in: "b \<in> set fs"
+      using fs_def by simp
+    have IHb: "len_proof q \<le> (len_formula b)^2"
+      using Conn.IH[OF b_in rec] by simp
+    have p_len: "len_proof p = len_formula (Conn c fs) + len_formula a + len_formula b + len_proof q"
+      using p_def by simp
+    have len_x: "len_formula (Conn c fs) = len_formula a + len_formula b + 2"
+      using c_def fs_def by simp
+    have bound1: "len_proof p \<le> len_formula (Conn c fs) + len_formula a + len_formula b + (len_formula b)^2"
+      using p_len IHb by simp
+    have bound2:
+      "len_formula (Conn c fs) + len_formula a + len_formula b + (len_formula b)^2
+       \<le> (len_formula b)^2 + 4 * len_formula a + 4 * len_formula b + 4"
+      using len_x by linarith
+    have bound3:
+      "(len_formula b)^2 + 4 * len_formula a + 4 * len_formula b + 4
+       \<le> (len_formula (Conn c fs))^2"
+      using len_x by (simp add: power2_eq_square algebra_simps)
+    have "len_proof p \<le> (len_formula (Conn c fs))^2"
+      using bound1 bound2 bound3 by (meson order_trans)
+    thus ?thesis by simp
+  qed
+qed
+
+
 (* Predicate for a step being derived with a rule, a substitution, and as i-th step of a proof. *)
 definition derived_with :: "nat \<Rightarrow> dproof \<Rightarrow> drule \<Rightarrow> (string \<Rightarrow> dformula) \<Rightarrow> bool" where
   "derived_with i pr r s \<longleftrightarrow> (let sub_r = sub_rule s r in 
-                       (concl sub_r) = steps pr ! i \<and> 
+                       i < length (steps pr) \<and> (concl sub_r) = steps pr ! i \<and>
                        (\<forall> f1 \<in> set (prems sub_r). \<exists> f2 \<in> set (take i (steps pr)). f1 = f2))"
 
 definition choose_rule_sub where
   "choose_rule_sub i pr =
-     (SOME (r,s). r \<in> rules F' \<and> derived_with i pr r s)"
+     (SOME (r,s). r \<in> rules F' \<and> derived_with i pr r s \<and> rule_restricted_sub r s)"
 
 definition sim_right_step :: "dproof \<Rightarrow> nat \<Rightarrow> dproof \<Rightarrow> dproof" where
   "sim_right_step pr i acc =
@@ -738,21 +780,53 @@ proof -
   let ?acc = "\<lambda>k. fold (sim_right_step pr') [0..<k] ?init"
   let ?n = "length (steps pr')"
 
+  have sub_formula_agree:
+    "sub_formula s1 f = sub_formula s2 f"
+    if "\<forall>v \<in> var_set_form f. s1 v = s2 v"
+    for s1 s2 :: "string \<Rightarrow> dformula" and f
+    using that
+  proof (induction f)
+    case (Atom x)
+    then show ?case by simp
+  next
+    case (Conn c fs)
+    then show ?case by simp
+  qed
+
+  have sub_rule_agree:
+    "sub_rule s1 r = sub_rule s2 r"
+    if "\<forall>v \<in> var_set_rule r. s1 v = s2 v"
+    for s1 s2 :: "string \<Rightarrow> dformula" and r
+    using that
+    by (cases r) (auto intro: sub_formula_agree)
+
   have choose_rule_sub_props:
     "\<exists>r s. r \<in> rules F' \<and> derived_with i p r s
      \<Longrightarrow> fst (choose_rule_sub i p) \<in> rules F' \<and>
-         derived_with i p (fst (choose_rule_sub i p)) (snd (choose_rule_sub i p))"
+         derived_with i p (fst (choose_rule_sub i p)) (snd (choose_rule_sub i p)) \<and>
+         rule_restricted_sub (fst (choose_rule_sub i p)) (snd (choose_rule_sub i p))"
     for i p
   proof -
     assume ex: "\<exists>r s. r \<in> rules F' \<and> derived_with i p r s"
+    then obtain r s where r_in: "r \<in> rules F'" and dwith: "derived_with i p r s"
+      by blast
+    define s' where "s' = (\<lambda>v. if v \<in> var_set_rule r then s v else Atom v)"
+    have rs_eq: "sub_rule s' r = sub_rule s r"
+      unfolding s'_def
+      by (rule sub_rule_agree) auto
+    have dwith': "derived_with i p r s'"
+      using dwith unfolding derived_with_def rs_eq by simp
+    have rsub': "rule_restricted_sub r s'"
+      unfolding rule_restricted_sub_def s'_def by simp
     let ?P = "\<lambda>rs :: drule \<times> (string \<Rightarrow> dformula).
-      case rs of (r, s) \<Rightarrow> r \<in> rules F' \<and> derived_with i p r s"
+      case rs of (r, s) \<Rightarrow> r \<in> rules F' \<and> derived_with i p r s \<and> rule_restricted_sub r s"
     have ex_pair: "\<exists>rs. ?P rs"
-      using ex by force
+      using r_in dwith' rsub' by force
     have "?P (SOME rs. ?P rs)"
       by (rule someI_ex[OF ex_pair])
     then show "fst (choose_rule_sub i p) \<in> rules F' \<and>
-               derived_with i p (fst (choose_rule_sub i p)) (snd (choose_rule_sub i p))"
+               derived_with i p (fst (choose_rule_sub i p)) (snd (choose_rule_sub i p)) \<and>
+               rule_restricted_sub (fst (choose_rule_sub i p)) (snd (choose_rule_sub i p))"
       unfolding choose_rule_sub_def
       by (cases "SOME rs. ?P rs") auto
   qed
@@ -793,10 +867,11 @@ proof -
         unfolding valid_proof_def by blast
 
       have ex_rs: "\<exists>r s. r \<in> rules F' \<and> derived_with k pr' r s"
-        using der_k unfolding derived_def derived_with_def by auto
+        using der_k unfolding derived_def derived_with_def by (meson k_lt)
       have choose_props:
         "fst (choose_rule_sub k pr') \<in> rules F' \<and>
-         derived_with k pr' (fst (choose_rule_sub k pr')) (snd (choose_rule_sub k pr'))"
+         derived_with k pr' (fst (choose_rule_sub k pr')) (snd (choose_rule_sub k pr')) \<and>
+         rule_restricted_sub (fst (choose_rule_sub k pr')) (snd (choose_rule_sub k pr'))"
         using choose_rule_sub_props[OF ex_rs] .
       let ?r = "fst (choose_rule_sub k pr')"
       let ?s = "snd (choose_rule_sub k pr')"
@@ -968,6 +1043,115 @@ proof -
   show ?thesis
     using pr_eq final_valid final_th final_assm by auto
 qed
+
+lemma step_le_proof:
+  shows "\<forall> pr. \<forall> f \<in> set (steps pr). len_formula f \<le> len_proof pr"
+proof -
+  have member_le_sum:
+    "len_formula f \<le> sum_list (map len_formula fs)"
+    if "f \<in> set fs"
+    for f :: "('v, 'c) formula" and fs :: "('v, 'c) formula list"
+    using that
+  proof (induction fs)
+    case Nil
+    then show ?case by simp
+  next
+    case (Cons g gs)
+    show ?case
+    proof (cases "f = g")
+      case True
+      then show ?thesis by simp
+    next
+      case False
+      then have "f \<in> set gs"
+        using Cons.prems by simp
+      then have "len_formula f \<le> sum_list (map len_formula gs)"
+        using Cons.IH by simp
+      then show ?thesis by simp
+    qed
+  qed
+  have step_bound:
+    "len_formula f \<le> len_proof pr"
+    if "f \<in> set (steps pr)"
+    for pr :: "('v, 'c) frege_proof" and f :: "('v, 'c) formula"
+    using member_le_sum[of f "steps pr"] that by simp
+  show ?thesis
+  proof (rule allI)
+    fix pr :: "('v, 'c) frege_proof"
+    show "\<forall>f \<in> set (steps pr). len_formula f \<le> len_proof pr"
+    proof (rule ballI)
+      fix f :: "('v, 'c) formula"
+      assume "f \<in> set (steps pr)"
+      then show "len_formula f \<le> len_proof pr"
+        using step_bound by blast
+    qed
+  qed
+qed
+
+lemma r_t_t_bound:
+  shows "len_formula (rule_to_taut r) \<le> 
+         len_formula (concl r) + 3 * sum_list (map len_formula (prems r))"
+proof (induction "prems r" arbitrary: r)
+  case Nil
+  hence "r = \<lparr>prems = [], concl = concl r\<rparr>" by simp
+  hence "rule_to_taut r = concl r" using rule_to_taut.simps by metis
+  thus ?case by auto
+next
+  case (Cons x xs)
+  let ?sub_r = "\<lparr>prems = xs, concl = concl r\<rparr>"
+  have "r = \<lparr>prems = x # xs, concl = concl r\<rparr>" using Cons by simp
+  hence "rule_to_taut r = Conn Or [Conn Not [x], rule_to_taut ?sub_r]" 
+    using rule_to_taut.simps(2)[of x xs] by metis
+  hence "len_formula (rule_to_taut r) = 1 + 
+                                        len_formula (Conn Not [x]) + 
+                                        len_formula (rule_to_taut ?sub_r)"
+    by simp
+  also have "... \<le> 2 + len_formula x + len_formula (rule_to_taut ?sub_r)"
+    by simp
+  also have "... \<le> 2 + len_formula x + len_formula (concl r) + 3 * sum_list (map len_formula xs)"
+    using Cons.hyps(1)[of ?sub_r] by simp
+  also have "... \<le> 3 * len_formula x + len_formula (concl r) + 3 * sum_list (map len_formula xs)"
+    using len_formula_positive by auto
+  finally have "len_formula (rule_to_taut r) \<le> 
+                len_formula (concl r) + 3 * sum_list (map len_formula (x # xs))"
+    by simp
+  thus ?case using Cons.hyps(2) by simp
+qed
+
+lemma subs_rule_bound_by_proof:
+  assumes "r \<in> rules F' \<and> derived_with i pr r s \<and> rule_restricted_sub r s"
+  shows "len_formula (rule_to_taut (sub_rule s r)) \<le> 3 * len_proof pr"
+  sorry
+  
+
+
+lemma sim_right_step_bound:
+  shows "\<exists> bound. \<forall> pr i acc. i \<ge> 0 \<and> i < length (steps pr) \<and> valid_proof F' pr \<longrightarrow>
+            len_proof (sim_right_step pr i acc) \<le> poly bound (len_proof pr) + len_proof acc"
+  sorry
+(*
+We create such a polynomial by considering the max of:
+- an identity (this solves the case when the steps adds an assumption
+- a bound for the first step. such a bound exists as there are only a finite number of rules, thus
+  a term-wise max of those polynomial bounds is itself a polynomial that bounds all possibilities.
+- a bound for the second step derived from the quadratic bound for peel
+The max we consider is maximum of coefficients for each power. We might need a lemma that such
+piece-wise max yields a bound for natural inputs. Maybe we don't need this max but some other way
+to combine polynomial for a bound, we should use whatever is the tidies.
+
+1. Define the final polynomial
+2. Cases: assumption?
+  a. len_proof (sim_right_step pr i acc) = len_formula (steps ! i) + len_proof acc
+     \<le> len_proof pr + len_proof acc
+  b. show that the proof is first_step + second_step + acc.
+
+*)
+
+
+lemma sim_right_bound:
+  assumes "valid_proof F' pr \<and> assumptions pr = {}"
+  shows "\<exists> bound. len_proof (sim_right pr (thesis pr)) \<le> poly bound (len_proof pr)"
+  sorry
 
 lemma simulation_de_morgan_right:
   assumes modus: "rules F = {modus_ponens}"

@@ -66,7 +66,7 @@ definition rule_restricted_sub :: "('v, 'c) rule \<Rightarrow> ('v \<Rightarrow>
 
 definition derived :: "(('v, 'c) rule) set \<Rightarrow> (('v, 'c) formula) list \<Rightarrow> ('v, 'c) formula \<Rightarrow> bool" where
   "derived rs fs f \<longleftrightarrow> (\<exists> r \<in> rs. \<exists> sub. let sub_r = sub_rule sub r in 
-                       (concl sub_r) = f \<and> 
+                       (concl sub_r) = f \<and>
                        (\<forall> f1 \<in> set (prems sub_r). \<exists> f2 \<in> set fs. f1 = f2))"
 lemma derived_mono:
   assumes "set fs \<subseteq> set gs"
@@ -129,6 +129,11 @@ fun len_proof :: "('v, 'c) frege_proof \<Rightarrow> nat" where
 definition len_sub :: "'v set \<Rightarrow> ('v \<Rightarrow> ('v, 'c) formula) \<Rightarrow> nat" where
   "len_sub var_set sub =
      max 1 (\<Sum> v \<in> {v. v \<in> var_set}. len_formula (sub v))"
+
+lemma len_formula_positive:
+  shows "len_formula f \<ge> 1"
+  by (metis le_add_same_cancel1 le_numeral_extra(4) len_formula.elims zero_le)
+
 
 lemma sub_formula_bound:
   fixes f :: "('v, 'c) formula"
@@ -548,7 +553,7 @@ definition simulates :: "('v, 'c) frege \<Rightarrow> ('v, 'c) frege \<Rightarro
  "simulates F1 F2 \<longleftrightarrow> (\<exists> f g p q. \<forall> w \<tau>. (thesis w = g \<tau> \<and> valid_proof F1 w \<and> assumptions w = {}) \<longrightarrow> 
     valid_proof F2 (f w \<tau>) \<and> thesis (f w \<tau>) = \<tau> \<and> 
     len_formula (g \<tau>) \<le> poly p (len_formula \<tau>) \<and>
-    len_proof w \<le> poly q (len_proof (f w \<tau>)))"
+    len_proof (f w \<tau>) \<le> poly q (len_proof w))"
 
 
 (* A theorem on (only) simulation of Frege systems. For p-simulation we need f and
