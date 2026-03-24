@@ -128,7 +128,7 @@ fun len_proof :: "('v, 'c) frege_proof \<Rightarrow> nat" where
 
 definition len_sub :: "'v set \<Rightarrow> ('v \<Rightarrow> ('v, 'c) formula) \<Rightarrow> nat" where
   "len_sub var_set sub =
-     max 1 (\<Sum> v \<in> {v. v \<in> var_set}. len_formula (sub v))"
+     max 1 (\<Sum> v \<in> var_set. len_formula (sub v))"
 
 lemma len_formula_positive:
   shows "len_formula f \<ge> 1"
@@ -156,7 +156,7 @@ proof (induction f arbitrary: sub var_set)
     case True
     have len_eq: "len_formula (sub_formula sub (Atom a)) = len_formula (sub a)" by simp
     have "len_formula (sub a) \<le> len_sub var_set sub" using True len_sub_def[of var_set sub]
-      by (metis Atom.prems(1) Collect_mem_eq le_max_iff_disj sum_nonneg_leq_bound zero_le)
+      by (metis Atom.prems(1) le_max_iff_disj sum_nonneg_leq_bound zero_le)
     thus ?thesis using len_eq by simp
   qed
 next
@@ -554,7 +554,6 @@ definition simulates :: "('v, 'c) frege \<Rightarrow> ('v, 'c) frege \<Rightarro
     valid_proof F2 (f w \<tau>) \<and> thesis (f w \<tau>) = \<tau> \<and> 
     len_formula (g \<tau>) \<le> poly p (len_formula \<tau>) \<and>
     len_proof (f w \<tau>) \<le> poly q (len_proof w))"
-
 
 (* A theorem on (only) simulation of Frege systems. For p-simulation we need f and
   g to be polynomial time*)
