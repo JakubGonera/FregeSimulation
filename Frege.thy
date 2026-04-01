@@ -134,6 +134,22 @@ lemma len_formula_positive:
   shows "len_formula f \<ge> 1"
   by (metis le_add_same_cancel1 le_numeral_extra(4) len_formula.elims zero_le)
 
+lemma len_proof_positive:
+  assumes "valid_proof F pr"
+  shows "len_proof pr \<ge> 1"
+proof -
+  have a: "steps pr \<noteq> []" 
+    using assms valid_proof_def[of F pr] by simp
+  have "\<forall> f \<in> set (steps pr). len_formula f \<ge> 1" 
+    using len_formula_positive by auto
+  then obtain f fs where steps_def: "steps pr = f # fs"
+    using a by (cases "steps pr") auto
+  have "len_proof pr = len_formula f + sum_list (map len_formula fs)"
+    using steps_def by simp
+  also have "\<dots> \<ge> 1 + 0"
+    using len_formula_positive[of f] by simp
+  finally show ?thesis by simp
+qed
 
 lemma sub_formula_bound:
   fixes f :: "('v, 'c) formula"

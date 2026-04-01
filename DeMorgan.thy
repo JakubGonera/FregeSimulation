@@ -237,18 +237,33 @@ proof -
     using sub_valid sub_assm sub_th by blast
 qed
 
+lemma var_set_rule_finite:
+  shows "finite (var_set_rule r)"
+proof (cases r)
+  case (fields prems concl)
+  have fin_prems: "finite (\<Union> (var_set_form ` set prems))"
+  proof (induction prems)
+    case Nil
+    then show ?case by simp
+  next
+    case (Cons p ps)
+    have fin_p: "finite (var_set_form p)"
+      by (induction p) auto
+    then show ?case
+      using Cons by auto
+  qed
+  have fin_concl: "finite (var_set_form concl)"
+    by (induction concl) auto
+  show ?thesis
+    using fields fin_prems fin_concl by simp
+qed
 
 lemma first_step_is_bound: 
-  shows "\<exists> g :: (drule \<Rightarrow> int poly). \<forall> rule \<in> rules F'. \<forall>  sub. 
+  shows "\<exists> g :: (drule \<Rightarrow> nat poly). \<forall> rule \<in> rules F'. \<forall>  sub. 
             rule_restricted_sub rule sub \<longrightarrow> 
             len_proof (first_step rule sub) \<le> poly (g rule) (len_sub (var_set_rule rule) sub)"
 proof -
-  have finite_var_set_form: "finite (var_set_form f)" for f :: dformula
-    by (induction f) auto
-  have finite_var_set_rule: "finite (var_set_rule r)" for r :: drule
-    by (cases r) (auto intro: finite_var_set_form)
-
-  let ?g = "\<lambda>rule. [:0, int (len_proof (rule_proof_fun rule)):]"
+  let ?g = "\<lambda>rule. [:0, len_proof (rule_proof_fun rule):]"
 
   have bound_per_rule:
     "\<forall>rule \<in> rules F'. \<forall>sub.
@@ -261,43 +276,24 @@ proof -
     have restricted_sub: "\<forall>v. v \<notin> var_set_rule rule \<longrightarrow> sub v = Atom v"
       using rsub unfolding rule_restricted_sub_def by simp
 
-    have nat_bound:
+    have bound:
       "len_proof (first_step rule sub)
        \<le> len_proof (rule_proof_fun rule) * len_sub (var_set_rule rule) sub"
       unfolding first_step.simps
       using sub_proof_bound[of "var_set_rule rule" sub "rule_proof_fun rule"]
-      using finite_var_set_rule restricted_sub by simp
+      using var_set_rule_finite[of rule] restricted_sub by simp
 
     have poly_eval:
       "poly (?g rule) (len_sub (var_set_rule rule) sub) =
-       int (len_proof (rule_proof_fun rule)) * int (len_sub (var_set_rule rule) sub)"
+       len_proof (rule_proof_fun rule) * len_sub (var_set_rule rule) sub"
       by simp
-
-    have int_bound:
-      "int (len_proof (first_step rule sub))
-       \<le> int (len_proof (rule_proof_fun rule) * len_sub (var_set_rule rule) sub)"
-      using nat_bound by (rule of_nat_mono)
-    have mult_cast:
-      "int (len_proof (rule_proof_fun rule) * len_sub (var_set_rule rule) sub) =
-       int (len_proof (rule_proof_fun rule)) * int (len_sub (var_set_rule rule) sub)"
-      by simp
-    have int_bound':
-      "int (len_proof (first_step rule sub))
-       \<le> int (len_proof (rule_proof_fun rule)) * int (len_sub (var_set_rule rule) sub)"
-      using int_bound mult_cast by simp
 
     show "len_proof (first_step rule sub) \<le> poly (?g rule) (len_sub (var_set_rule rule) sub)"
-      using int_bound' poly_eval by (simp add: algebra_simps)
+      using bound poly_eval by (simp add: algebra_simps)
   qed
 
-  show ?thesis
-    by (rule exI[of _ ?g]) (use bound_per_rule in simp)
+  show ?thesis using bound_per_rule by meson
 qed
-
-definition first_step_bound where
-  "first_step_bound rule = (SOME g. \<forall> rule \<in> rules F'. \<forall>  sub. 
-            rule_restricted_sub rule sub \<longrightarrow> 
-            len_proof (first_step rule sub) \<le> poly (g rule) (len_sub (var_set_rule rule) sub))"
 
 (* peel only returns Some if the input formula is equal to the expected end, or we can peel off
 with modus ponens and arrive at the expected formula. *)
@@ -675,7 +671,6 @@ next
     thus ?thesis by simp
   qed
 qed
-
 
 (* Predicate for a step being derived with a rule, a substitution, and as i-th step of a proof. *)
 definition derived_with :: "nat \<Rightarrow> dproof \<Rightarrow> drule \<Rightarrow> (string \<Rightarrow> dformula) \<Rightarrow> bool" where
@@ -1229,33 +1224,13 @@ proof -
   qed
   finally show ?thesis by simp
 qed
-  
-lemma var_set_rule_finite:
-  shows "finite (var_set_rule r)"
-proof (cases r)
-  case (fields prems concl)
-  have fin_prems: "finite (\<Union> (var_set_form ` set prems))"
-  proof (induction prems)
-    case Nil
-    then show ?case by simp
-  next
-    case (Cons p ps)
-    have fin_p: "finite (var_set_form p)"
-      by (induction p) auto
-    then show ?case
-      using Cons by auto
-  qed
-  have fin_concl: "finite (var_set_form concl)"
-    by (induction concl) auto
-  show ?thesis
-    using fields fin_prems fin_concl by simp
-qed
 
 lemma len_sub_bound_by_proof:
   assumes "r \<in> rules F'"
       and "derived_with i pr r s"
       and "rule_restricted_sub r s"
       and "c = Max ((\<lambda> r. card (var_set_rule r)) ` rules F') + 1"
+      and "valid_proof F' pr"
     shows "len_sub (var_set_rule r) s \<le> c * len_proof pr"
 proof -
   let ?var_set = "var_set_rule r"
@@ -1334,7 +1309,7 @@ proof -
     qed
   qed
 
-  have "\<forall> v \<in> ?var_set. len_formula (s v) \<le> len_proof pr"
+  have form_bound: "\<forall> v \<in> ?var_set. len_formula (s v) \<le> len_proof pr"
   proof (intro ballI)
     fix v
     assume v_in_vs: "v \<in> ?var_set"
@@ -1369,8 +1344,149 @@ proof -
     qed
   qed
 
+  have c_bound: "card ?var_set \<le> c"
+  proof -
+    thm Max_ge
+    let ?set = "(\<lambda> r. card (var_set_rule r)) ` rules F'"
+    have "finite (rules F')" 
+      using frege_system_def[of F'] dm2 de_morgan_frege_def by blast
+    hence "finite ?set" by simp
+    thus ?thesis using Max_ge[of ?set] assms(1, 4)
+      by (meson image_iff trans_le_add1)
+  qed
+
+  have "len_sub (?var_set) s = max 1 (\<Sum> v \<in> ?var_set. len_formula (s v))"
+    using len_sub_def by simp
+  hence "len_sub (?var_set) s \<le> max 1 (\<Sum> v \<in> ?var_set. len_proof pr)"
+    using form_bound 
+    by (smt (verit) max.absorb_iff2 max.boundedE max.orderE nat_le_linear sum_mono)
+  hence "len_sub (?var_set) s \<le> max 1 (card ?var_set * len_proof pr)"
+    by simp
+  hence "len_sub (?var_set) s \<le> max 1 (c * len_proof pr)" using c_bound
+    by (meson dual_order.trans le_numeral_extra(4) max.mono mult_le_cancel2) 
+  thus ?thesis using len_proof_positive assms(4)
+    by (metis assms(5) le_add2 less_one linorder_not_le max_absorb2 mult_is_0)
+qed
+
+
+lemma poly_mono_nat:
+  fixes p :: "nat poly"
+  shows "x \<le> y \<Longrightarrow> poly p x \<le> poly p y"
+proof (induction p)
+  case 0
+  thus ?case by simp
+next
+  case (pCons a p)
+  hence "x * poly p x \<le> y * poly p y"
+    using mult_le_mono by presburger
+  thus ?case by simp
+qed
+
+
+lemma first_step_is_bound_by_proof: 
+  shows "\<exists> g :: (drule \<Rightarrow> nat poly). \<forall> rule \<in> rules F'. \<forall>  pr i sub. 
+            derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F' pr \<longrightarrow> 
+            len_proof (first_step rule sub) \<le> poly (g rule) (len_proof pr)"
+proof -
+  let ?c = "Max ((\<lambda>r. card (var_set_rule r)) ` rules F') + 1"
+  obtain g0 :: "drule \<Rightarrow> nat poly" where
+    g0_def: "\<forall>rule \<in> rules F'. \<forall>sub.
+      rule_restricted_sub rule sub \<longrightarrow>
+      len_proof (first_step rule sub) \<le> poly (g0 rule) (len_sub (var_set_rule rule) sub)"
+    using first_step_is_bound by blast
+  let ?g = "\<lambda>rule. pcompose (g0 rule) [:0, ?c:]"
+  have bound_per_rule:
+    "\<forall>rule \<in> rules F'. \<forall>pr i sub.
+      derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F' pr \<longrightarrow>
+      len_proof (first_step rule sub) \<le> poly (?g rule) (len_proof pr)"
+  proof (intro ballI allI impI)
+    fix rule pr i sub
+    assume r_in: "rule \<in> rules F'"
+    assume assm: "derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F' pr"
+    have dwith: "derived_with i pr rule sub"
+      using assm by simp
+    have rsub: "rule_restricted_sub rule sub"
+      using assm by simp
+    have valid_pr: "valid_proof F' pr"
+      using assm by simp
+    have len_sub_bound: "len_sub (var_set_rule rule) sub \<le> ?c * len_proof pr"
+      using len_sub_bound_by_proof[OF r_in dwith rsub, of ?c] valid_pr by simp
+    have first_step_bound:
+      "len_proof (first_step rule sub) \<le> poly (g0 rule) (len_sub (var_set_rule rule) sub)"
+      using g0_def r_in rsub by blast
+    have mono_poly:
+      "poly (g0 rule) (len_sub (var_set_rule rule) sub) \<le> poly (g0 rule) (?c * len_proof pr)"
+      using len_sub_bound by (rule poly_mono_nat)
+    have final_poly: "poly (g0 rule) (?c * len_proof pr) = poly (?g rule) (len_proof pr)"
+    proof -
+      have "poly (?g rule) (len_proof pr) = poly (g0 rule) (len_proof pr * ?c)"
+        by (simp add: poly_pcompose algebra_simps)
+      then show ?thesis
+        by (simp add: mult.commute)
+    qed
+    show "len_proof (first_step rule sub) \<le> poly (?g rule) (len_proof pr)"
+      using first_step_bound mono_poly final_poly by arith
+  qed
   show ?thesis
-    sorry
+    by (intro exI[of _ ?g]) (use bound_per_rule in blast)
+qed
+
+lemma sum_polynomial:
+  fixes S :: "nat poly set"
+  assumes "finite S"
+      and "p = \<Sum> S"
+    shows "\<forall> p' \<in> S. \<forall> n :: nat. poly p n \<ge> poly p' n"
+  by (metis assms(1,2) bot_nat_0.extremum poly_sum sum_nonneg_leq_bound)
+
+lemma first_step_single_bound:
+  shows "\<exists> g :: nat poly. \<forall> rule \<in> rules F'. \<forall>  pr i sub. 
+            derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F' pr \<longrightarrow> 
+            len_proof (first_step rule sub) \<le> poly g (len_proof pr)"
+proof (rule exI)
+  let ?gs = "SOME g. \<forall> rule \<in> rules F'. \<forall>  pr i sub. 
+           derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F' pr \<longrightarrow> 
+           len_proof (first_step rule sub) \<le> poly (g rule) (len_proof pr)"
+
+  let ?S = "?gs ` (rules F')"
+  have "finite ?S" using dm2 de_morgan_frege_def frege_system_def by auto
+  let ?g = "\<Sum> ?S"
+  show "\<forall>rule\<in>rules F'. \<forall>pr i sub.
+          derived_with i pr rule sub \<and> 
+          rule_restricted_sub rule sub \<and>
+          valid_proof F' pr \<longrightarrow>
+          len_proof (first_step rule sub) \<le> poly ?g (len_proof pr)"
+  proof (intro ballI allI impI)
+    fix rule pr i sub
+    assume r_in: "rule \<in> rules F'"
+    assume assm: "derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F' pr"
+    have ex_gs:
+      "\<exists>g :: drule \<Rightarrow> nat poly. \<forall>rule \<in> rules F'. \<forall>pr i sub.
+        derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F' pr \<longrightarrow>
+        len_proof (first_step rule sub) \<le> poly (g rule) (len_proof pr)"
+      using first_step_is_bound_by_proof by blast
+    have gs_prop:
+      "\<forall>rule \<in> rules F'. \<forall>pr i sub.
+        derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F' pr \<longrightarrow>
+        len_proof (first_step rule sub) \<le> poly (?gs rule) (len_proof pr)"
+      by (rule someI_ex[OF ex_gs])
+    have g_in_S: "?gs rule \<in> ?S"
+      using r_in by simp
+    have sum_bound: "\<forall>p' \<in> ?S. \<forall>n::nat. poly ?g n \<ge> poly p' n"
+      using sum_polynomial[OF \<open>finite ?S\<close>, of ?g] by simp
+    have poly_bound: "poly ?g (len_proof pr) \<ge> poly (?gs rule) (len_proof pr)"
+      using sum_bound g_in_S by blast
+    have step_bound: "len_proof (first_step rule sub) \<le> poly (?gs rule) (len_proof pr)"
+      using gs_prop r_in assm by blast
+    show "len_proof (first_step rule sub) \<le> poly ?g (len_proof pr)"
+      using step_bound poly_bound by arith
+  qed
+qed
+
+lemma second_step_bound:
+  shows "\<exists> g :: nat poly. \<forall> rule \<in> rules F'. \<forall>  pr i sub. 
+            derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F' pr \<longrightarrow> 
+            len_proof (second_step (sub_rule sub rule)) \<le> poly g (len_proof pr)"
+  sorry
 
 
 lemma sim_right_step_bound:
