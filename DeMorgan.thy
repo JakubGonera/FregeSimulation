@@ -144,6 +144,28 @@ qed
 
 end
 
+lemma proof_exists_for_rule:
+  assumes "frege_system F \<and> de_morgan_frege F"
+      and "frege_system F' \<and> de_morgan_frege F'"
+      and "rule \<in> rules F"
+    shows "\<exists> pr. valid_proof F' pr \<and> assumptions pr = set (prems rule) \<and> thesis pr = concl rule"
+proof -
+  have "alphabet F = alphabet F'"
+    using assms(1,2) de_morgan_frege_def by fastforce
+  hence val_sat: "\<forall> val. (\<forall> f \<in> set (prems rule). eval (alphabet F') val f) 
+                \<longrightarrow> eval (alphabet F') val (concl rule)"
+    using assms(1,3) frege_system.sound sound_rule_def
+    by metis 
+  have "(\<forall> val. (\<forall> f \<in> set (prems rule). eval (alphabet F') val f) \<longrightarrow> 
+                 eval (alphabet F') val (concl rule)) 
+                          \<longrightarrow> (\<exists> pr. valid_proof F' pr
+                                   \<and> assumptions pr = set (prems rule) 
+                                   \<and> thesis pr = concl rule)"
+    using assms(2) frege_system_def by auto
+  thus ?thesis using val_sat
+    by force
+qed
+  
 locale de_morgan_sim =
   fixes F :: dfrege and F' :: dfrege
   assumes dm1: "de_morgan_frege F" and dm2: "de_morgan_frege F'"
@@ -162,20 +184,14 @@ proof -
     using de_morgan_frege_def dm1 dm2 by force
   hence all_val: "\<forall> val. eval (alphabet F) val f_rule"
     using de_morgan_frege.sound_rule_gives_tautology[of F' r] assms dm2 by simp
-  have fsys: "frege_system F"
-    using dm1 unfolding de_morgan_frege_def by simp
-  interpret fs: frege_system F
-    by (rule fsys)
   have impl0:
-    "((\<forall>f\<in>{}. eval (alphabet F) (\<lambda>_. False) f) \<longrightarrow> eval (alphabet F) (\<lambda>_. False) f_rule)
+    "(\<forall> val. (\<forall>f\<in>{}. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val f_rule)
       \<longrightarrow> (\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = f_rule)"
-    using fs.impl_complete by blast
-  have "eval (alphabet F) (\<lambda>_. False) f_rule"
-    using all_val by simp
-  with impl0 show ?thesis by simp
+    using dm1 de_morgan_frege_def frege_system_def by blast
+  with impl0 all_val show ?thesis by simp
 qed
 
-lemma rule_proof_fun_exists: "\<exists> f :: drule \<Rightarrow> dproof. \<forall> rule \<in> rules F'.
+lemma rule_proof_fun_F'_exists: "\<exists> f :: drule \<Rightarrow> dproof. \<forall> rule \<in> rules F'.
           proof_of F (f rule) (rule_to_taut rule)"
 proof -
   have "\<forall> rule \<in> rules F'. \<exists> pr. proof_of F pr (rule_to_taut rule)"
@@ -183,13 +199,12 @@ proof -
   thus "\<exists> f. \<forall> rule \<in> rules F'. proof_of F (f rule) (rule_to_taut rule)" by meson
 qed
 
-definition rule_proof_fun where
-  "rule_proof_fun = (SOME f. \<forall> rule \<in> rules F'.
+definition rule_proof_fun_F' where
+  "rule_proof_fun_F' = (SOME f. \<forall> rule \<in> rules F'.
           proof_of F (f rule) (rule_to_taut rule))"
 
-
 fun first_step :: "drule \<Rightarrow> (string \<Rightarrow> dformula) \<Rightarrow> dproof" where
-  "first_step rule sub = sub_proof sub (rule_proof_fun rule)"
+  "first_step rule sub = sub_proof sub (rule_proof_fun_F' rule)"
 
 lemma first_step_proves:
   assumes "r \<in> rules F'"
@@ -208,24 +223,24 @@ proof -
 
   have ex_fun:
     "\<exists>f :: drule \<Rightarrow> dproof. \<forall>rule \<in> rules F'. proof_of F (f rule) (rule_to_taut rule)"
-    using rule_proof_fun_exists .
+    using rule_proof_fun_F'_exists .
   have fun_prop:
-    "\<forall>rule \<in> rules F'. proof_of F (rule_proof_fun rule) (rule_to_taut rule)"
-    unfolding rule_proof_fun_def
+    "\<forall>rule \<in> rules F'. proof_of F (rule_proof_fun_F' rule) (rule_to_taut rule)"
+    unfolding rule_proof_fun_F'_def
     by (rule someI_ex[OF ex_fun])
 
-  have base_proof: "proof_of F (rule_proof_fun r) (rule_to_taut r)"
+  have base_proof: "proof_of F (rule_proof_fun_F' r) (rule_to_taut r)"
     using fun_prop assms by blast
-  then have base_valid: "valid_proof F (rule_proof_fun r)"
-    and base_assm: "assumptions (rule_proof_fun r) = {}"
-    and base_th: "thesis (rule_proof_fun r) = rule_to_taut r"
+  then have base_valid: "valid_proof F (rule_proof_fun_F' r)"
+    and base_assm: "assumptions (rule_proof_fun_F' r) = {}"
+    and base_th: "thesis (rule_proof_fun_F' r) = rule_to_taut r"
     unfolding proof_of_def by auto
 
-  have sub_valid: "valid_proof F (sub_proof s (rule_proof_fun r))"
+  have sub_valid: "valid_proof F (sub_proof s (rule_proof_fun_F' r))"
     using frege_system.proof_substitution dm1 base_valid de_morgan_frege_def by auto
-  have sub_assm: "assumptions (sub_proof s (rule_proof_fun r)) = {}"
+  have sub_assm: "assumptions (sub_proof s (rule_proof_fun_F' r)) = {}"
     using base_assm by simp
-  have sub_th: "thesis (sub_proof s (rule_proof_fun r)) = rule_to_taut (sub_rule s r)"
+  have sub_th: "thesis (sub_proof s (rule_proof_fun_F' r)) = rule_to_taut (sub_rule s r)"
     using base_th sub_rule_to_taut[of s r] by simp
 
   show ?thesis
@@ -259,7 +274,7 @@ lemma first_step_is_bound:
             rule_restricted_sub rule sub \<longrightarrow> 
             len_proof (first_step rule sub) \<le> poly (g rule) (len_sub (var_set_rule rule) sub)"
 proof -
-  let ?g = "\<lambda>rule. [:0, len_proof (rule_proof_fun rule):]"
+  let ?g = "\<lambda>rule. [:0, len_proof (rule_proof_fun_F' rule):]"
 
   have bound_per_rule:
     "\<forall>rule \<in> rules F'. \<forall>sub.
@@ -274,14 +289,14 @@ proof -
 
     have bound:
       "len_proof (first_step rule sub)
-       \<le> len_proof (rule_proof_fun rule) * len_sub (var_set_rule rule) sub"
+       \<le> len_proof (rule_proof_fun_F' rule) * len_sub (var_set_rule rule) sub"
       unfolding first_step.simps
-      using sub_proof_bound[of "var_set_rule rule" sub "rule_proof_fun rule"]
+      using sub_proof_bound[of "var_set_rule rule" sub "rule_proof_fun_F' rule"]
       using var_set_rule_finite[of rule] restricted_sub by simp
 
     have poly_eval:
       "poly (?g rule) (len_sub (var_set_rule rule) sub) =
-       len_proof (rule_proof_fun rule) * len_sub (var_set_rule rule) sub"
+       len_proof (rule_proof_fun_F' rule) * len_sub (var_set_rule rule) sub"
       by simp
 
     show "len_proof (first_step rule sub) \<le> poly (?g rule) (len_sub (var_set_rule rule) sub)"
@@ -675,8 +690,8 @@ definition derived_with :: "nat \<Rightarrow> dproof \<Rightarrow> drule \<Right
                        (\<forall> f1 \<in> set (prems sub_r). \<exists> f2 \<in> set (take i (steps pr)). f1 = f2))"
 
 definition choose_rule_sub where
-  "choose_rule_sub i pr =
-     (SOME (r,s). r \<in> rules F' \<and> derived_with i pr r s \<and> rule_restricted_sub r s)"
+  "choose_rule_sub frege i pr =
+     (SOME (r,s). r \<in> rules frege \<and> derived_with i pr r s \<and> rule_restricted_sub r s)"
 
 definition sim_right_step :: "dproof \<Rightarrow> nat \<Rightarrow> dproof \<Rightarrow> dproof" where
   "sim_right_step pr i acc =
@@ -684,7 +699,7 @@ definition sim_right_step :: "dproof \<Rightarrow> nat \<Rightarrow> dproof \<Ri
       if step \<in> assumptions pr then 
         combine_proofs acc \<lparr>assumptions = {}, thesis = step, steps = [step]\<rparr>
       else
-        let (r, s) = choose_rule_sub i pr in
+        let (r, s) = choose_rule_sub F' i pr in
         let pr1 = first_step r s;
             pr2 = second_step (sub_rule s r)
         in combine_proofs acc (combine_proofs pr1 pr2))"
@@ -760,6 +775,26 @@ proof -
     using pr_valid pr_thesis pr_assms by simp
 qed
 
+lemma sub_formula_agree:
+  "sub_formula s1 f = sub_formula s2 f"
+  if "\<forall>v \<in> var_set_form f. s1 v = s2 v"
+  for s1 s2 :: "string \<Rightarrow> dformula" and f
+  using that
+proof (induction f)
+  case (Atom x)
+  then show ?case by simp
+next
+  case (Conn c fs)
+  then show ?case by simp
+qed
+
+lemma sub_rule_agree:
+  "sub_rule s1 r = sub_rule s2 r"
+  if "\<forall>v \<in> var_set_rule r. s1 v = s2 v"
+  for s1 s2 :: "string \<Rightarrow> dformula" and r
+using that
+by (cases r) (auto intro: sub_formula_agree)
+
 lemma sim_right_proves:
   fixes pr :: dproof
   assumes "valid_proof F' pr'"
@@ -771,31 +806,11 @@ proof -
   let ?acc = "\<lambda>k. fold (sim_right_step pr') [0..<k] ?init"
   let ?n = "length (steps pr')"
 
-  have sub_formula_agree:
-    "sub_formula s1 f = sub_formula s2 f"
-    if "\<forall>v \<in> var_set_form f. s1 v = s2 v"
-    for s1 s2 :: "string \<Rightarrow> dformula" and f
-    using that
-  proof (induction f)
-    case (Atom x)
-    then show ?case by simp
-  next
-    case (Conn c fs)
-    then show ?case by simp
-  qed
-
-  have sub_rule_agree:
-    "sub_rule s1 r = sub_rule s2 r"
-    if "\<forall>v \<in> var_set_rule r. s1 v = s2 v"
-    for s1 s2 :: "string \<Rightarrow> dformula" and r
-    using that
-    by (cases r) (auto intro: sub_formula_agree)
-
   have choose_rule_sub_props:
     "\<exists>r s. r \<in> rules F' \<and> derived_with i p r s
-     \<Longrightarrow> fst (choose_rule_sub i p) \<in> rules F' \<and>
-         derived_with i p (fst (choose_rule_sub i p)) (snd (choose_rule_sub i p)) \<and>
-         rule_restricted_sub (fst (choose_rule_sub i p)) (snd (choose_rule_sub i p))"
+     \<Longrightarrow> fst (choose_rule_sub F' i p) \<in> rules F' \<and>
+         derived_with i p (fst (choose_rule_sub F' i p)) (snd (choose_rule_sub F' i p)) \<and>
+         rule_restricted_sub (fst (choose_rule_sub F' i p)) (snd (choose_rule_sub F' i p))"
     for i p
   proof -
     assume ex: "\<exists>r s. r \<in> rules F' \<and> derived_with i p r s"
@@ -815,9 +830,9 @@ proof -
       using r_in dwith' rsub' by force
     have "?P (SOME rs. ?P rs)"
       by (rule someI_ex[OF ex_pair])
-    then show "fst (choose_rule_sub i p) \<in> rules F' \<and>
-               derived_with i p (fst (choose_rule_sub i p)) (snd (choose_rule_sub i p)) \<and>
-               rule_restricted_sub (fst (choose_rule_sub i p)) (snd (choose_rule_sub i p))"
+    then show "fst (choose_rule_sub F' i p) \<in> rules F' \<and>
+               derived_with i p (fst (choose_rule_sub F' i p)) (snd (choose_rule_sub F' i p)) \<and>
+               rule_restricted_sub (fst (choose_rule_sub F' i p)) (snd (choose_rule_sub F' i p))"
       unfolding choose_rule_sub_def
       by (cases "SOME rs. ?P rs") auto
   qed
@@ -860,12 +875,12 @@ proof -
       have ex_rs: "\<exists>r s. r \<in> rules F' \<and> derived_with k pr' r s"
         using der_k unfolding derived_def derived_with_def by (meson k_lt)
       have choose_props:
-        "fst (choose_rule_sub k pr') \<in> rules F' \<and>
-         derived_with k pr' (fst (choose_rule_sub k pr')) (snd (choose_rule_sub k pr')) \<and>
-         rule_restricted_sub (fst (choose_rule_sub k pr')) (snd (choose_rule_sub k pr'))"
+        "fst (choose_rule_sub F' k pr') \<in> rules F' \<and>
+         derived_with k pr' (fst (choose_rule_sub F' k pr')) (snd (choose_rule_sub F' k pr')) \<and>
+         rule_restricted_sub (fst (choose_rule_sub F' k pr')) (snd (choose_rule_sub F' k pr'))"
         using choose_rule_sub_props[OF ex_rs] .
-      let ?r = "fst (choose_rule_sub k pr')"
-      let ?s = "snd (choose_rule_sub k pr')"
+      let ?r = "fst (choose_rule_sub F' k pr')"
+      let ?s = "snd (choose_rule_sub F' k pr')"
       have r_in: "?r \<in> rules F'" using choose_props by simp
       have dwith: "derived_with k pr' ?r ?s" using choose_props by simp
       have concl_step: "concl (sub_rule ?s ?r) = steps pr' ! k"
@@ -898,7 +913,7 @@ proof -
         "sim_right_step pr' k (?acc k) = combine_proofs (?acc k) ?inner"
       proof -
         have "sim_right_step pr' k (?acc k) =
-              (let (r, s) = choose_rule_sub k pr' in
+              (let (r, s) = choose_rule_sub F' k pr' in
                let pr1 = first_step r s;
                    pr2 = second_step (sub_rule s r)
                in combine_proofs (?acc k) (combine_proofs pr1 pr2))"
@@ -907,13 +922,13 @@ proof -
           by (simp add: Let_def)
         then have eq1:
           "sim_right_step pr' k (?acc k) =
-           (let (r, s) = choose_rule_sub k pr' in
+           (let (r, s) = choose_rule_sub F' k pr' in
             let pr1 = first_step r s;
                 pr2 = second_step (sub_rule s r)
             in combine_proofs (?acc k) (combine_proofs pr1 pr2))"
           .
-        obtain a b where ch: "choose_rule_sub k pr' = (a, b)"
-          by (cases "choose_rule_sub k pr'") auto
+        obtain a b where ch: "choose_rule_sub F' k pr' = (a, b)"
+          by (cases "choose_rule_sub F' k pr'") auto
         have "sim_right_step pr' k (?acc k) =
               (let (r, s) = (a, b) in
                let pr1 = first_step r s;
@@ -1570,9 +1585,9 @@ proof -
 
     have choose_rule_sub_props:
       "\<not> ?step \<in> assumptions pr \<Longrightarrow>
-       fst (choose_rule_sub i pr) \<in> rules F' \<and>
-       derived_with i pr (fst (choose_rule_sub i pr)) (snd (choose_rule_sub i pr)) \<and>
-       rule_restricted_sub (fst (choose_rule_sub i pr)) (snd (choose_rule_sub i pr))"
+       fst (choose_rule_sub F' i pr) \<in> rules F' \<and>
+       derived_with i pr (fst (choose_rule_sub F' i pr)) (snd (choose_rule_sub F' i pr)) \<and>
+       rule_restricted_sub (fst (choose_rule_sub F' i pr)) (snd (choose_rule_sub F' i pr))"
     proof -
       assume step_notin: "?step \<notin> assumptions pr"
       have step_der:
@@ -1601,9 +1616,9 @@ proof -
         using r_in dwith' rsub' by force
       have "?P (SOME rs. ?P rs)"
         by (rule someI_ex[OF ex_pair])
-      then show "fst (choose_rule_sub i pr) \<in> rules F' \<and>
-                 derived_with i pr (fst (choose_rule_sub i pr)) (snd (choose_rule_sub i pr)) \<and>
-                 rule_restricted_sub (fst (choose_rule_sub i pr)) (snd (choose_rule_sub i pr))"
+      then show "fst (choose_rule_sub F' i pr) \<in> rules F' \<and>
+                 derived_with i pr (fst (choose_rule_sub F' i pr)) (snd (choose_rule_sub F' i pr)) \<and>
+                 rule_restricted_sub (fst (choose_rule_sub F' i pr)) (snd (choose_rule_sub F' i pr))"
         unfolding choose_rule_sub_def
         by (cases "SOME rs. ?P rs") auto
     qed
@@ -1629,12 +1644,12 @@ proof -
     next
       case False
       have choose_props:
-        "fst (choose_rule_sub i pr) \<in> rules F' \<and>
-         derived_with i pr (fst (choose_rule_sub i pr)) (snd (choose_rule_sub i pr)) \<and>
-         rule_restricted_sub (fst (choose_rule_sub i pr)) (snd (choose_rule_sub i pr))"
+        "fst (choose_rule_sub F' i pr) \<in> rules F' \<and>
+         derived_with i pr (fst (choose_rule_sub F' i pr)) (snd (choose_rule_sub F' i pr)) \<and>
+         rule_restricted_sub (fst (choose_rule_sub F' i pr)) (snd (choose_rule_sub F' i pr))"
         using choose_rule_sub_props False by blast
-      let ?rule = "fst (choose_rule_sub i pr)"
-      let ?sub = "snd (choose_rule_sub i pr)"
+      let ?rule = "fst (choose_rule_sub F' i pr)"
+      let ?sub = "snd (choose_rule_sub F' i pr)"
       have r_in: "?rule \<in> rules F'"
         using choose_props by simp
       have dwith: "derived_with i pr ?rule ?sub"
@@ -1649,7 +1664,7 @@ proof -
         "sim_right_step pr i acc
          = combine_proofs acc
              (combine_proofs (first_step ?rule ?sub) (second_step (sub_rule ?sub ?rule)))"
-      proof (cases "choose_rule_sub i pr")
+      proof (cases "choose_rule_sub F' i pr")
         case (Pair r s)
         then show ?thesis
           using False i_lt by (simp add: sim_right_step_def Let_def)
@@ -1894,6 +1909,304 @@ proof -
       len_proof (?f w \<tau>) \<le> poly ?q (len_proof w)"
       using sim_case[of w \<tau>] .
   qed
+qed
+
+
+lemma fixed_proofs_rules_F:
+  shows "\<forall> rule \<in> rules F. \<exists> pr. 
+          valid_proof F' pr \<and> 
+          assumptions pr = set (prems rule) \<and> 
+          thesis pr = concl rule"
+  by (meson de_morgan_frege_def dm1 dm2 proof_exists_for_rule)
+
+lemma rule_proof_fun_F_exists: "\<exists> f :: drule \<Rightarrow> dproof. \<forall> rule \<in> rules F.
+          valid_proof F' (f rule) \<and> 
+          assumptions (f rule) = set (prems rule) \<and> 
+          thesis (f rule) = concl rule"
+  by (meson fixed_proofs_rules_F)
+
+definition rule_proof_fun_F where
+  "rule_proof_fun_F = (SOME f. \<forall> rule \<in> rules F.
+          valid_proof F' (f rule) \<and> 
+          assumptions (f rule) = set (prems rule) \<and> 
+          thesis (f rule) = concl rule)"
+
+fun step_F :: "drule \<Rightarrow> (string \<Rightarrow> dformula) \<Rightarrow> dproof" where
+  "step_F rule sub = sub_proof sub (rule_proof_fun_F rule)"
+
+
+definition sim_left_step :: "dproof \<Rightarrow> nat \<Rightarrow> dproof \<Rightarrow> dproof" where
+  "sim_left_step pr i acc =
+    (let step = (steps pr) ! i in
+      if step \<in> assumptions pr then 
+        combine_proofs acc \<lparr>assumptions = {}, thesis = step, steps = [step]\<rparr>
+      else
+        let (r, s) = choose_rule_sub F i pr in
+        let pr = step_F r s
+        in combine_proofs acc pr)"
+
+definition sim_left :: "dproof \<Rightarrow> dformula \<Rightarrow> dproof" where
+  "sim_left pr th =
+     fold (sim_left_step pr)
+       [0..<length (steps pr)]
+       \<lparr>assumptions = assumptions pr,
+        thesis = th,
+        steps = []\<rparr>"
+
+
+lemma sim_left_proves:
+  fixes pr :: dproof
+  assumes "valid_proof F pr"
+  and "assumptions pr = {}"
+  and "pr' = sim_left pr (thesis pr)"
+shows "valid_proof F' pr' \<and> thesis pr' = thesis pr \<and> assumptions pr' = {}"
+proof -
+  let ?init = "\<lparr>assumptions = assumptions pr, thesis = thesis pr, steps = []\<rparr>"
+  let ?acc = "\<lambda>k. fold (sim_left_step pr) [0..<k] ?init"
+  let ?n = "length (steps pr)"
+
+  have choose_rule_sub_props:
+    "\<exists>r s. r \<in> rules F \<and> derived_with i p r s
+     \<Longrightarrow> fst (choose_rule_sub F i p) \<in> rules F \<and>
+         derived_with i p (fst (choose_rule_sub F i p)) (snd (choose_rule_sub F i p)) \<and>
+         rule_restricted_sub (fst (choose_rule_sub F i p)) (snd (choose_rule_sub F i p))"
+    for i p
+  proof -
+    assume ex: "\<exists>r s. r \<in> rules F \<and> derived_with i p r s"
+    then obtain r s where r_in: "r \<in> rules F" and dwith: "derived_with i p r s"
+      by blast
+    define s' where "s' = (\<lambda>v. if v \<in> var_set_rule r then s v else Atom v)"
+    have rs_eq: "sub_rule s' r = sub_rule s r"
+      unfolding s'_def by (rule sub_rule_agree) auto
+    have dwith': "derived_with i p r s'"
+      using dwith unfolding derived_with_def rs_eq by simp
+    have rsub': "rule_restricted_sub r s'"
+      unfolding rule_restricted_sub_def s'_def by simp
+    let ?P = "\<lambda>rs :: drule \<times> (string \<Rightarrow> dformula).
+      case rs of (r, s) \<Rightarrow> r \<in> rules F \<and> derived_with i p r s \<and> rule_restricted_sub r s"
+    have ex_pair: "\<exists>rs. ?P rs"
+      using r_in dwith' rsub' by force
+    have "?P (SOME rs. ?P rs)"
+      by (rule someI_ex[OF ex_pair])
+    then show "fst (choose_rule_sub F i p) \<in> rules F \<and>
+               derived_with i p (fst (choose_rule_sub F i p)) (snd (choose_rule_sub F i p)) \<and>
+               rule_restricted_sub (fst (choose_rule_sub F i p)) (snd (choose_rule_sub F i p))"
+      unfolding choose_rule_sub_def by (cases "SOME rs. ?P rs") auto
+  qed
+
+  have step_F_proves:
+    "valid_proof F' (step_F r s) \<and> assumptions (step_F r s) = set (prems (sub_rule s r)) \<and> thesis (step_F r s) = concl (sub_rule s r)"
+    if "r \<in> rules F" for r s
+  proof -
+    have ex_fun:
+      "\<exists>f :: drule \<Rightarrow> dproof. \<forall>rule \<in> rules F.
+        valid_proof F' (f rule) \<and> assumptions (f rule) = set (prems rule) \<and> thesis (f rule) = concl rule"
+      using rule_proof_fun_F_exists .
+    have fun_prop:
+      "\<forall>rule \<in> rules F.
+        valid_proof F' (rule_proof_fun_F rule) \<and>
+        assumptions (rule_proof_fun_F rule) = set (prems rule) \<and>
+        thesis (rule_proof_fun_F rule) = concl rule"
+      unfolding rule_proof_fun_F_def by (rule someI_ex[OF ex_fun])
+    then have base:
+      "valid_proof F' (rule_proof_fun_F r) \<and>
+       assumptions (rule_proof_fun_F r) = set (prems r) \<and>
+       thesis (rule_proof_fun_F r) = concl r"
+      using that by blast
+    then have base_valid: "valid_proof F' (rule_proof_fun_F r)"
+      and base_assm: "assumptions (rule_proof_fun_F r) = set (prems r)"
+      and base_th: "thesis (rule_proof_fun_F r) = concl r"
+      by auto
+    have fsys: "frege_system F'"
+      using dm2 unfolding de_morgan_frege_def by simp
+    interpret fs: frege_system F'
+      by (rule fsys)
+    have sub_valid: "valid_proof F' (step_F r s)"
+      unfolding step_F.simps using fs.proof_substitution[OF base_valid] .
+    have sub_assm: "assumptions (step_F r s) = set (prems (sub_rule s r))"
+      using base_assm by simp
+    have sub_th: "thesis (step_F r s) = concl (sub_rule s r)"
+      using base_th by simp
+    show ?thesis
+      using sub_valid sub_assm sub_th by simp
+  qed
+
+  have prefix_inv:
+    "\<forall>k\<le>?n.
+      assumptions (?acc k) = {} \<and>
+      set (take k (steps pr)) \<subseteq> set (steps (?acc k)) \<and>
+      (k = 0 \<or> (valid_proof F' (?acc k) \<and> thesis (?acc k) = steps pr ! (k - 1)))"
+  proof (intro allI impI)
+    fix k
+    assume k_le: "k \<le> ?n"
+    show "assumptions (?acc k) = {} \<and>
+      set (take k (steps pr)) \<subseteq> set (steps (?acc k)) \<and>
+      (k = 0 \<or> (valid_proof F' (?acc k) \<and> thesis (?acc k) = steps pr ! (k - 1)))"
+      using k_le
+    proof (induction k)
+      case 0
+      then show ?case using assms(2) by simp
+    next
+      case (Suc k)
+      have k_le_n: "k \<le> ?n" using Suc.prems by simp
+      have IH: "assumptions (?acc k) = {} \<and>
+        set (take k (steps pr)) \<subseteq> set (steps (?acc k)) \<and>
+        (k = 0 \<or> (valid_proof F' (?acc k) \<and> thesis (?acc k) = steps pr ! (k - 1)))"
+        using Suc.IH k_le_n by blast
+      have acc_assm: "assumptions (?acc k) = {}" using IH by simp
+      have acc_steps: "set (take k (steps pr)) \<subseteq> set (steps (?acc k))" using IH by simp
+      have k_lt: "k < ?n" using Suc.prems by simp
+      let ?step = "steps pr ! k"
+
+      have next_step:
+        "sim_left_step pr k (?acc k) =
+          (if ?step \<in> assumptions pr then
+             combine_proofs (?acc k) \<lparr>assumptions = {}, thesis = ?step, steps = [?step]\<rparr>
+           else
+             let r = fst (choose_rule_sub F k pr); s = snd (choose_rule_sub F k pr)
+             in combine_proofs (?acc k) (step_F r s))"
+        using k_lt unfolding sim_left_step_def by (simp add: Let_def split: prod.splits)
+
+      have step_not_assm: "?step \<notin> assumptions pr"
+        using assms(2) by simp
+      have step_der: "derived (rules F) (take k (steps pr)) ?step"
+        using assms(1) k_lt step_not_assm unfolding valid_proof_def by auto
+      show ?case
+      proof -
+        from step_der obtain r s where r_in: "r \<in> rules F" and dwith: "derived_with k pr r s"
+          using k_lt unfolding derived_def derived_with_def by auto
+        have choose_props:
+          "fst (choose_rule_sub F k pr) \<in> rules F \<and>
+           derived_with k pr (fst (choose_rule_sub F k pr)) (snd (choose_rule_sub F k pr)) \<and>
+           rule_restricted_sub (fst (choose_rule_sub F k pr)) (snd (choose_rule_sub F k pr))"
+          using choose_rule_sub_props[of k pr] r_in dwith by blast
+        let ?r = "fst (choose_rule_sub F k pr)"
+        let ?s = "snd (choose_rule_sub F k pr)"
+        have step_props:
+          "valid_proof F' (step_F ?r ?s) \<and>
+           assumptions (step_F ?r ?s) = set (prems (sub_rule ?s ?r)) \<and>
+           thesis (step_F ?r ?s) = concl (sub_rule ?s ?r)"
+          using step_F_proves choose_props by blast
+        have dchoose: "derived_with k pr ?r ?s"
+          using choose_props by simp
+        have prems_seen:
+          "set (prems (sub_rule ?s ?r)) \<subseteq> set (steps (?acc k))"
+        proof
+          fix f
+          assume "f \<in> set (prems (sub_rule ?s ?r))"
+          then obtain g where "g \<in> set (take k (steps pr))" and "f = g"
+            using dchoose unfolding derived_with_def by auto
+          hence "g \<in> set (steps (?acc k))"
+            using acc_steps by blast
+          thus "f \<in> set (steps (?acc k))"
+            using \<open>f = g\<close> by simp
+        qed
+        have eq: "sim_left_step pr k (?acc k) = combine_proofs (?acc k) (step_F ?r ?s)"
+        proof (cases "choose_rule_sub F k pr")
+          case (Pair r s)
+          then show ?thesis
+            using step_not_assm k_lt by (simp add: sim_left_step_def Let_def)
+        qed
+        have valid1: "k = 0 \<or> valid_proof F' (?acc k)"
+          using IH by blast
+        have valid_next: "valid_proof F' (sim_left_step pr k (?acc k))"
+        proof (cases "k = 0")
+          case True
+          have step_valid: "valid_proof F' (step_F ?r ?s)"
+            using step_props by blast
+          have acc0: "?acc k = ?init"
+            using True by (cases k) simp_all
+          moreover have "combine_proofs ?init (step_F ?r ?s) = step_F ?r ?s"
+            using assms(2) step_props by simp
+          ultimately have "sim_left_step pr k (?acc k) = step_F ?r ?s"
+            using eq by simp
+          then show ?thesis
+            using step_valid by simp
+        next
+          case False
+          then have acc_valid: "valid_proof F' (?acc k)"
+            using valid1 by blast
+          have fsys: "frege_system F'"
+            using dm2 unfolding de_morgan_frege_def by simp
+          show ?thesis
+            using eq acc_valid step_props prems_seen fsys frege_system.combining_valid_proofs
+            by blast
+        qed
+        have assm_next: "assumptions (sim_left_step pr k (?acc k)) = {}"
+          using eq acc_assm step_props prems_seen by simp
+        have steps_next: "set (take (Suc k) (steps pr)) \<subseteq> set (steps (sim_left_step pr k (?acc k)))"
+        proof
+          fix f
+          assume "f \<in> set (take (Suc k) (steps pr))"
+          then obtain i where i_lt_take: "i < length (take (Suc k) (steps pr))"
+            and fi_take: "take (Suc k) (steps pr) ! i = f"
+            by (auto simp: in_set_conv_nth)
+          hence i_lt: "i < Suc k"
+            by simp
+          have fi: "f = steps pr ! i"
+            using fi_take i_lt k_lt by simp
+          consider "i < k" | "i = k"
+            using i_lt by linarith
+          then show "f \<in> set (steps (sim_left_step pr k (?acc k)))"
+          proof cases
+            case 1
+            have i_take: "i < length (take k (steps pr))"
+              using 1 k_lt by simp
+            have nth_in: "(take k (steps pr)) ! i \<in> set (take k (steps pr))"
+              using i_take by (rule nth_mem)
+            have "(take k (steps pr)) ! i = steps pr ! i"
+              using 1 k_lt by simp
+            then have "steps pr ! i \<in> set (take k (steps pr))"
+              using nth_in by simp
+            hence "f \<in> set (take k (steps pr))"
+              using fi by simp
+            then show ?thesis
+              using eq acc_steps by auto
+          next
+            case 2
+            have "concl (sub_rule ?s ?r) = steps pr ! k"
+              using dchoose unfolding derived_with_def by simp
+            moreover have th_step: "thesis (step_F ?r ?s) = concl (sub_rule ?s ?r)"
+              using step_props by blast
+            moreover have valid_step: "valid_proof F' (step_F ?r ?s)"
+              using step_props by blast
+            then have th_in: "thesis (step_F ?r ?s) \<in> set (steps (step_F ?r ?s))"
+              unfolding valid_proof_def by (metis last_in_set)
+            ultimately show ?thesis
+              using 2 fi eq by auto
+          qed
+        qed
+        have thesis_next: "thesis (sim_left_step pr k (?acc k)) = steps pr ! k"
+        proof -
+          have "concl (sub_rule ?s ?r) = steps pr ! k"
+            using dchoose unfolding derived_with_def by simp
+          with eq step_props show ?thesis by simp
+        qed
+        show ?thesis
+          using assm_next steps_next valid_next thesis_next by simp
+      qed
+    qed
+  qed
+
+  have final_assm: "assumptions (?acc ?n) = {}"
+    using prefix_inv by simp
+  have final_valid: "valid_proof F' (?acc ?n)"
+    using prefix_inv assms(1) unfolding valid_proof_def by auto
+  have final_thesis: "thesis (?acc ?n) = thesis pr"
+  proof -
+    have n_pos: "?n \<noteq> 0"
+      using assms(1) unfolding valid_proof_def by auto
+    have "thesis (?acc ?n) = steps pr ! (?n - 1)"
+      using prefix_inv n_pos by auto
+    also have "\<dots> = last (steps pr)"
+      using assms(1) unfolding valid_proof_def
+      by (simp add: last_conv_nth)
+    also have "\<dots> = thesis pr"
+      using assms(1) unfolding valid_proof_def by simp
+    finally show ?thesis .
+  qed
+  show ?thesis
+    using assms(3) final_assm final_valid final_thesis unfolding sim_left_def by auto
 qed
 
 lemma simulation_de_morgan_left:

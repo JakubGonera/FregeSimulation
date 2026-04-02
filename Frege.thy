@@ -334,7 +334,7 @@ qed
 locale frege_system =
   fixes F :: "('v, 'c) frege"
   assumes sound: "\<forall> r \<in> rules F. sound_rule F r"
-  and impl_complete: "\<forall> fs th val. ((\<forall> f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th) 
+  and impl_complete: "\<forall> fs th. (\<forall> val. (\<forall> f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th) 
                           \<longrightarrow> (\<exists> pr. valid_proof F pr
                                    \<and> assumptions pr = fs 
                                    \<and> thesis pr = th)"
