@@ -567,7 +567,7 @@ end
 
 definition simulates :: "('v, 'c) frege \<Rightarrow> ('v, 'c) frege \<Rightarrow> bool" where
  "simulates F1 F2 \<longleftrightarrow> (\<exists> f g p q. \<forall> w \<tau>. (thesis w = g \<tau> \<and> valid_proof F1 w \<and> assumptions w = {}) \<longrightarrow> 
-    valid_proof F2 (f w \<tau>) \<and> thesis (f w \<tau>) = \<tau> \<and> 
+    valid_proof F2 (f w \<tau>) \<and> thesis (f w \<tau>) = \<tau> \<and> assumptions (f w \<tau>) = {} \<and>
     len_formula (g \<tau>) \<le> poly p (len_formula \<tau>) \<and>
     len_proof (f w \<tau>) \<le> poly q (len_proof w))"
 
