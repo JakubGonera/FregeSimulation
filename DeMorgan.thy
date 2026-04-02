@@ -28,17 +28,18 @@ definition modus_ponens :: drule where
 
 locale de_morgan_frege =
   fixes F :: dfrege
-  assumes alph: "a = alphabet F" 
-  and conns_def: "conns a = {Top, Bot, Not, Or, And}"
-  and arity_def: "arity a = (\<lambda>c. case c of Top \<Rightarrow> 0 | Bot \<Rightarrow> 0 | Not \<Rightarrow> 1 | Or \<Rightarrow> 2 | And \<Rightarrow> 2)"
-  and conn_evals_def: "conn_evals a = (\<lambda> c. case c of
+  assumes conns_def: "conns (alphabet F) = {Top, Bot, Not, Or, And}"
+  and arity_def: "arity (alphabet F) = (\<lambda>c. case c of Top \<Rightarrow> 0 | Bot \<Rightarrow> 0 | Not \<Rightarrow> 1 | Or \<Rightarrow> 2 | And \<Rightarrow> 2)"
+  and conn_evals_def: "conn_evals (alphabet F) = (\<lambda> c. case c of
     Top \<Rightarrow> (\<lambda>_. True)                \<comment> \<open>nullary: ignores input list\<close>
   | Bot \<Rightarrow> (\<lambda>_. False)               \<comment> \<open>nullary\<close>
   | Not \<Rightarrow> (\<lambda>args. case args of [x] \<Rightarrow> \<not> x | _ \<Rightarrow> undefined)
   | Or  \<Rightarrow> (\<lambda>args. case args of [x, y] \<Rightarrow> x \<or> y | _ \<Rightarrow> undefined)
   | And \<Rightarrow> (\<lambda>args. case args of [x, y] \<Rightarrow> x \<and> y | _ \<Rightarrow> undefined))"
-  and "frege_system F" and "alphabet F = a"
+  and "frege_system F"
 begin
+
+abbreviation a where "a \<equiv> alphabet F"
 
 (*
 1. Either one of the premises is false, then the formula is true (\<not>f \<or> ...)
@@ -86,14 +87,14 @@ next
   show ?case
   proof (cases "\<not> eval a val p")
     case True
-    show ?thesis using Cons True taut_unfold[of r p ps a val] by auto
+    show ?thesis using Cons True taut_unfold[of r p ps val] by auto
   next
     case False
     have "\<exists> g \<in> set (p # ps). \<not> eval a val g" using Cons assms(1) by auto
     hence g: "\<exists> g \<in> set ps. \<not> eval a val g" using False by auto
     hence "ps \<noteq> []" by auto
     hence "eval a val (rule_to_taut \<lparr>prems = ps, concl = concl r\<rparr>)" using g Cons by auto
-    thus ?thesis using taut_unfold[of r p ps a val] Cons by auto
+    thus ?thesis using taut_unfold[of r p ps val] Cons by auto
   qed
 qed
 
@@ -115,7 +116,7 @@ next
   case (Cons p ps)
   have eq: "eval a val (rule_to_taut r) = ((\<not> eval a val p) \<or> 
                          eval a val (rule_to_taut \<lparr>prems = ps, concl = concl r\<rparr>))"
-    using Cons taut_unfold[of r p ps a val] by simp
+    using Cons taut_unfold[of r p ps val] by simp
   have "eval a val (rule_to_taut \<lparr>prems = ps, concl = concl r\<rparr>)" using Cons by simp
   thus ?case using eq by simp
 qed
@@ -136,7 +137,7 @@ proof
     have all_prems_true: "\<forall> f \<in> set (prems r). eval a val f" using False by simp
     have "sound_rule F r" 
       using assms de_morgan_frege_def de_morgan_frege_axioms frege_system.sound by auto
-    hence "eval a val (concl r)" using all_prems_true sound_rule_def[of F r] alph[of a] by simp 
+    hence "eval a val (concl r)" using all_prems_true sound_rule_def[of F r] by simp 
     thus ?thesis using premises_true by simp
   qed
 qed
@@ -147,13 +148,8 @@ locale de_morgan_sim =
   fixes F :: dfrege and F' :: dfrege
   assumes dm1: "de_morgan_frege F" and dm2: "de_morgan_frege F'"
   and "modus_ponens \<in> rules F"
+  and "rule \<in> rules F \<longrightarrow> rule = modus_ponens \<or> prems rule = []"
 begin
-
-(*
-This theorem says: take a rule from system F' which has the de_morgan alphabet, flatten it
-to a chain of implications, and now it has a proof in a system F which only has modus ponens
-as a rule, but uses the same de_morgan alphabet
-*)
 
 definition proof_of :: "dfrege \<Rightarrow> dproof \<Rightarrow> dformula \<Rightarrow> bool" where
   "proof_of frege pr f \<longleftrightarrow> valid_proof frege pr \<and> assumptions pr = {} \<and> thesis pr = f"
@@ -163,7 +159,7 @@ lemma rule_exists_proof:
 shows "\<exists> pr. valid_proof F pr \<and>  assumptions pr = {} \<and> thesis pr = f_rule"
 proof -
   have "alphabet F = alphabet F'" 
-    using de_morgan_sim_def de_morgan_sim_axioms de_morgan_frege.alph by simp
+    using de_morgan_frege_def dm1 dm2 by force
   hence all_val: "\<forall> val. eval (alphabet F) val f_rule"
     using de_morgan_frege.sound_rule_gives_tautology[of F' r] assms dm2 by simp
   have fsys: "frege_system F"
