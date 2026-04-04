@@ -165,6 +165,197 @@ proof -
   thus ?thesis using val_sat
     by force
 qed
+
+(* Predicate for a step being derived with a rule, a substitution, and as i-th step of a proof. *)
+definition derived_with :: "nat \<Rightarrow> dproof \<Rightarrow> drule \<Rightarrow> (string \<Rightarrow> dformula) \<Rightarrow> bool" where
+  "derived_with i pr r s \<longleftrightarrow> (let sub_r = sub_rule s r in
+                       i < length (steps pr) \<and> (concl sub_r) = steps pr ! i \<and>
+                       (\<forall>f1 \<in> set (prems sub_r). \<exists>f2 \<in> set (take i (steps pr)). f1 = f2))"
+
+lemma step_le_proof:
+  shows "\<forall>pr. \<forall>f \<in> set (steps pr). len_formula f \<le> len_proof pr"
+proof -
+  have member_le_sum:
+    "len_formula f \<le> sum_list (map len_formula fs)"
+    if "f \<in> set fs"
+    for f :: "('v, 'c) formula" and fs :: "('v, 'c) formula list"
+    using that
+  proof (induction fs)
+    case Nil
+    then show ?case by simp
+  next
+    case (Cons g gs)
+    show ?case
+    proof (cases "f = g")
+      case True
+      then show ?thesis by simp
+    next
+      case False
+      then have "f \<in> set gs"
+        using Cons.prems by simp
+      then have "len_formula f \<le> sum_list (map len_formula gs)"
+        using Cons.IH by simp
+      then show ?thesis by simp
+    qed
+  qed
+  have step_bound:
+    "len_formula f \<le> len_proof pr"
+    if "f \<in> set (steps pr)"
+    for pr :: "('v, 'c) frege_proof" and f :: "('v, 'c) formula"
+    using member_le_sum[of f "steps pr"] that by simp
+  show ?thesis
+  proof (rule allI)
+    fix pr :: "('v, 'c) frege_proof"
+    show "\<forall>f \<in> set (steps pr). len_formula f \<le> len_proof pr"
+    proof (rule ballI)
+      fix f :: "('v, 'c) formula"
+      assume "f \<in> set (steps pr)"
+      then show "len_formula f \<le> len_proof pr"
+        using step_bound by blast
+    qed
+  qed
+qed
+
+context de_morgan_frege begin
+
+lemma len_sub_bound_by_proof:
+  assumes "r \<in> rules F"
+      and "derived_with i pr r s"
+      and "rule_restricted_sub r s"
+      and "c = Max ((\<lambda>r. card (var_set_rule r)) ` rules F) + 1"
+      and "valid_proof F pr"
+    shows "len_sub (var_set_rule r) s \<le> c * len_proof pr"
+proof -
+  let ?var_set = "var_set_rule r"
+  have sub_bound: "\<forall>f. \<forall>v \<in> var_set_form f. len_formula (s v) \<le> len_formula (sub_formula s f)"
+  proof
+    fix f
+    show "\<forall>v \<in> var_set_form f. len_formula (s v) \<le> len_formula (sub_formula s f)"
+    proof (induction f)
+      case (Atom x)
+      show ?case by simp
+    next
+      case (Conn c gs)
+      have "sub_formula s (Conn c gs) = Conn c (map (sub_formula s) gs)" by simp
+      hence "len_formula (sub_formula s (Conn c gs)) =
+                1 + sum_list (map (\<lambda>g. len_formula g) (map (sub_formula s) gs))"
+        by simp
+      hence unroll: "len_formula (sub_formula s (Conn c gs)) =
+                1 + sum_list (map (\<lambda>g. len_formula (sub_formula s g)) gs)"
+      proof (induction gs)
+        case Nil
+        then show ?case by simp
+      next
+        case (Cons g gs)
+        then show ?case by simp
+      qed
+      have var_in_gs: "v \<in> var_set_form (Conn c gs) \<longrightarrow> (\<exists>f \<in> set gs. v \<in> var_set_form f)"
+        by simp
+      have g_le: "\<forall>g \<in> set gs. len_formula (sub_formula s g) \<le> len_formula (sub_formula s (Conn c gs))"
+      proof
+        fix g
+        assume g_in: "g \<in> set gs"
+        have g_sum_bound: "len_formula (sub_formula s g) \<le> sum_list (map (\<lambda>g. len_formula (sub_formula s g)) gs)"
+          using g_in
+        proof (induction gs)
+          case Nil
+          then show ?case by simp
+        next
+          case (Cons h hs)
+          then show ?case by (cases "g = h") simp_all
+        qed
+        show "len_formula (sub_formula s g) \<le> len_formula (sub_formula s (Conn c gs))"
+        proof -
+          have sum_bound:
+            "sum_list (map (\<lambda>g. len_formula (sub_formula s g)) gs)
+              \<le> len_formula (sub_formula s (Conn c gs))"
+          proof (induction gs)
+            case Nil
+            then show ?case by simp
+          next
+            case (Cons h hs)
+            then show ?case by simp
+          qed
+          show ?thesis
+            using g_sum_bound sum_bound by arith
+        qed
+      qed
+      show ?case
+      proof (intro ballI)
+        fix v
+        assume v_in: "v \<in> var_set_form (Conn c gs)"
+        have ex_g: "\<exists>g \<in> set gs. v \<in> var_set_form g"
+          using var_in_gs v_in by simp
+        then obtain g where g_in: "g \<in> set gs" and vg_in: "v \<in> var_set_form g"
+          by blast
+        have IHg: "\<forall>v \<in> var_set_form g. len_formula (s v) \<le> len_formula (sub_formula s g)"
+          using Conn.IH g_in by blast
+        have v_to_g: "len_formula (s v) \<le> len_formula (sub_formula s g)"
+          using IHg vg_in by blast
+        have g_to_conn: "len_formula (sub_formula s g) \<le> len_formula (sub_formula s (Conn c gs))"
+          using g_le g_in by blast
+        show "len_formula (s v) \<le> len_formula (sub_formula s (Conn c gs))"
+          using v_to_g g_to_conn by arith
+      qed
+    qed
+  qed
+  have form_bound: "\<forall>v \<in> ?var_set. len_formula (s v) \<le> len_proof pr"
+  proof (intro ballI)
+    fix v
+    assume v_in_vs: "v \<in> ?var_set"
+    show "len_formula (s v) \<le> len_proof pr"
+    proof (cases "v \<in> var_set_form (concl r)")
+      case True
+      have "concl (sub_rule s r) \<in> set (steps pr)"
+        using assms(2) derived_with_def by simp
+      hence a: "len_formula (concl (sub_rule s r)) \<le> len_proof pr"
+        using step_le_proof by blast
+      have b: "concl (sub_rule s r) = sub_formula s (concl r)" by simp
+      have c: "len_formula (s v) \<le> len_formula (sub_formula s (concl r))"
+        using sub_bound True by simp
+      thus ?thesis using a b by simp
+    next
+      case False
+      hence v_in_prem: "v \<in> \<Union> (var_set_form ` set (prems r))"
+        using v_in_vs by simp
+      obtain f :: dformula
+        where v_def: "v \<in> var_set_form f \<and> f \<in> set (prems r)"
+        using v_in_prem by auto
+      then obtain g :: dformula
+        where g_eq: "g \<in> set (prems (sub_rule s r)) \<and> g = sub_formula s f"
+        by auto
+      hence "g \<in> set (steps pr)" using assms(2) derived_with_def
+        by (meson in_set_takeD)
+      hence g_le: "len_formula g \<le> len_proof pr"
+        using step_le_proof by blast
+      have "len_formula (s v) \<le> len_formula g"
+        using g_eq v_def sub_bound by simp
+      thus ?thesis using g_le by simp
+    qed
+  qed
+  have c_bound: "card ?var_set \<le> c"
+  proof -
+    let ?set = "(\<lambda>r. card (var_set_rule r)) ` rules F"
+    have "finite (rules F)"
+      using de_morgan_frege_axioms de_morgan_frege_def by (simp add: frege_system.finite)
+    hence "finite ?set" by simp
+    thus ?thesis using Max_ge[of ?set] assms(1,4)
+      by (meson image_iff trans_le_add1)
+  qed
+  have "len_sub ?var_set s = max 1 (\<Sum>v \<in> ?var_set. len_formula (s v))"
+    using len_sub_def by simp
+  hence "len_sub ?var_set s \<le> max 1 (\<Sum>v \<in> ?var_set. len_proof pr)"
+    using form_bound
+    by (smt (verit) max.absorb_iff2 max.boundedE max.orderE nat_le_linear sum_mono)
+  hence "len_sub ?var_set s \<le> max 1 (card ?var_set * len_proof pr)"
+    by simp
+  hence "len_sub ?var_set s \<le> max 1 (c * len_proof pr)" using c_bound
+    by (meson dual_order.trans le_numeral_extra(4) max.mono mult_le_cancel2)
+  thus ?thesis using len_proof_positive assms(4)
+    by (metis assms(5) le_add2 less_one linorder_not_le max_absorb2 mult_is_0)
+qed
+
+end
   
 locale de_morgan_sim =
   fixes F :: dfrege and F' :: dfrege
@@ -683,12 +874,6 @@ next
   qed
 qed
 
-(* Predicate for a step being derived with a rule, a substitution, and as i-th step of a proof. *)
-definition derived_with :: "nat \<Rightarrow> dproof \<Rightarrow> drule \<Rightarrow> (string \<Rightarrow> dformula) \<Rightarrow> bool" where
-  "derived_with i pr r s \<longleftrightarrow> (let sub_r = sub_rule s r in 
-                       i < length (steps pr) \<and> (concl sub_r) = steps pr ! i \<and>
-                       (\<forall> f1 \<in> set (prems sub_r). \<exists> f2 \<in> set (take i (steps pr)). f1 = f2))"
-
 definition choose_rule_sub where
   "choose_rule_sub frege i pr =
      (SOME (r,s). r \<in> rules frege \<and> derived_with i pr r s \<and> rule_restricted_sub r s)"
@@ -1075,50 +1260,6 @@ proof -
     using pr_eq final_valid final_th final_assm by auto
 qed
 
-lemma step_le_proof:
-  shows "\<forall> pr. \<forall> f \<in> set (steps pr). len_formula f \<le> len_proof pr"
-proof -
-  have member_le_sum:
-    "len_formula f \<le> sum_list (map len_formula fs)"
-    if "f \<in> set fs"
-    for f :: "('v, 'c) formula" and fs :: "('v, 'c) formula list"
-    using that
-  proof (induction fs)
-    case Nil
-    then show ?case by simp
-  next
-    case (Cons g gs)
-    show ?case
-    proof (cases "f = g")
-      case True
-      then show ?thesis by simp
-    next
-      case False
-      then have "f \<in> set gs"
-        using Cons.prems by simp
-      then have "len_formula f \<le> sum_list (map len_formula gs)"
-        using Cons.IH by simp
-      then show ?thesis by simp
-    qed
-  qed
-  have step_bound:
-    "len_formula f \<le> len_proof pr"
-    if "f \<in> set (steps pr)"
-    for pr :: "('v, 'c) frege_proof" and f :: "('v, 'c) formula"
-    using member_le_sum[of f "steps pr"] that by simp
-  show ?thesis
-  proof (rule allI)
-    fix pr :: "('v, 'c) frege_proof"
-    show "\<forall>f \<in> set (steps pr). len_formula f \<le> len_proof pr"
-    proof (rule ballI)
-      fix f :: "('v, 'c) formula"
-      assume "f \<in> set (steps pr)"
-      then show "len_formula f \<le> len_proof pr"
-        using step_bound by blast
-    qed
-  qed
-qed
-
 lemma r_t_t_bound:
   shows "len_formula (rule_to_taut r) \<le> 
          len_formula (concl r) + 3 * sum_list (map len_formula (prems r))"
@@ -1261,150 +1402,6 @@ proof -
   finally show ?thesis by simp
 qed
 
-lemma len_sub_bound_by_proof:
-  assumes "r \<in> rules F'"
-      and "derived_with i pr r s"
-      and "rule_restricted_sub r s"
-      and "c = Max ((\<lambda> r. card (var_set_rule r)) ` rules F') + 1"
-      and "valid_proof F' pr"
-    shows "len_sub (var_set_rule r) s \<le> c * len_proof pr"
-proof -
-  let ?var_set = "var_set_rule r"
-  have sub_bound: "\<forall>f. \<forall> v \<in> var_set_form f. len_formula (s v) \<le> len_formula (sub_formula s f)"
-  proof
-    fix f
-    show "\<forall> v \<in> var_set_form f. len_formula (s v) \<le> len_formula (sub_formula s f)"
-    proof (induction f)
-      case (Atom x)
-      show ?case by simp
-    next
-      case (Conn c gs)
-      have "sub_formula s (Conn c gs) = Conn c (map (sub_formula s) gs)" by simp
-      hence "len_formula (sub_formula s (Conn c gs)) =
-                1 + sum_list (map (\<lambda> g. len_formula g) (map (sub_formula s) gs))"
-        by simp
-      hence unroll: "len_formula (sub_formula s (Conn c gs)) =
-                1 + sum_list (map (\<lambda> g. len_formula (sub_formula s g)) gs)"
-      proof (induction gs)
-        case Nil
-        then show ?case by simp
-      next
-        case (Cons g gs)
-        then show ?case by simp
-      qed
-      have var_in_gs: "v \<in> var_set_form (Conn c gs) \<longrightarrow> (\<exists> f \<in> set gs. v \<in> var_set_form f)"
-        by simp
-      have g_bounds: "v \<in> var_set_form g \<and> g \<in> set gs \<longrightarrow> len_formula (s v) \<le> len_formula (sub_formula s g)"
-        using Conn by simp
-      have g_le: "\<forall> g \<in> set gs. len_formula (sub_formula s g) \<le> len_formula (sub_formula s (Conn c gs))"
-      proof
-        fix g
-        assume g_in: "g \<in> set gs"
-        have g_sum_bound: "len_formula (sub_formula s g) \<le> sum_list (map (\<lambda>g. len_formula (sub_formula s g)) gs)"
-          using g_in
-        proof (induction gs)
-          case Nil
-          then show ?case by simp
-        next
-          case (Cons h hs)
-          then show ?case by (cases "g = h") simp_all
-        qed
-        show "len_formula (sub_formula s g) \<le> len_formula (sub_formula s (Conn c gs))"
-        proof -
-          have sum_bound:
-            "sum_list (map (\<lambda>g. len_formula (sub_formula s g)) gs)
-              \<le> len_formula (sub_formula s (Conn c gs))"
-          proof (induction gs)
-            case Nil
-            then show ?case by simp
-          next
-            case (Cons h hs)
-            then show ?case by simp
-          qed
-          show ?thesis
-            using g_sum_bound sum_bound by arith
-        qed
-      qed
-      show ?case
-      proof (intro ballI)
-        fix v
-        assume v_in: "v \<in> var_set_form (Conn c gs)"
-        have ex_g: "\<exists>g \<in> set gs. v \<in> var_set_form g"
-          using var_in_gs v_in by simp
-        then obtain g where g_in: "g \<in> set gs" and vg_in: "v \<in> var_set_form g"
-          by blast
-        have IHg: "\<forall>v \<in> var_set_form g. len_formula (s v) \<le> len_formula (sub_formula s g)"
-          using Conn.IH g_in by blast
-        have v_to_g: "len_formula (s v) \<le> len_formula (sub_formula s g)"
-          using IHg vg_in by blast
-        have g_to_conn: "len_formula (sub_formula s g) \<le> len_formula (sub_formula s (Conn c gs))"
-          using g_le g_in by blast
-        show "len_formula (s v) \<le> len_formula (sub_formula s (Conn c gs))"
-          using v_to_g g_to_conn by arith
-      qed
-    qed
-  qed
-
-  have form_bound: "\<forall> v \<in> ?var_set. len_formula (s v) \<le> len_proof pr"
-  proof (intro ballI)
-    fix v
-    assume v_in_vs: "v \<in> ?var_set"
-    show "len_formula (s v) \<le> len_proof pr"
-    proof (cases "v \<in> var_set_form (concl r)")
-      case True
-      have "concl (sub_rule s r) \<in> set (steps pr)"
-        using assms(2) derived_with_def by simp
-      hence a: "len_formula (concl (sub_rule s r)) \<le> len_proof pr"
-        using step_le_proof by blast
-      have b: "concl (sub_rule s r) = sub_formula s (concl r)" by simp
-      have c: "len_formula (s v) \<le> len_formula (sub_formula s (concl r))"
-        using sub_bound True by simp
-      thus ?thesis using a b by simp
-    next
-      case False
-      hence v_in_prem: "v \<in> \<Union> (var_set_form ` (set (prems r)))"
-        using v_in_vs by simp
-      obtain f :: dformula
-        where v_def: "v \<in> var_set_form f \<and> f \<in> set (prems r)"
-        using v_in_prem by auto
-      then obtain g :: dformula
-        where g_eq: "g \<in> set (prems (sub_rule s r)) \<and> g = sub_formula s f"
-        by auto
-      hence "g \<in> set (steps pr)" using assms(2) derived_with_def
-        by (meson in_set_takeD)
-      hence g_le: "len_formula g \<le> len_proof pr"
-        using step_le_proof by blast
-      have "len_formula (s v) \<le> len_formula g"
-        using g_eq v_def sub_bound by simp
-      thus ?thesis using g_le by simp
-    qed
-  qed
-
-  have c_bound: "card ?var_set \<le> c"
-  proof -
-    thm Max_ge
-    let ?set = "(\<lambda> r. card (var_set_rule r)) ` rules F'"
-    have "finite (rules F')" 
-      using frege_system_def[of F'] dm2 de_morgan_frege_def by blast
-    hence "finite ?set" by simp
-    thus ?thesis using Max_ge[of ?set] assms(1, 4)
-      by (meson image_iff trans_le_add1)
-  qed
-
-  have "len_sub (?var_set) s = max 1 (\<Sum> v \<in> ?var_set. len_formula (s v))"
-    using len_sub_def by simp
-  hence "len_sub (?var_set) s \<le> max 1 (\<Sum> v \<in> ?var_set. len_proof pr)"
-    using form_bound 
-    by (smt (verit) max.absorb_iff2 max.boundedE max.orderE nat_le_linear sum_mono)
-  hence "len_sub (?var_set) s \<le> max 1 (card ?var_set * len_proof pr)"
-    by simp
-  hence "len_sub (?var_set) s \<le> max 1 (c * len_proof pr)" using c_bound
-    by (meson dual_order.trans le_numeral_extra(4) max.mono mult_le_cancel2) 
-  thus ?thesis using len_proof_positive assms(4)
-    by (metis assms(5) le_add2 less_one linorder_not_le max_absorb2 mult_is_0)
-qed
-
-
 lemma poly_mono_nat:
   fixes p :: "nat poly"
   shows "x \<le> y \<Longrightarrow> poly p x \<le> poly p y"
@@ -1446,7 +1443,7 @@ proof -
     have valid_pr: "valid_proof F' pr"
       using assm by simp
     have len_sub_bound: "len_sub (var_set_rule rule) sub \<le> ?c * len_proof pr"
-      using len_sub_bound_by_proof[OF r_in dwith rsub, of ?c] valid_pr by simp
+      using de_morgan_frege.len_sub_bound_by_proof[OF dm2 r_in dwith rsub, of ?c] valid_pr by simp
     have first_step_bound:
       "len_proof (first_step rule sub) \<le> poly (g0 rule) (len_sub (var_set_rule rule) sub)"
       using g0_def r_in rsub by blast
@@ -2219,25 +2216,60 @@ lemma step_F_bound:
   shows "\<exists> g :: nat poly. \<forall> rule \<in> rules F. \<forall>  pr i sub. 
             derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F pr \<longrightarrow> 
             len_proof (step_F rule sub) \<le> poly g (len_proof pr)"
-  sorry
-(*
 proof -
-(*
-  \<rightarrow> c_rule
-  \<rightarrow> |step_F rule sub| \<le> c_rule * len_sub sub \<le> c_rule * len_proof pr
-  \<rightarrow> g = x * (max{c_rule})
-*)
-  fix rule
-  fix pr
-  fix i
-  fix sub
-  assume "rule \<in> rules F"
-  assume derived: "derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F pr"
-  let ?c_rule = "len_proof (rule_proof_fun_F rule)"
-  have "len_proof (step_F rule sub) \<le> ?c_rule * (len_sub (var_set_rule rule) sub)"
-    by (metis derived rule_restricted_sub_def 
-        step_F.elims sub_proof_bound var_set_rule_finite)
-  hence "len_proof (step_F rule sub) \<le> ?c_rule * (len_proof pr)"*)
+  let ?c = "Max ((\<lambda>r. card (var_set_rule r)) ` rules F) + 1"
+  let ?S = "(\<lambda>r. ?c * len_proof (rule_proof_fun_F r)) ` rules F"
+  let ?g = "[:0, Max ?S:]"
+  have fin_rules: "finite (rules F)"
+    using dm1 unfolding de_morgan_frege_def by (simp add: frege_system.finite)
+  hence fin_S: "finite ?S"
+    by simp
+  show ?thesis
+  proof (rule exI[of _ ?g], intro ballI allI impI)
+    fix rule pr i sub
+    assume r_in: "rule \<in> rules F"
+    assume assm: "derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F pr"
+    have rsub: "rule_restricted_sub rule sub"
+      using assm by simp
+    have valid_pr: "valid_proof F pr"
+      using assm by simp
+    have len_sub_bound: "len_sub (var_set_rule rule) sub \<le> ?c * len_proof pr"
+      using de_morgan_frege.len_sub_bound_by_proof[OF dm1 r_in, of i pr sub ?c] assm by simp
+    have restricted_sub: "\<forall>v. v \<notin> var_set_rule rule \<longrightarrow> sub v = Atom v"
+      using rsub unfolding rule_restricted_sub_def by simp
+    have step_bound:
+      "len_proof (step_F rule sub)
+       \<le> len_proof (rule_proof_fun_F rule) * len_sub (var_set_rule rule) sub"
+      unfolding step_F.simps
+      using sub_proof_bound[of "var_set_rule rule" sub "rule_proof_fun_F rule"] var_set_rule_finite[of rule] restricted_sub
+      by simp
+    have step_bound':
+      "len_proof (step_F rule sub)
+       \<le> (?c * len_proof (rule_proof_fun_F rule)) * len_proof pr"
+    proof -
+      have coeff_nonneg: "0 \<le> len_proof (rule_proof_fun_F rule)"
+        by simp
+      have mult_bound:
+        "len_proof (rule_proof_fun_F rule) * len_sub (var_set_rule rule) sub
+         \<le> len_proof (rule_proof_fun_F rule) * (?c * len_proof pr)"
+        using len_sub_bound coeff_nonneg by (rule mult_left_mono)
+      have "len_proof (step_F rule sub) \<le> len_proof (rule_proof_fun_F rule) * (?c * len_proof pr)"
+        using step_bound mult_bound by linarith
+      then show ?thesis
+        by (simp add: algebra_simps)
+    qed
+    have coeff_in: "?c * len_proof (rule_proof_fun_F rule) \<in> ?S"
+      using r_in by simp
+    have coeff_le: "?c * len_proof (rule_proof_fun_F rule) \<le> Max ?S"
+      using Max_ge[OF fin_S coeff_in] by simp
+    have mono: "(?c * len_proof (rule_proof_fun_F rule)) * len_proof pr \<le> Max ?S * len_proof pr"
+      using coeff_le by (simp add: mult_right_mono)
+    have "len_proof (step_F rule sub) \<le> Max ?S * len_proof pr"
+      using step_bound' mono by linarith
+    then show "len_proof (step_F rule sub) \<le> poly ?g (len_proof pr)"
+      by (simp add: algebra_simps)
+  qed
+qed
 
 lemma simulation_de_morgan_left:
   shows "simulates F F'"
