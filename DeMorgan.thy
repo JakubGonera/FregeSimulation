@@ -2271,9 +2271,294 @@ proof -
   qed
 qed
 
+lemma sim_left_step_bound:
+  shows "\<exists> bound. \<forall>pr i acc. i \<ge> 0 \<and> i < length (steps pr) \<and> valid_proof F pr \<and> assumptions pr = {} \<longrightarrow>
+            len_proof (sim_left_step pr i acc) \<le> poly bound (len_proof pr) + len_proof acc"
+proof -
+  obtain g :: "nat poly" where g_prop:
+    "\<forall>rule\<in>rules F. \<forall>pr i sub.
+      derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F pr \<longrightarrow>
+      len_proof (step_F rule sub) \<le> poly g (len_proof pr)"
+    using step_F_bound by blast
+  let ?bound = "[:0, 1:] + g"
+  show ?thesis
+  proof (rule exI[of _ ?bound], intro allI impI)
+    fix pr i acc
+    assume assm: "i \<ge> 0 \<and> i < length (steps pr) \<and> valid_proof F pr \<and> assumptions pr = {}"
+    have i_lt: "i < length (steps pr)"
+      using assm by simp
+    have pr_valid: "valid_proof F pr"
+      using assm by simp
+    have pr_assm: "assumptions pr = {}"
+      using assm by simp
+    let ?step = "steps pr ! i"
+    have step_notin: "?step \<notin> assumptions pr"
+      using pr_assm by simp
+    have step_der: "derived (rules F) (take i (steps pr)) ?step"
+      using pr_valid i_lt step_notin unfolding valid_proof_def by auto
+    then obtain r s where r_in0: "r \<in> rules F"
+      and concl0: "concl (sub_rule s r) = ?step"
+      and prems0: "\<forall>f1\<in>set (prems (sub_rule s r)). \<exists>f2\<in>set (take i (steps pr)). f1 = f2"
+      unfolding derived_def by auto
+    have dwith0: "derived_with i pr r s"
+      using i_lt concl0 prems0 unfolding derived_with_def by simp
+    have ex_rs: "\<exists>r s. r \<in> rules F \<and> derived_with i pr r s"
+      using r_in0 dwith0 by blast
+    have choose_props:
+      "fst (choose_rule_sub F i pr) \<in> rules F \<and>
+       derived_with i pr (fst (choose_rule_sub F i pr)) (snd (choose_rule_sub F i pr)) \<and>
+       rule_restricted_sub (fst (choose_rule_sub F i pr)) (snd (choose_rule_sub F i pr))"
+      using choose_rule_sub_props[OF ex_rs] .
+    let ?rule = "fst (choose_rule_sub F i pr)"
+    let ?sub = "snd (choose_rule_sub F i pr)"
+    have r_in: "?rule \<in> rules F"
+      using choose_props by simp
+    have dwith: "derived_with i pr ?rule ?sub"
+      using choose_props by simp
+    have rsub: "rule_restricted_sub ?rule ?sub"
+      using choose_props by simp
+    have step_b: "len_proof (step_F ?rule ?sub) \<le> poly g (len_proof pr)"
+      using g_prop r_in dwith rsub pr_valid by blast
+    have step_eq: "sim_left_step pr i acc = combine_proofs acc (step_F ?rule ?sub)"
+    proof (cases "choose_rule_sub F i pr")
+      case (Pair r s)
+      then show ?thesis
+        using step_notin i_lt by (simp add: sim_left_step_def Let_def)
+    qed
+    have "len_proof (sim_left_step pr i acc) = len_proof acc + len_proof (step_F ?rule ?sub)"
+      using step_eq by simp
+    also have "\<dots> \<le> len_proof acc + poly g (len_proof pr)"
+      using step_b by simp
+    also have "\<dots> \<le> len_proof acc + poly ?bound (len_proof pr)"
+      by simp
+    finally show "len_proof (sim_left_step pr i acc) \<le> poly ?bound (len_proof pr) + len_proof acc"
+      by (simp add: add.assoc add.commute add.left_commute)
+  qed
+qed
+
+lemma sim_left_bound:
+  assumes "valid_proof F pr \<and> assumptions pr = {}"
+  shows "\<exists> bound. len_proof (sim_left pr (thesis pr)) \<le> poly bound (len_proof pr)"
+proof -
+  obtain g :: "nat poly" where g_prop:
+    "\<forall>pr i acc. i \<ge> 0 \<and> i < length (steps pr) \<and> valid_proof F pr \<and> assumptions pr = {} \<longrightarrow>
+      len_proof (sim_left_step pr i acc) \<le> poly g (len_proof pr) + len_proof acc"
+    using sim_left_step_bound by blast
+  let ?acc = "\<lambda>k. fold (sim_left_step pr) [0..<k] \<lparr>assumptions = assumptions pr, thesis = thesis pr, steps = []\<rparr>"
+  have pr_valid: "valid_proof F pr"
+    using assms by simp
+  have pr_assm: "assumptions pr = {}"
+    using assms by simp
+  have steps_bound: "length (steps pr) \<le> len_proof pr"
+  proof -
+    have ones_le_list:
+      "sum_list (replicate (length fs) 1) \<le> sum_list (map len_formula fs)" for fs :: "dformula list"
+    proof (induction fs)
+      case Nil
+      then show ?case by simp
+    next
+      case (Cons f fs)
+      have "1 + sum_list (replicate (length fs) 1) \<le> len_formula f + sum_list (map len_formula fs)"
+        using Cons.IH len_formula_positive[of f] by simp
+      then show ?case by simp
+    qed
+    have ones_le:
+      "sum_list (replicate (length (steps pr)) 1) \<le> sum_list (map len_formula (steps pr))"
+      using ones_le_list[of "steps pr"] .
+    have ones_eq_list: "sum_list (replicate (length fs) 1) = length fs" for fs :: "dformula list"
+    proof (induction fs)
+      case Nil
+      then show ?case by simp
+    next
+      case (Cons f fs)
+      then show ?case by simp
+    qed
+    have ones_eq: "sum_list (replicate (length (steps pr)) 1) = length (steps pr)"
+      using ones_eq_list[of "steps pr"] .
+    then have "length (steps pr) \<le> sum_list (map len_formula (steps pr))"
+      using ones_le by simp
+    then show ?thesis by simp
+  qed
+  have fold_bound:
+    "\<forall>k\<le>length (steps pr). len_proof (?acc k) \<le> k * poly g (len_proof pr)"
+  proof (intro allI impI)
+    fix k
+    assume k_le: "k \<le> length (steps pr)"
+    show "len_proof (?acc k) \<le> k * poly g (len_proof pr)"
+      using k_le
+    proof (induction k)
+      case 0
+      then show ?case by simp
+    next
+      case (Suc k)
+      have k_lt: "k < length (steps pr)"
+        using Suc.prems by simp
+      have ih: "len_proof (?acc k) \<le> k * poly g (len_proof pr)"
+        using Suc.IH Suc.prems by simp
+      have step_b:
+        "len_proof (sim_left_step pr k (?acc k)) \<le> poly g (len_proof pr) + len_proof (?acc k)"
+        using g_prop k_lt pr_valid pr_assm by simp
+      have "?acc (Suc k) = sim_left_step pr k (?acc k)"
+        by simp
+      then have "len_proof (?acc (Suc k)) \<le> poly g (len_proof pr) + len_proof (?acc k)"
+        using step_b by simp
+      also have "\<dots> \<le> poly g (len_proof pr) + k * poly g (len_proof pr)"
+        using ih by simp
+      also have "\<dots> = Suc k * poly g (len_proof pr)"
+        by simp
+      finally show ?case .
+    qed
+  qed
+  let ?bound = "[:0, 1:] * g"
+  have final_fold:
+    "len_proof (sim_left pr (thesis pr)) \<le> length (steps pr) * poly g (len_proof pr)"
+    unfolding sim_left_def using fold_bound by simp
+  also have "\<dots> \<le> len_proof pr * poly g (len_proof pr)"
+    using steps_bound by simp
+  also have "\<dots> = poly ?bound (len_proof pr)"
+    by simp
+  finally show ?thesis
+    by (rule exI[of _ ?bound])
+qed
+
 lemma simulation_de_morgan_left:
   shows "simulates F F'"
-  sorry
+proof -
+  obtain g :: "nat poly" where g_prop:
+    "\<forall>pr i acc. i \<ge> 0 \<and> i < length (steps pr) \<and> valid_proof F pr \<and> assumptions pr = {} \<longrightarrow>
+      len_proof (sim_left_step pr i acc) \<le> poly g (len_proof pr) + len_proof acc"
+    using sim_left_step_bound by blast
+  let ?f = "\<lambda>w \<tau>. sim_left w (thesis w)"
+  let ?g = "\<lambda>\<tau>. \<tau>"
+  let ?p = "[:0, 1:]"
+  let ?q = "[:0, 1:] * g"
+  have sim_case:
+    "(thesis w = ?g \<tau> \<and> valid_proof F w \<and> assumptions w = {}) \<longrightarrow>
+      valid_proof F' (?f w \<tau>) \<and> thesis (?f w \<tau>) = \<tau> \<and> assumptions (?f w \<tau>) = {} \<and>
+      len_formula (?g \<tau>) \<le> poly ?p (len_formula \<tau>) \<and>
+      len_proof (?f w \<tau>) \<le> poly ?q (len_proof w)" for w \<tau>
+  proof
+    assume assm: "thesis w = ?g \<tau> \<and> valid_proof F w \<and> assumptions w = {}"
+    have th_eq: "thesis w = \<tau>"
+      using assm by simp
+    have w_valid: "valid_proof F w"
+      using assm by simp
+    have w_assm: "assumptions w = {}"
+      using assm by simp
+    have pr_props:
+      "valid_proof F' (?f w \<tau>) \<and> thesis (?f w \<tau>) = thesis w \<and> assumptions (?f w \<tau>) = {}"
+      using sim_left_proves[of w "sim_left w (thesis w)"] w_valid w_assm by simp
+    let ?acc = "\<lambda>k. fold (sim_left_step w) [0..<k]
+      \<lparr>assumptions = assumptions w, thesis = thesis w, steps = []\<rparr>"
+    have steps_bound: "length (steps w) \<le> len_proof w"
+    proof -
+      have ones_le_list:
+        "sum_list (replicate (length fs) 1) \<le> sum_list (map len_formula fs)" for fs :: "dformula list"
+      proof (induction fs)
+        case Nil
+        then show ?case by simp
+      next
+        case (Cons f fs)
+        have "1 + sum_list (replicate (length fs) 1) \<le> len_formula f + sum_list (map len_formula fs)"
+          using Cons.IH len_formula_positive[of f] by simp
+        then show ?case by simp
+      qed
+      have ones_le:
+        "sum_list (replicate (length (steps w)) 1) \<le> sum_list (map len_formula (steps w))"
+        using ones_le_list[of "steps w"] .
+      have ones_eq_list: "sum_list (replicate (length fs) 1) = length fs" for fs :: "dformula list"
+      proof (induction fs)
+        case Nil
+        then show ?case by simp
+      next
+        case (Cons f fs)
+        then show ?case by simp
+      qed
+      have ones_eq: "sum_list (replicate (length (steps w)) 1) = length (steps w)"
+        using ones_eq_list[of "steps w"] .
+      then have "length (steps w) \<le> sum_list (map len_formula (steps w))"
+        using ones_le by simp
+      then show ?thesis by simp
+    qed
+    have fold_bound:
+      "\<forall>k\<le>length (steps w). len_proof (?acc k) \<le> k * poly g (len_proof w)"
+    proof (intro allI impI)
+      fix k
+      assume k_le: "k \<le> length (steps w)"
+      show "len_proof (?acc k) \<le> k * poly g (len_proof w)"
+        using k_le
+      proof (induction k)
+        case 0
+        then show ?case by simp
+      next
+        case (Suc k)
+        have k_lt: "k < length (steps w)"
+          using Suc.prems by simp
+        have ih: "len_proof (?acc k) \<le> k * poly g (len_proof w)"
+          using Suc.IH Suc.prems by simp
+        have step_b:
+          "len_proof (sim_left_step w k (?acc k)) \<le> poly g (len_proof w) + len_proof (?acc k)"
+          using g_prop k_lt w_valid w_assm by simp
+        have "?acc (Suc k) = sim_left_step w k (?acc k)"
+          by simp
+        then have "len_proof (?acc (Suc k)) \<le> poly g (len_proof w) + len_proof (?acc k)"
+          using step_b by simp
+        also have "\<dots> \<le> poly g (len_proof w) + k * poly g (len_proof w)"
+          using ih by simp
+        also have "\<dots> = Suc k * poly g (len_proof w)"
+          by simp
+        finally show ?case .
+      qed
+    qed
+    have global_bound:
+      "len_proof (?f w \<tau>) \<le> poly ?q (len_proof w)"
+    proof -
+      have "len_proof (sim_left w (thesis w)) \<le> length (steps w) * poly g (len_proof w)"
+        unfolding sim_left_def using fold_bound by simp
+      also have "\<dots> \<le> len_proof w * poly g (len_proof w)"
+        using steps_bound by simp
+      also have "\<dots> = poly ?q (len_proof w)"
+        by simp
+      finally show ?thesis by simp
+    qed
+    show "valid_proof F' (?f w \<tau>) \<and> thesis (?f w \<tau>) = \<tau> \<and> assumptions (?f w \<tau>) = {} \<and>
+      len_formula (?g \<tau>) \<le> poly ?p (len_formula \<tau>) \<and>
+      len_proof (?f w \<tau>) \<le> poly ?q (len_proof w)"
+    proof -
+      have valid_f: "valid_proof F' (?f w \<tau>)"
+        using pr_props by simp
+      have thesis_f: "thesis (?f w \<tau>) = \<tau>"
+        using pr_props th_eq by simp
+      have assm_f: "assumptions (?f w \<tau>) = {}"
+        using pr_props by simp
+      have len_g: "len_formula (?g \<tau>) \<le> poly ?p (len_formula \<tau>)"
+        by simp
+      show ?thesis
+      proof (intro conjI)
+        show "valid_proof F' (?f w \<tau>)"
+          using valid_f .
+        show "thesis (?f w \<tau>) = \<tau>"
+          using thesis_f .
+        show "assumptions (?f w \<tau>) = {}"
+          using assm_f .
+        show "len_formula (?g \<tau>) \<le> poly ?p (len_formula \<tau>)"
+          using len_g .
+        show "len_proof (?f w \<tau>) \<le> poly ?q (len_proof w)"
+          using global_bound .
+      qed
+    qed
+  qed
+  show ?thesis
+    unfolding simulates_def
+  proof (rule exI[of _ ?f], rule exI[of _ ?g], rule exI[of _ ?p], rule exI[of _ ?q], intro allI)
+    fix w \<tau>
+    show "thesis w = ?g \<tau> \<and> valid_proof F w \<and> assumptions w = {} \<longrightarrow>
+      valid_proof F' (?f w \<tau>) \<and> thesis (?f w \<tau>) = \<tau> \<and> assumptions (?f w \<tau>) = {} \<and>
+      len_formula (?g \<tau>) \<le> poly ?p (len_formula \<tau>) \<and>
+      len_proof (?f w \<tau>) \<le> poly ?q (len_proof w)"
+      using sim_case[of w \<tau>] .
+  qed
+qed
 
 end
 end
