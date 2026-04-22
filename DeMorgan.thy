@@ -1,12 +1,9 @@
 theory DeMorgan imports Frege begin
 
-datatype dm_conn = Top | Bot | Not | Or | And
-
-type_synonym dformula = "(string, dm_conn) formula"
-type_synonym drule = "(string, dm_conn) rule"
-type_synonym dalphabet = "dm_conn alphabet"
-type_synonym dfrege = "(string, dm_conn) frege"
-type_synonym dproof = "(string, dm_conn) frege_proof"
+type_synonym dformula = "dm_conn formula"
+type_synonym drule = "dm_conn rule"
+type_synonym dfrege = "dm_conn frege"
+type_synonym dproof = "dm_conn frege_proof"
 
 (* -- General lemmas that might be useful for the main proof as well -- *)
 definition derived_with :: "nat \<Rightarrow> dproof \<Rightarrow> drule \<Rightarrow> (string \<Rightarrow> dformula) \<Rightarrow> bool" where
@@ -20,7 +17,7 @@ proof -
   have member_le_sum:
     "len_formula f \<le> sum_list (map len_formula fs)"
     if "f \<in> set fs"
-    for f :: "('v, 'c) formula" and fs :: "('v, 'c) formula list"
+    for f :: "'c formula" and fs :: "'c formula list"
     using that
   proof (induction fs)
     case Nil
@@ -43,14 +40,14 @@ proof -
   have step_bound:
     "len_formula f \<le> len_proof pr"
     if "f \<in> set (steps pr)"
-    for pr :: "('v, 'c) frege_proof" and f :: "('v, 'c) formula"
+    for pr :: "'c frege_proof" and f :: "'c formula"
     using member_le_sum[of f "steps pr"] that by simp
   show ?thesis
   proof (rule allI)
-    fix pr :: "('v, 'c) frege_proof"
+    fix pr :: "'c frege_proof"
     show "\<forall>f \<in> set (steps pr). len_formula f \<le> len_proof pr"
     proof (rule ballI)
-      fix f :: "('v, 'c) formula"
+      fix f :: "'c formula"
       assume "f \<in> set (steps pr)"
       then show "len_formula f \<le> len_proof pr"
         using step_bound by blast
@@ -83,14 +80,7 @@ qed
 
 locale de_morgan_frege =
   fixes F :: dfrege
-  assumes conns_def: "conns (alphabet F) = {Top, Bot, Not, Or, And}"
-  and arity_def: "arity (alphabet F) = (\<lambda>c. case c of Top \<Rightarrow> 0 | Bot \<Rightarrow> 0 | Not \<Rightarrow> 1 | Or \<Rightarrow> 2 | And \<Rightarrow> 2)"
-  and conn_evals_def: "conn_evals (alphabet F) = (\<lambda> c. case c of
-    Top \<Rightarrow> (\<lambda>_. True)                \<comment> \<open>nullary: ignores input list\<close>
-  | Bot \<Rightarrow> (\<lambda>_. False)               \<comment> \<open>nullary\<close>
-  | Not \<Rightarrow> (\<lambda>args. case args of [x] \<Rightarrow> \<not> x | _ \<Rightarrow> undefined)
-  | Or  \<Rightarrow> (\<lambda>args. case args of [x, y] \<Rightarrow> x \<or> y | _ \<Rightarrow> undefined)
-  | And \<Rightarrow> (\<lambda>args. case args of [x, y] \<Rightarrow> x \<and> y | _ \<Rightarrow> undefined))"
+  assumes alph: "alphabet F = dm_alphabet"
   and "frege_system F"
 begin
 abbreviation a where "a \<equiv> alphabet F"
@@ -248,12 +238,12 @@ proof -
                 \<longrightarrow> eval (alphabet F') val (concl rule)"
     using dm1 assms frege_system.sound sound_rule_def
     by (metis de_morgan_frege_def)
-  have "(\<forall> val. (\<forall> f \<in> set (prems rule). eval (alphabet F') val f) \<longrightarrow> 
-                 eval (alphabet F') val (concl rule)) 
+  have "(\<forall> val. (\<forall> f \<in> set (prems rule). eval (alphabet F') val f) \<longrightarrow>
+                 eval (alphabet F') val (concl rule))
                           \<longrightarrow> (\<exists> pr. valid_proof F' pr
-                                   \<and> assumptions pr = set (prems rule) 
+                                   \<and> assumptions pr = set (prems rule)
                                    \<and> thesis pr = concl rule)"
-    using dm2 frege_system_def de_morgan_frege_def by auto 
+    using dm2 frege_system.impl_complete[of F'] de_morgan_frege_def by blast
   thus ?thesis using val_sat
     by force
 qed
