@@ -364,6 +364,7 @@ locale frege_system =
                  \<and> assumptions pr = fs
                  \<and> thesis pr = th)"
   and finite: "finite (rules F)"
+  and finite_alphabet: "finite (UNIV :: 'c set)"
   and func_complete:
     "\<forall>f :: dm_conn formula.
        \<exists> f' :: 'c formula. formulas_equiv f dm_alphabet f' (alphabet F)"
