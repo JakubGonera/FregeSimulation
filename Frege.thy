@@ -350,6 +350,9 @@ proof -
     using lhs rhs sum_bound scaled_sum by simp
 qed
 
+definition formulas_equiv :: "'c1 formula \<Rightarrow> 'c1 alphabet \<Rightarrow> 'c2 formula \<Rightarrow> 'c2 alphabet \<Rightarrow> bool" where
+  "formulas_equiv f1 a1 f2 a2 \<longleftrightarrow> (\<forall> val. eval a1 val f1 = eval a2 val f2)"
+
 locale frege_system =
   fixes F :: "'c frege"
   assumes sound: "\<forall> r \<in> rules F. sound_rule F r"
@@ -358,7 +361,7 @@ locale frege_system =
                                    \<and> assumptions pr = fs
                                    \<and> thesis pr = th)"
   and finite: "finite (rules F)"
-  and func_complete: "\<forall>f :: dm_conn formula. \<exists> f' :: 'c formula. \<forall> val. eval dm_alphabet val f \<longleftrightarrow> eval (alphabet F) val f'"
+  and func_complete: "\<forall>f :: dm_conn formula. \<exists> f' :: 'c formula. formulas_equiv f dm_alphabet f' (alphabet F)"
 begin
 
 lemma combining_valid_proofs_pr1:

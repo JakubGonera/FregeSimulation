@@ -11,14 +11,32 @@ definition deducible :: "'c frege \<Rightarrow> ('c formula) set \<Rightarrow> '
   "deducible F asms c n \<longleftrightarrow>
      (\<exists> p. valid_proof F p \<and> assumptions p \<subseteq> asms \<and> thesis p = c \<and> len_proof p \<le> n)"
 
-definition bideducible :: "'c frege \<Rightarrow> 'c formula \<Rightarrow> 'c formula \<Rightarrow> nat \<Rightarrow> bool" where
-  "bideducible F f g n \<longleftrightarrow> deducible F {g} f n \<and> deducible F {f} g n"
+locale frege_balancing =
+  fixes F :: "'c frege"
+  assumes "frege_system F"
+begin
+
+(* iff_dm A B \<equiv> (A \<and> B) \<or> (\<not>A \<and> \<not>B) *)
+definition iff_dm :: "dm_conn formula \<Rightarrow> dm_conn formula \<Rightarrow> dm_conn formula" where
+  "iff_dm A B = Conn Or [Conn And [A, B], Conn And [Conn Not [A], Conn Not [B]]]"
+
+definition conn_iff :: "'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula" where
+  "conn_iff = (SOME f. \<forall> A B A' B'.
+    formulas_equiv A (alphabet F) A' dm_alphabet \<and>
+    formulas_equiv B (alphabet F) B' dm_alphabet \<and>
+    formulas_equiv (f A B) (alphabet F) (iff_dm A' B') dm_alphabet)"
+
+lemma conn_iff_spec:
+  shows "\<exists> f. \<forall> A B A' B'.
+    formulas_equiv A (alphabet F) A' dm_alphabet \<and>
+    formulas_equiv B (alphabet F) B' dm_alphabet \<and>
+    formulas_equiv (f A B) (alphabet F) (iff_dm A' B') dm_alphabet"
+  sorry
 
 (* lemma 3.1 already proven in Frege.thy *)
 
 (* lemma 3.2: *)
 lemma chi_preserves_bideducible:
-  assumes "frege_system F"
   shows "\<exists> bound :: nat poly.
            \<forall> \<phi> \<psi> \<chi> h n.
              bideducible F \<phi> \<psi> n
@@ -28,7 +46,6 @@ lemma chi_preserves_bideducible:
 
 (* theorem 1.1 *)
 theorem proof_balancing:
-  assumes "frege_system F"
   shows "\<exists> bound :: nat poly. \<exists> c :: real.
            \<forall> pr. valid_proof F pr \<and> assumptions pr = {} \<longrightarrow>
              (\<exists> pr'. valid_proof F pr'
@@ -40,5 +57,5 @@ theorem proof_balancing:
                         \<le> real (depth_formula (thesis pr))
                           + c * log 2 (real (len_formula line))))"
   sorry
-
+end
 end
