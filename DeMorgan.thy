@@ -1,4 +1,6 @@
-theory DeMorgan imports Frege begin
+theory DeMorgan
+  imports Frege
+begin
 
 type_synonym dformula = "dm_conn formula"
 type_synonym drule = "dm_conn rule"
@@ -118,11 +120,14 @@ proof -
       qed
       have var_in_gs: "v \<in> var_set_form (Conn c gs) \<longrightarrow> (\<exists>f \<in> set gs. v \<in> var_set_form f)"
         by simp
-      have g_le: "\<forall>g \<in> set gs. len_formula (sub_formula s g) \<le> len_formula (sub_formula s (Conn c gs))"
+      have g_le:
+        "\<forall>g \<in> set gs. len_formula (sub_formula s g) \<le> len_formula (sub_formula s (Conn c gs))"
       proof
         fix g
         assume g_in: "g \<in> set gs"
-        have g_sum_bound: "len_formula (sub_formula s g) \<le> sum_list (map (\<lambda>g. len_formula (sub_formula s g)) gs)"
+        have g_sum_bound:
+          "len_formula (sub_formula s g)
+             \<le> sum_list (map (\<lambda>g. len_formula (sub_formula s g)) gs)"
           using g_in
         proof (induction gs)
           case Nil
@@ -223,7 +228,7 @@ proof -
 qed
 end
 
-locale de_morgan_sim = 
+locale de_morgan_sim =
   fixes F :: dfrege and F' :: dfrege
   assumes dm1: "de_morgan_frege F" and dm2: "de_morgan_frege F'"
 begin
@@ -234,7 +239,7 @@ lemma proof_exists_for_rule:
 proof -
   have "alphabet F = alphabet F'"
     using dm1 dm2 de_morgan_frege_def by fastforce
-  hence val_sat: "\<forall> val. (\<forall> f \<in> set (prems rule). eval (alphabet F') val f) 
+  hence val_sat: "\<forall> val. (\<forall> f \<in> set (prems rule). eval (alphabet F') val f)
                 \<longrightarrow> eval (alphabet F') val (concl rule)"
     using dm1 assms frege_system.sound sound_rule_def
     by (metis de_morgan_frege_def)
@@ -249,15 +254,15 @@ proof -
 qed
 
 lemma rule_proof_fun_exists: "\<exists> f :: drule \<Rightarrow> dproof. \<forall> rule \<in> rules F.
-          valid_proof F' (f rule) \<and> 
-          assumptions (f rule) = set (prems rule) \<and> 
+          valid_proof F' (f rule) \<and>
+          assumptions (f rule) = set (prems rule) \<and>
           thesis (f rule) = concl rule"
   by (meson proof_exists_for_rule)
 
 definition rule_proof_fun where
   "rule_proof_fun = (SOME f. \<forall> rule \<in> rules F.
-          valid_proof F' (f rule) \<and> 
-          assumptions (f rule) = set (prems rule) \<and> 
+          valid_proof F' (f rule) \<and>
+          assumptions (f rule) = set (prems rule) \<and>
           thesis (f rule) = concl rule)"
 
 fun step_proof :: "drule \<Rightarrow> (string \<Rightarrow> dformula) \<Rightarrow> dproof" where
@@ -271,7 +276,9 @@ lemma step_proof_proves:
 proof -
   have ex_fun:
     "\<exists>f :: drule \<Rightarrow> dproof. \<forall>rule \<in> rules F.
-      valid_proof F' (f rule) \<and> assumptions (f rule) = set (prems rule) \<and> thesis (f rule) = concl rule"
+      valid_proof F' (f rule)
+      \<and> assumptions (f rule) = set (prems rule)
+      \<and> thesis (f rule) = concl rule"
     using rule_proof_fun_exists .
   have fun_prop:
     "\<forall>rule \<in> rules F.
@@ -309,7 +316,7 @@ definition choose_rule_sub where
 definition sim_step :: "dproof \<Rightarrow> nat \<Rightarrow> dproof \<Rightarrow> dproof" where
   "sim_step pr i acc =
     (let step = (steps pr) ! i in
-      if step \<in> assumptions pr then 
+      if step \<in> assumptions pr then
         combine_proofs acc \<lparr>assumptions = {}, thesis = step, steps = [step]\<rparr>
       else
         let (r, s) = choose_rule_sub F i pr in
@@ -337,14 +344,12 @@ next
   then show ?case by simp
 qed
 
-
 lemma sub_rule_agree:
   "sub_rule s1 r = sub_rule s2 r"
   if "\<forall>v \<in> var_set_rule r. s1 v = s2 v"
   for s1 s2 :: "string \<Rightarrow> dformula" and r
 using that
 by (cases r) (auto intro: sub_formula_agree)
-
 
 lemma choose_rule_sub_props:
   assumes "\<exists>r s. r \<in> rules G \<and> derived_with i p r s"
@@ -370,7 +375,6 @@ proof -
   then show ?thesis
     unfolding choose_rule_sub_def by (cases "SOME rs. ?P rs") auto
 qed
-
 
 lemma sim_step_progress:
   fixes pr acc :: dproof
@@ -570,8 +574,8 @@ proof -
 qed
 
 lemma step_proof_bound:
-  shows "\<exists> g :: nat poly. \<forall> rule \<in> rules F. \<forall>  pr i sub. 
-            derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F pr \<longrightarrow> 
+  shows "\<exists> g :: nat poly. \<forall> rule \<in> rules F. \<forall> pr i sub.
+            derived_with i pr rule sub \<and> rule_restricted_sub rule sub \<and> valid_proof F pr \<longrightarrow>
             len_proof (step_proof rule sub) \<le> poly g (len_proof pr)"
 proof -
   let ?c = "Max ((\<lambda>r. card (var_set_rule r)) ` rules F) + 1"
@@ -598,7 +602,8 @@ proof -
       "len_proof (step_proof rule sub)
        \<le> len_proof (rule_proof_fun rule) * len_sub (var_set_rule rule) sub"
       unfolding step_proof.simps
-      using sub_proof_bound[of "var_set_rule rule" sub "rule_proof_fun rule"] var_set_rule_finite[of rule] restricted_sub
+      using sub_proof_bound[of "var_set_rule rule" sub "rule_proof_fun rule"]
+            var_set_rule_finite[of rule] restricted_sub
       by simp
     have step_bound':
       "len_proof (step_proof rule sub)
@@ -628,10 +633,10 @@ proof -
   qed
 qed
 
-
 lemma sim_step_bound:
-  shows "\<exists> bound. \<forall>pr i acc. i \<ge> 0 \<and> i < length (steps pr) \<and> valid_proof F pr \<and> assumptions pr = {} \<longrightarrow>
-            len_proof (sim_step pr i acc) \<le> poly bound (len_proof pr) + len_proof acc"
+  shows "\<exists> bound. \<forall>pr i acc.
+           i \<ge> 0 \<and> i < length (steps pr) \<and> valid_proof F pr \<and> assumptions pr = {}
+           \<longrightarrow> len_proof (sim_step pr i acc) \<le> poly bound (len_proof pr) + len_proof acc"
 proof -
   obtain g :: "nat poly" where g_prop:
     "\<forall>rule\<in>rules F. \<forall>pr i sub.
@@ -694,7 +699,6 @@ proof -
   qed
 qed
 
-
 lemma sim_bound:
   assumes "valid_proof F pr \<and> assumptions pr = {}"
   shows "\<exists> bound. len_proof (sim pr (thesis pr)) \<le> poly bound (len_proof pr)"
@@ -703,7 +707,8 @@ proof -
     "\<forall>pr i acc. i \<ge> 0 \<and> i < length (steps pr) \<and> valid_proof F pr \<and> assumptions pr = {} \<longrightarrow>
       len_proof (sim_step pr i acc) \<le> poly g (len_proof pr) + len_proof acc"
     using sim_step_bound by blast
-  let ?acc = "\<lambda>k. fold (sim_step pr) [0..<k] \<lparr>assumptions = assumptions pr, thesis = thesis pr, steps = []\<rparr>"
+  let ?acc = "\<lambda>k. fold (sim_step pr) [0..<k]
+                    \<lparr>assumptions = assumptions pr, thesis = thesis pr, steps = []\<rparr>"
   have pr_valid: "valid_proof F pr"
     using assms by simp
   have pr_assm: "assumptions pr = {}"
@@ -711,13 +716,15 @@ proof -
   have steps_bound: "length (steps pr) \<le> len_proof pr"
   proof -
     have ones_le_list:
-      "sum_list (replicate (length fs) 1) \<le> sum_list (map len_formula fs)" for fs :: "dformula list"
+      "sum_list (replicate (length fs) 1) \<le> sum_list (map len_formula fs)"
+      for fs :: "dformula list"
     proof (induction fs)
       case Nil
       then show ?case by simp
     next
       case (Cons f fs)
-      have "1 + sum_list (replicate (length fs) 1) \<le> len_formula f + sum_list (map len_formula fs)"
+      have "1 + sum_list (replicate (length fs) 1)
+              \<le> len_formula f + sum_list (map len_formula fs)"
         using Cons.IH len_formula_positive[of f] by simp
       then show ?case by simp
     qed
@@ -812,13 +819,15 @@ proof -
     have steps_bound: "length (steps w) \<le> len_proof w"
     proof -
       have ones_le_list:
-        "sum_list (replicate (length fs) 1) \<le> sum_list (map len_formula fs)" for fs :: "dformula list"
+        "sum_list (replicate (length fs) 1) \<le> sum_list (map len_formula fs)"
+        for fs :: "dformula list"
       proof (induction fs)
         case Nil
         then show ?case by simp
       next
         case (Cons f fs)
-        have "1 + sum_list (replicate (length fs) 1) \<le> len_formula f + sum_list (map len_formula fs)"
+        have "1 + sum_list (replicate (length fs) 1)
+                \<le> len_formula f + sum_list (map len_formula fs)"
           using Cons.IH len_formula_positive[of f] by simp
         then show ?case by simp
       qed

@@ -58,7 +58,7 @@ fun sub_proof :: "(string \<Rightarrow> 'c formula) \<Rightarrow> 'c frege_proof
     assumptions = (sub_formula sub)` (assumptions pr),
     thesis = sub_formula sub (thesis pr),
     steps = map (sub_formula sub) (steps pr)
-\<rparr>"
+  \<rparr>"
 
 fun var_set_form :: "'c formula \<Rightarrow> string set" where
   "var_set_form (Atom a) = {a}" |
@@ -75,11 +75,11 @@ fun var_set_proof :: "'c frege_proof \<Rightarrow> string set" where
 definition rule_restricted_sub :: "'c rule \<Rightarrow> (string \<Rightarrow> 'c formula) \<Rightarrow> bool" where
   "rule_restricted_sub rule sub \<longleftrightarrow> (\<forall> v. v \<notin> var_set_rule rule \<longrightarrow> sub v = Atom v)"
 
-
 definition derived :: "('c rule) set \<Rightarrow> ('c formula) list \<Rightarrow> 'c formula \<Rightarrow> bool" where
   "derived rs fs f \<longleftrightarrow> (\<exists> r \<in> rs. \<exists> sub. let sub_r = sub_rule sub r in
                        (concl sub_r) = f \<and>
                        (\<forall> f1 \<in> set (prems sub_r). \<exists> f2 \<in> set fs. f1 = f2))"
+
 lemma derived_mono:
   assumes "set fs \<subseteq> set gs"
   assumes "derived rs fs f"
@@ -115,12 +115,12 @@ proof -
     by auto
 qed
 
-
 definition valid_proof :: "'c frege \<Rightarrow> 'c frege_proof \<Rightarrow> bool" where
   "valid_proof F pr \<longleftrightarrow>
     thesis pr = last (steps pr) \<and> steps pr \<noteq> []
     \<and> (\<forall>i < length (steps pr).
- steps pr ! i \<in> assumptions pr \<or> derived (rules F) (take i (steps pr)) (steps pr ! i))"
+         steps pr ! i \<in> assumptions pr
+         \<or> derived (rules F) (take i (steps pr)) (steps pr ! i))"
 
 fun combine_proofs :: "'c frege_proof \<Rightarrow> 'c frege_proof \<Rightarrow> 'c frege_proof" where
   "combine_proofs pr1 pr2 = \<lparr>assumptions = assumptions pr1 \<union> (assumptions pr2 - set (steps pr1)),
@@ -259,7 +259,8 @@ next
     have "1 + sum_list (map (len_formula \<circ> sub_formula sub) fs)
           \<le> 1 + sum_list (map (\<lambda>x. len_formula x * len_sub var_set sub) fs)"
       using ih_sum by simp
-    also have "\<dots> \<le> len_sub var_set sub + sum_list (map (\<lambda>x. len_formula x * len_sub var_set sub) fs)"
+    also have "\<dots> \<le> len_sub var_set sub
+                  + sum_list (map (\<lambda>x. len_formula x * len_sub var_set sub) fs)"
       using sub_len_ge1 by simp
     finally show ?thesis .
   qed
@@ -356,12 +357,16 @@ definition formulas_equiv :: "'c1 formula \<Rightarrow> 'c1 alphabet \<Rightarro
 locale frege_system =
   fixes F :: "'c frege"
   assumes sound: "\<forall> r \<in> rules F. sound_rule F r"
-  and impl_complete: "\<forall> fs th. (\<forall> val. (\<forall> f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th)
-                          \<longrightarrow> (\<exists> pr. valid_proof F pr
-                                   \<and> assumptions pr = fs
-                                   \<and> thesis pr = th)"
+  and impl_complete:
+    "\<forall> fs th.
+       (\<forall> val. (\<forall> f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th)
+       \<longrightarrow> (\<exists> pr. valid_proof F pr
+                 \<and> assumptions pr = fs
+                 \<and> thesis pr = th)"
   and finite: "finite (rules F)"
-  and func_complete: "\<forall>f :: dm_conn formula. \<exists> f' :: 'c formula. formulas_equiv f dm_alphabet f' (alphabet F)"
+  and func_complete:
+    "\<forall>f :: dm_conn formula.
+       \<exists> f' :: 'c formula. formulas_equiv f dm_alphabet f' (alphabet F)"
 begin
 
 lemma combining_valid_proofs_pr1:
@@ -393,7 +398,7 @@ lemma combining_valid_proofs:
   and "comb = combine_proofs pr1 pr2"
   shows "valid_proof F comb"
 proof -
- have app: "steps comb = (steps pr1) @ (steps pr2)" using assms(2) by simp
+  have app: "steps comb = (steps pr1) @ (steps pr2)" using assms(2) by simp
   have vp2: "valid_proof F pr2" using assms(1) by simp
   hence "last (steps comb) = last (steps pr2)"
     using app unfolding valid_proof_def by simp
@@ -420,7 +425,8 @@ proof -
       proof
         assume i_in_range: "i < length (steps comb)"
         hence 02: "drop ?j (steps comb) = steps pr2" using assms(2) False by simp
-        hence 12: "steps pr2 ! (i - ?j) = steps comb ! i" using False app by (simp add: nth_append_right)
+        hence 12: "steps pr2 ! (i - ?j) = steps comb ! i"
+          using False app by (simp add: nth_append_right)
         hence 22: "steps pr2 ! (i - ?j) \<in> assumptions pr2 \<longrightarrow>
                steps comb ! i \<in> assumptions comb \<or> (\<exists> k < ?j. steps comb ! k = steps comb ! i)"
         proof (cases "steps pr2 ! (i - ?j) \<in> set (steps pr1)")
@@ -440,10 +446,14 @@ proof -
               by simp
           qed
         qed
-        have repeat_proof: "((\<exists> k < ?j. steps comb ! k = steps comb ! i) \<and> \<not> (steps comb ! i \<in> assumptions comb)) \<longrightarrow>
-              derived (rules F) (take i (steps comb)) (steps comb ! i)"
+        have repeat_proof:
+          "((\<exists> k < ?j. steps comb ! k = steps comb ! i)
+             \<and> \<not> (steps comb ! i \<in> assumptions comb))
+           \<longrightarrow> derived (rules F) (take i (steps comb)) (steps comb ! i)"
         proof
-          assume assm: "(\<exists> k < ?j. steps comb ! k = steps comb ! i) \<and> \<not> (steps comb ! i \<in> assumptions comb)"
+          assume assm:
+            "(\<exists> k < ?j. steps comb ! k = steps comb ! i)
+             \<and> \<not> (steps comb ! i \<in> assumptions comb)"
           then obtain k where
             k_lt: "k < ?j"
             and eq: "steps comb ! k = steps comb ! i"
@@ -454,7 +464,8 @@ proof -
             using assms combining_valid_proofs_pr1 k_lt by simp
           hence "derived (rules F) (take k (steps comb)) (steps comb ! k)" using not_assm eq by simp
           thus "derived (rules F) (take i (steps comb)) (steps comb ! i)"
-            by (metis False derived_mono eq k_lt linorder_not_le order_less_trans set_take_subset_set_take)
+            by (metis False derived_mono eq k_lt linorder_not_le order_less_trans
+                      set_take_subset_set_take)
         qed
         have 32: "derived (rules F) (take (i - ?j) (steps pr2)) (steps pr2 ! (i - ?j)) \<longrightarrow>
               derived (rules F) (take i (steps comb)) (steps comb ! i)" using 12 02 derived_mono
@@ -471,7 +482,8 @@ proof -
               derived (rules F) (take (i - ?j) (steps pr2)) (steps pr2 ! (i - ?j))"
           using vp2 idx2 unfolding valid_proof_def by simp
         thus "steps comb ! i \<in> assumptions comb \<or>
-              derived (rules F) (take i (steps comb)) (steps comb ! i)" using 22 32 repeat_proof by auto
+              derived (rules F) (take i (steps comb)) (steps comb ! i)"
+          using 22 32 repeat_proof by auto
       qed
     qed
   qed
@@ -589,10 +601,14 @@ qed
 end
 
 definition simulates :: "'c frege \<Rightarrow> 'c frege \<Rightarrow> bool" where
- "simulates F1 F2 \<longleftrightarrow> (\<exists> f g p q. \<forall> w \<tau>. (thesis w = g \<tau> \<and> valid_proof F1 w \<and> assumptions w = {}) \<longrightarrow>
-    valid_proof F2 (f w \<tau>) \<and> thesis (f w \<tau>) = \<tau> \<and> assumptions (f w \<tau>) = {} \<and>
-    len_formula (g \<tau>) \<le> poly p (len_formula \<tau>) \<and>
-    len_proof (f w \<tau>) \<le> poly q (len_proof w))"
+  "simulates F1 F2 \<longleftrightarrow>
+     (\<exists> f g p q. \<forall> w \<tau>.
+        (thesis w = g \<tau> \<and> valid_proof F1 w \<and> assumptions w = {})
+        \<longrightarrow> valid_proof F2 (f w \<tau>)
+            \<and> thesis (f w \<tau>) = \<tau>
+            \<and> assumptions (f w \<tau>) = {}
+            \<and> len_formula (g \<tau>) \<le> poly p (len_formula \<tau>)
+            \<and> len_proof (f w \<tau>) \<le> poly q (len_proof w))"
 
 (* A theorem on (only) simulation of Frege systems. For p-simulation we need f and
   g to be polynomial time*)
@@ -600,6 +616,5 @@ theorem Reckhow:
   assumes "frege_system F1 \<and> frege_system F2"
   shows "simulates F1 F2"
   sorry
-
 
 end

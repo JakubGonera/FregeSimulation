@@ -16,7 +16,7 @@ locale frege_balancing =
   assumes "frege_system F"
 begin
 
-(* iff_dm A B \<equiv> (A \<and> B) \<or> (\<not>A \<and> \<not>B) *)
+(* iff_dm \<equiv> (a \<and> b) \<or> (\<not>a \<and> \<not>b) *)
 definition iff_dm :: "dm_conn formula \<Rightarrow> dm_conn formula \<Rightarrow> dm_conn formula" where
   "iff_dm A B = Conn Or [Conn And [A, B], Conn And [Conn Not [A], Conn Not [B]]]"
 
