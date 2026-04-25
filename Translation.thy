@@ -287,18 +287,21 @@ qed
 
 (* lemma 3.2: *)
 lemma iff_congruent:
-  shows "\<exists> bound :: nat poly. \<forall> \<phi> \<psi> \<chi> h.
+  shows "\<exists> c bound :: nat poly. \<forall> \<phi> \<psi> \<chi> h.
            let sub  = \<lambda>v. if v = ''a'' then \<phi> else if v = ''b'' then \<psi> else Atom v;
                sub' = \<lambda>v. if v = ''a'' then plug h \<phi> \<chi>
                          else if v = ''b'' then plug h \<psi> \<chi> else Atom v;
-               s1 = max (len_formula \<phi>) (len_formula \<psi>) ;
-               s2 = len_formula \<chi>
+               s1 = max (len_formula \<phi>) (len_formula \<psi>);
+               s2 = len_formula \<chi>;
+               d1 = max (depth_formula \<phi>) (depth_formula \<psi>);
+               d2 = depth_formula \<chi>
            in distinguished \<chi> h \<longrightarrow>
            (\<exists> pr. valid_proof F pr \<and> 
               assumptions pr = {sub_formula sub conn_iff} \<and> 
               thesis pr = (sub_formula sub' conn_iff) \<and>
               length (steps pr) \<le> poly bound s2 \<and>
-              (\<forall> step \<in> set (steps pr). len_formula step \<le> poly bound (s1 + s2)))"
+              (\<forall> step \<in> set (steps pr). len_formula step \<le> poly bound (s1 + s2) \<and>
+                                        depth_formula step \<le> d1 + d2 + c))"
   sorry
 
 (* theorem 1.1 *)

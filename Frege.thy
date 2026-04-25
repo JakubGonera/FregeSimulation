@@ -149,6 +149,20 @@ definition len_sub :: "string set \<Rightarrow> (string \<Rightarrow> 'c formula
   "len_sub var_set sub =
      max 1 (\<Sum> v \<in> var_set. len_formula (sub v))"
 
+definition depth_sub :: "string set \<Rightarrow> (string \<Rightarrow> 'c formula) \<Rightarrow> nat" where
+  "depth_sub var_set sub =
+     Max (insert 1 ((\<lambda>v. depth_formula (sub v)) ` var_set))"
+
+lemma depth_sub_ge_1:
+  assumes "finite var_set"
+  shows "1 \<le> depth_sub var_set sub"
+  unfolding depth_sub_def using assms by simp
+
+lemma depth_sub_bound:
+  assumes "finite var_set" and "v \<in> var_set"
+  shows "depth_formula (sub v) \<le> depth_sub var_set sub"
+  unfolding depth_sub_def using assms by (auto intro: Max_ge)
+
 lemma len_formula_positive:
   shows "len_formula f \<ge> 1"
   by (metis le_add_same_cancel1 le_numeral_extra(4) len_formula.elims zero_le)
@@ -349,6 +363,143 @@ proof -
 
   show ?thesis
     using lhs rhs sum_bound scaled_sum by simp
+qed
+
+lemma sub_formula_depth_bound:
+  fixes f :: "'c formula"
+  and sub :: "(string \<Rightarrow> 'c formula)"
+  and var_set :: "string set"
+  assumes "finite var_set" and "\<forall> v. v \<notin> var_set \<longrightarrow> sub v = Atom v"
+  shows "depth_formula (sub_formula sub f) \<le> depth_formula f + depth_sub var_set sub"
+  using assms
+proof (induction f arbitrary: sub var_set)
+  case (Atom a)
+  show ?case
+  proof (cases "a \<in> var_set")
+    case True
+    have "depth_formula (sub_formula sub (Atom a)) = depth_formula (sub a)" by simp
+    also have "\<dots> \<le> depth_sub var_set sub"
+      using depth_sub_bound[OF Atom.prems(1) True] .
+    also have "\<dots> \<le> depth_formula (Atom a) + depth_sub var_set sub" by simp
+    finally show ?thesis .
+  next
+    case False
+    hence "sub a = Atom a" using Atom.prems(2) by simp
+    hence "depth_formula (sub_formula sub (Atom a)) = 1" by simp
+    moreover have "1 \<le> depth_formula (Atom a) + depth_sub var_set sub" by simp
+    ultimately show ?thesis by simp
+  qed
+next
+  case (Conn c fs)
+  let ?D = "depth_sub var_set sub"
+  show ?case
+  proof (cases "fs = []")
+    case True
+    hence "depth_formula (sub_formula sub (Conn c fs)) = 1" by simp
+    moreover have "depth_formula (Conn c fs) = 1" using True by simp
+    ultimately show ?thesis by simp
+  next
+    case False
+    let ?fs' = "map (sub_formula sub) fs"
+    have lhs: "depth_formula (sub_formula sub (Conn c fs)) =
+               1 + Max (set (map depth_formula ?fs'))"
+      using False by simp
+    have rhs: "depth_formula (Conn c fs) = 1 + Max (set (map depth_formula fs))"
+      using False by simp
+    have fin_fs': "finite (set (map depth_formula ?fs'))" by simp
+    have ne_set': "set (map depth_formula ?fs') \<noteq> {}" using False by simp
+    have fin_fs: "finite (set (map depth_formula fs))" by simp
+
+    have ih_pointwise:
+      "\<forall>f' \<in> set fs. depth_formula (sub_formula sub f') \<le> depth_formula f' + ?D"
+      using Conn.IH Conn.prems by blast
+
+    have all_le:
+      "\<forall>x \<in> set (map depth_formula ?fs').
+         x \<le> Max (set (map depth_formula fs)) + ?D"
+    proof
+      fix x assume "x \<in> set (map depth_formula ?fs')"
+      then obtain f' where f'_in: "f' \<in> set fs"
+                       and x_eq: "x = depth_formula (sub_formula sub f')"
+        by auto
+      from ih_pointwise f'_in
+      have ih: "depth_formula (sub_formula sub f') \<le> depth_formula f' + ?D"
+        by blast
+      have df'_le: "depth_formula f' \<le> Max (set (map depth_formula fs))"
+        using f'_in fin_fs by (simp add: Max_ge)
+      from ih df'_le show "x \<le> Max (set (map depth_formula fs)) + ?D"
+        using x_eq by simp
+    qed
+
+    have max_le:
+      "Max (set (map depth_formula ?fs')) \<le> Max (set (map depth_formula fs)) + ?D"
+    proof (rule Max.boundedI)
+      show "finite (set (map depth_formula ?fs'))" using fin_fs' .
+      show "set (map depth_formula ?fs') \<noteq> {}" using ne_set' .
+      fix a assume "a \<in> set (map depth_formula ?fs')"
+      thus "a \<le> Max (set (map depth_formula fs)) + ?D" using all_le by blast
+    qed
+
+    have "depth_formula (sub_formula sub (Conn c fs))
+            = 1 + Max (set (map depth_formula ?fs'))"
+      using lhs .
+    also have "\<dots> \<le> 1 + Max (set (map depth_formula fs)) + ?D"
+      using max_le by simp
+    also have "\<dots> = depth_formula (Conn c fs) + ?D"
+      using rhs by simp
+    finally show ?thesis .
+  qed
+qed
+
+lemma sub_proof_depth_bound:
+  fixes pr :: "'c frege_proof"
+  and sub :: "(string \<Rightarrow> 'c formula)"
+  and var_set :: "string set"
+  assumes finite_vs: "finite var_set"
+  and identity_outside: "\<forall> v. v \<notin> var_set \<longrightarrow> sub v = Atom v"
+  and steps_ne: "steps pr \<noteq> []"
+  shows "depth_proof (sub_proof sub pr) \<le> depth_proof pr + depth_sub var_set sub"
+proof -
+  let ?D = "depth_sub var_set sub"
+  let ?steps = "steps pr"
+  let ?steps' = "map (sub_formula sub) ?steps"
+
+  have steps'_eq: "steps (sub_proof sub pr) = ?steps'" by simp
+  have ne': "?steps' \<noteq> []" using steps_ne by simp
+
+  have fin: "finite (set (map depth_formula ?steps))" by simp
+  have fin': "finite (set (map depth_formula ?steps'))" by simp
+  have ne_set': "set (map depth_formula ?steps') \<noteq> {}" using ne' by simp
+
+  have step_bound:
+    "\<forall>f \<in> set ?steps. depth_formula (sub_formula sub f) \<le> depth_formula f + ?D"
+    using sub_formula_depth_bound[OF finite_vs identity_outside] by blast
+
+  have all_le: "\<forall>x \<in> set (map depth_formula ?steps'). x \<le> depth_proof pr + ?D"
+  proof
+    fix x assume "x \<in> set (map depth_formula ?steps')"
+    then obtain f where f_in: "f \<in> set ?steps"
+                    and x_eq: "x = depth_formula (sub_formula sub f)"
+      by auto
+    from step_bound f_in
+    have ih: "depth_formula (sub_formula sub f) \<le> depth_formula f + ?D"
+      by blast
+    have df_le: "depth_formula f \<le> depth_proof pr"
+      using f_in fin by (simp add: Max_ge)
+    from ih df_le show "x \<le> depth_proof pr + ?D"
+      using x_eq by simp
+  qed
+
+  have "depth_proof (sub_proof sub pr) = Max (set (map depth_formula ?steps'))"
+    using steps'_eq by simp
+  also have "\<dots> \<le> depth_proof pr + ?D"
+  proof (rule Max.boundedI)
+    show "finite (set (map depth_formula ?steps'))" using fin' .
+    show "set (map depth_formula ?steps') \<noteq> {}" using ne_set' .
+    fix a assume "a \<in> set (map depth_formula ?steps')"
+    thus "a \<le> depth_proof pr + ?D" using all_le by blast
+  qed
+  finally show ?thesis .
 qed
 
 definition formulas_equiv :: "'c1 formula \<Rightarrow> 'c1 alphabet \<Rightarrow> 'c2 formula \<Rightarrow> 'c2 alphabet \<Rightarrow> bool" where
