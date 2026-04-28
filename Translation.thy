@@ -4,6 +4,8 @@ begin
 
 (* The numbering of lemmas follows Yuval Filmus' manuscript *)
 
+subsection \<open>Lemma 3.2\<close>
+
 definition plug :: "string \<Rightarrow> 'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula" where
   "plug h \<tau> \<chi> = sub_formula (\<lambda>v. if v = h then \<tau> else Atom v) \<chi>"
 
@@ -153,6 +155,11 @@ proof -
   thus ?thesis by auto
 qed
 
+fun formula_well_formed :: "'c alphabet \<Rightarrow> 'c formula \<Rightarrow> bool" where
+  "formula_well_formed alph (Atom _) = True" |
+  "formula_well_formed alph (Conn c fs) =
+     (length fs = arity alph c \<and> (\<forall>g \<in> set fs. formula_well_formed alph g))"
+
 locale frege_balancing =
   fixes F :: "'c frege"
   assumes "frege_system F"
@@ -183,6 +190,42 @@ fun contains_atom :: "'c formula \<Rightarrow> string \<Rightarrow> bool" where
 fun is_subformula :: "'c formula \<Rightarrow> 'c formula \<Rightarrow> bool" where
   "is_subformula small (Atom a) = (small = Atom a)" |
   "is_subformula small (Conn c fs) = (small = Conn c fs \<or> (\<exists> g \<in> set fs. is_subformula small g))"
+
+lemma subformula_smaller:
+  assumes "is_subformula q p"
+      and "p \<noteq> q"
+    shows "len_formula q < len_formula p"
+  using assms
+proof (induction p)
+  case (Atom a)
+  from Atom.prems have "q = Atom a" by simp
+  with Atom.prems(2) show ?case by simp
+next
+  case (Conn c fs)
+  from Conn.prems have "q = Conn c fs \<or> (\<exists> g \<in> set fs. is_subformula q g)" by simp
+  with Conn.prems(2) obtain g where g_in: "g \<in> set fs"
+                                 and g_sub: "is_subformula q g" by auto
+  have g_le: "len_formula g \<le> sum_list (map len_formula fs)"
+    using g_in by (induction fs) auto
+  show ?case
+  proof (cases "q = g")
+    case True
+    have "len_formula q = len_formula g" using True by simp
+    also have "\<dots> \<le> sum_list (map len_formula fs)" using g_le .
+    also have "\<dots> < 1 + sum_list (map len_formula fs)" by simp
+    also have "\<dots> = len_formula (Conn c fs)" by simp
+    finally show ?thesis .
+  next
+    case False
+    have "len_formula q < len_formula g"
+      using Conn.IH g_in g_sub False by blast
+    also have "\<dots> \<le> sum_list (map len_formula fs)" using g_le .
+    also have "\<dots> < 1 + sum_list (map len_formula fs)" by simp
+    also have "\<dots> = len_formula (Conn c fs)" by simp
+    finally show ?thesis .
+  qed
+qed
+
 
 fun distinguished :: "'c formula \<Rightarrow> string \<Rightarrow> bool" where
   "distinguished (Atom _) _ = True" |
@@ -258,17 +301,6 @@ next
     finally show ?thesis .
   qed
 qed
-
-(*
-  length_match \<chi>: every Conn in \<chi> uses a child list whose length matches the
-  declared arity of its connective. This is the natural "well-formed" predicate
-  needed so that the canonical-position-i_0 substitution in iff_congruent's
-  inductive step lines up with the actual children of \<chi>.
-*)
-fun length_match :: "'c formula \<Rightarrow> bool" where
-  "length_match (Atom _) = True" |
-  "length_match (Conn c fs) =
-     (length fs = arity (alphabet F) c \<and> (\<forall>f \<in> set fs. length_match f))"
 
 lemma not_contains_imp_plug_id:
   shows "\<not> contains_atom \<chi> h \<Longrightarrow> plug h \<tau> \<chi> = \<chi>"
@@ -713,7 +745,7 @@ qed
 lemma iff_congruent_inductive:
   fixes \<phi> \<psi> \<chi> :: "'c formula" and h :: string
   assumes "distinguished \<chi> h" "contains_atom \<chi> h"
-  assumes "length_match \<chi>"
+  assumes "formula_well_formed (alphabet F) \<chi>"
   shows "\<exists>pr. valid_proof F pr \<and>
               assumptions pr = {sub_formula
                                   (\<lambda>v. if v = ''a'' then \<phi>
@@ -856,7 +888,7 @@ next
 
   have dist: "distinguished (Conn c' fs) h" using Conn.prems(1) .
   have contains: "contains_atom (Conn c' fs) h" using Conn.prems(2) .
-  have lm: "length_match (Conn c' fs)" using Conn.prems(3) .
+  have lm: "formula_well_formed (alphabet F) (Conn c' fs)" using Conn.prems(3) .
 
   have witness: "\<exists>f \<in> set fs. contains_atom f h" using contains by simp
   have uniq: "\<exists>!i. i < length fs \<and> contains_atom (fs ! i) h"
@@ -869,7 +901,7 @@ next
     using dist witness by simp
   have dist_i0: "distinguished (fs ! i_0) h"
     using all_dist i_0_props nth_mem by blast
-  have lm_i0: "length_match (fs ! i_0)"
+  have lm_i0: "formula_well_formed (alphabet F) (fs ! i_0)"
     using lm i_0_props nth_mem by simp
   have len_fs_eq_arity: "length fs = arity (alphabet F) c'"
     using lm by simp
@@ -1278,7 +1310,8 @@ next
       finally show ?thesis .
     qed
     ultimately have "len_formula (sub_formula ?subh ?\<sigma>) \<le> len_formula ?\<sigma> * ?s1"
-      using dual_order.trans mult_left_mono zero_le by blast
+      using dual_order.trans mult_left_mono zero_le
+      by (smt (verit, ccfv_SIG)) 
     thus ?thesis unfolding plug_def .
   qed
 
@@ -1299,7 +1332,8 @@ next
       finally show ?thesis .
     qed
     ultimately have "len_formula (sub_formula ?subh ?\<sigma>) \<le> len_formula ?\<sigma> * ?s1"
-      using dual_order.trans mult_left_mono zero_le by blast
+      using dual_order.trans mult_left_mono zero_le
+      by (smt (verit, best)) 
     thus ?thesis unfolding plug_def .
   qed
 
@@ -1614,7 +1648,7 @@ lemma iff_congruent:
                s2 = len_formula \<chi>;
                d1 = max (depth_formula \<phi>) (depth_formula \<psi>);
                d2 = depth_formula \<chi>
-           in distinguished \<chi> h \<and> contains_atom \<chi> h \<and> length_match \<chi> \<longrightarrow>
+           in distinguished \<chi> h \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi> \<longrightarrow>
            (\<exists> pr. valid_proof F pr \<and>
               assumptions pr = {sub_formula sub conn_iff} \<and>
               thesis pr = (sub_formula sub' conn_iff) \<and>
@@ -1653,7 +1687,7 @@ proof -
               s2 = len_formula \<chi>;
               d1 = max (depth_formula \<phi>) (depth_formula \<psi>);
               d2 = depth_formula \<chi>
-          in distinguished \<chi> h \<and> contains_atom \<chi> h \<and> length_match \<chi> \<longrightarrow>
+          in distinguished \<chi> h \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi> \<longrightarrow>
           (\<exists> pr. valid_proof F pr \<and>
               assumptions pr = {sub_formula sub conn_iff} \<and>
               thesis pr = (sub_formula sub' conn_iff) \<and>
@@ -1662,9 +1696,9 @@ proof -
                                         depth_formula step \<le> d1 + d2 + ?D))"
       unfolding Let_def
     proof (intro impI)
-      assume preconds: "distinguished \<chi> h \<and> contains_atom \<chi> h \<and> length_match \<chi>"
+      assume preconds: "distinguished \<chi> h \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi>"
       hence dist: "distinguished \<chi> h" and contains: "contains_atom \<chi> h"
-        and lm: "length_match \<chi>" by simp_all
+        and lm: "formula_well_formed (alphabet F) \<chi>" by simp_all
 
       have ind: "\<exists>pr. valid_proof F pr \<and>
          assumptions pr = {sub_formula ?sub conn_iff} \<and>
@@ -1769,6 +1803,77 @@ proof -
     qed
   qed
 qed
+
+paragraph  \<open>Lemma 4.1\<close>
+
+definition dm_balancing where
+  "dm_balancing = Conn Or [Conn And [Atom ''x'', Atom ''z''], 
+                           Conn And [Atom ''y'', Conn Not [Atom ''z'']]]"
+
+lemma balancing_formula_exists:
+  shows "\<exists> f. formula_well_formed (alphabet F) f \<and> formulas_equiv dm_balancing dm_alphabet f (alphabet F)"
+  using frege_balancing_axioms frege_balancing_def frege_system.func_complete by blast
+  
+definition custom_balancing where
+  "custom_balancing = (SOME f. formula_well_formed (alphabet F) f \<and> formulas_equiv dm_balancing dm_alphabet f (alphabet F))"
+
+(* I do not formalise the lemma 4.1 to see what exact form would be the most useful *)
+
+paragraph \<open>Lemma 4.2\<close>
+
+
+fun children :: "'c formula \<Rightarrow> 'c formula set" where
+  "children (Atom v) = {}" |
+  "children (Conn c fs) = set fs"
+
+lemma child_neq_parent:
+  assumes "q \<in> children p"
+  shows "p \<noteq> q"
+  by (metis add.right_neutral add_Suc_right assms children.cases 
+      children.simps(1,2) dual_order.refl empty_iff formula.size(4)
+      le_imp_less_Suc less_not_refl size_list_estimation')
+
+
+lemma spira_descent:
+  fixes T :: nat
+  assumes "len_formula p \<ge> T"
+  shows "\<exists> q. is_subformula q p \<and> len_formula q \<ge> T \<and>
+              (\<forall> c \<in> children q. len_formula c < T)"
+  using assms
+proof (induction "len_formula p" arbitrary: p rule: less_induct)
+  case less
+  show ?case
+  proof (cases "\<forall> c \<in> children p. len_formula c < T")
+    case True
+    thus ?thesis
+      by (metis is_subformula.elims(3) less.prems)
+  next
+    case False
+    hence "\<exists> c \<in> children p. len_formula c \<ge> T"
+      by fastforce
+    from this obtain q :: "'c formula" where
+     q_def: "len_formula q \<ge> T \<and> q \<in> children p" by force
+    hence subf: "is_subformula q p"
+      by (metis children.simps(1,2) emptyE is_subformula.elims(3))
+    have "p \<noteq> q" using q_def child_neq_parent by simp
+    hence "len_formula q < len_formula p" 
+      using subformula_smaller[of q p] subf by simp
+    thus ?thesis
+      by (metis children.elims empty_iff is_subformula.simps(2) less.hyps q_def)
+  qed
+qed
+
+lemma spiras_selection:
+  assumes "well_formed_formula (alphabet F) p"
+      and "\<exists> c. p = Conn c fs"
+      and "k = Max {arity (alphabet F) c}"
+    shows "\<exists> q. is_subformula q p \<and> 
+                (k + 1) * len_formula q \<ge> len_formula p \<and> 
+                (k + 1) * len_formula q \<le> k * len_formula p"
+proof -
+
+
+
 
 (* theorem 1.1 *)
 theorem proof_balancing:
