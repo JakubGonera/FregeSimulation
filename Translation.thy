@@ -1877,18 +1877,16 @@ lemma nat_div_to_mult:
   fixes x :: "nat"
     and n :: "nat"
     and k :: "nat"
-  assumes "x \<ge> (n + k) div (k+1)"
-  shows "x * (k + 1) \<ge> n"
+  assumes "x \<ge> n div (k+1)"
+  shows "(k+1) * x + k \<ge> n"
 proof -
-  have decomp: "(n + k) div (k + 1) * (k + 1) + (n + k) mod (k + 1) = n + k"
-    by (rule div_mult_mod_eq)
-  have remainder_bound: "(n + k) mod (k + 1) \<le> k"
-    using mod_less_divisor[of "k + 1" "n + k"] by simp
-  from decomp remainder_bound have "n \<le> (n + k) div (k + 1) * (k + 1)"
-    by linarith
-  also have "(n + k) div (k + 1) * (k + 1) \<le> x * (k + 1)"
-    using assms by (rule mult_le_mono1)
-  finally show ?thesis .
+  have decomp: "(k + 1) * (n div (k + 1)) + n mod (k + 1) = n"
+    using div_mult_mod_eq[of n "k + 1"] by (simp add: algebra_simps)
+  have remainder_bound: "n mod (k + 1) \<le> k"
+    using mod_less_divisor[of "k + 1" n] by simp
+  have step: "(k + 1) * (n div (k + 1)) \<le> (k + 1) * x"
+    using assms by (rule mult_le_mono2)
+  from decomp remainder_bound step show ?thesis by linarith
 qed
 
 lemma subformula_wf:
@@ -1927,20 +1925,20 @@ lemma spiras_selection:
       and "k > 1" (* k == 1 is a special case *)
   obtains q where
       "is_subformula q p"
-      "(k + 1) * len_formula q \<ge> len_formula p"
+      "(k + 1) * len_formula q + k \<ge> len_formula p"
       "(k + 1) * len_formula q \<le> k * len_formula p"
 proof -
   let ?n = "len_formula p"
-  let ?T = "(?n + k) div (k+1)" (* ceil(n/(k+1)) *)
+  let ?T = "?n div (k+1)" (* floor(n/(k+1)) *)
   have p_ge_T: "len_formula p \<ge> ?T"
-    using nat_ceil_le by simp
+    by (rule div_le_dividend)
   from spira_descent obtain q where w:
     "is_subformula q p" "len_formula q \<ge> ?T"
     "\<forall> c \<in> children q. len_formula c < ?T"
     using p_ge_T by blast
-  hence "(k + 1) * len_formula q \<ge> len_formula p"
-    by (metis mult.commute nat_div_to_mult)
-  have "(k + 1) * len_formula q \<le> k * len_formula p"
+  from w(2) have lower: "(k + 1) * len_formula q + k \<ge> ?n"
+    by (rule nat_div_to_mult)
+  have upper: "(k + 1) * len_formula q \<le> k * len_formula p"
   proof (cases q)
     case (Atom v)
     hence "len_formula q = 1" by simp
@@ -1948,11 +1946,11 @@ proof -
       by (simp add: Suc_leI)
   next
     case (Conn c fs)
-    have "formula_well_formed (alphabet F) (Conn c fs)" 
+    have "formula_well_formed (alphabet F) (Conn c fs)"
       using assms w subformula_wf Conn by blast
     hence "length fs = arity (alphabet F) c"
       by force
-    hence "length fs \<le> k"
+    hence len_fs_le_k: "length fs \<le> k"
     proof -
       have alphabet_finite: "finite (UNIV :: 'c set)"
         by (meson frege_balancing_axioms frege_balancing_def
@@ -1967,7 +1965,7 @@ proof -
       thus ?thesis
         using \<open>length fs = arity (alphabet F) c\<close> assms(3) by simp
     qed
-    hence "len_formula (Conn c fs) \<le> 1 + k * Max (set (map len_formula fs))"
+    have len_le: "len_formula (Conn c fs) \<le> 1 + k * Max (set (map len_formula fs))"
     proof -
       let ?M = "Max (set (map len_formula fs))"
       show ?thesis
@@ -1988,7 +1986,7 @@ proof -
         also have "sum_list (map (\<lambda>_. ?M) fs) = length fs * ?M"
           by (simp add: sum_list_triv)
         also have "length fs * ?M \<le> k * ?M"
-          using \<open>length fs \<le> k\<close> by (rule mult_le_mono1)
+          using len_fs_le_k by (rule mult_le_mono1)
         finally have sum_le:
           "sum_list (map len_formula fs) \<le> k * ?M" .
         have "len_formula (Conn c fs) = 1 + sum_list (map len_formula fs)"
@@ -1997,9 +1995,72 @@ proof -
         finally show ?thesis .
       qed
     qed
-  
+    show ?thesis
+    proof (cases "fs = []")
+      case True
+      hence len_q_eq: "len_formula q = 1" using Conn by simp
+      have "(k + 1) * len_formula q = k + 1" using len_q_eq by simp
+      also have "k + 1 \<le> 2 * k" using assms(4) by linarith
+      also have "2 * k = k * 2" by simp
+      also have "k * 2 \<le> k * ?n"
+        using assms(2) by (rule mult_le_mono2)
+      finally show ?thesis .
+    next
+      case False
+      let ?M = "Max (set (map len_formula fs))"
+      have M_lt_T: "?M < ?T"
+      proof -
+        have Mset: "?M \<in> set (map len_formula fs)"
+          using False by simp
+        then obtain c' where c'_in: "c' \<in> set fs"
+                         and c'_eq: "len_formula c' = ?M"
+          by auto
+        from c'_in have "c' \<in> children q" using Conn by simp
+        hence "len_formula c' < ?T" using w(3) by blast
+        thus ?thesis using c'_eq by simp
+      qed
+      have M_plus_1_bound: "(k + 1) * (?M + 1) \<le> ?n"
+      proof -
+        have "(k + 1) * (?M + 1) \<le> (k + 1) * ?T"
+          using M_lt_T by (intro mult_le_mono2) simp
+        also have "(k + 1) * ?T \<le> ?n"
+          using div_mult_mod_eq[of ?n "k + 1"]
+          by (simp add: algebra_simps)
+        finally show ?thesis .
+      qed
+      have aux: "(k + 1) * (1 + k * ?M) \<le> k * ?n"
+      proof -
+        have eq: "(k + 1) * (1 + k * ?M) = (k + 1) + k * ((k + 1) * ?M)"
+          by (simp add: algebra_simps)
+        have packed_eq:
+          "k * ((k + 1) * ?M) + k * (k + 1) = k * ((k + 1) * (?M + 1))"
+          by (simp add: algebra_simps)
+        have "k * ((k + 1) * (?M + 1)) \<le> k * ?n"
+          using M_plus_1_bound by (rule mult_le_mono2)
+        with packed_eq have packed:
+          "k * ((k + 1) * ?M) + k * (k + 1) \<le> k * ?n"
+          by simp
+        have offset: "(k + 1) \<le> k * (k + 1)"
+          using assms(4) by simp
+        from packed offset show ?thesis using eq by linarith
+      qed
+      have "(k + 1) * len_formula (Conn c fs) \<le> (k + 1) * (1 + k * ?M)"
+        using len_le by (rule mult_le_mono2)
+      also have "\<dots> \<le> k * ?n" using aux .
+      finally show ?thesis using Conn by simp
+    qed
+  qed
+  show ?thesis using w(1) lower upper that by blast
+qed
 
-
+lemma spiras_selection_one:
+  assumes "formula_well_formed (alphabet F) p"
+      and "len_formula p \<ge> 2" (* It's not a single atom *)
+      and "Max ((arity (alphabet F)) ` (UNIV :: 'c set)) = 1"
+  obtains q where
+      "is_subformula q p"
+      "3 * len_formula q \<ge> len_formula p"
+      "3 * len_formula q \<le> 2 * len_formula p"
 
 (* theorem 1.1 *)
 theorem proof_balancing:
