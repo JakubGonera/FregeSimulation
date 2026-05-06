@@ -1873,9 +1873,56 @@ proof -
   thus ?thesis by simp
 qed
 
+lemma nat_div_to_mult:
+  fixes x :: "nat"
+    and n :: "nat"
+    and k :: "nat"
+  assumes "x \<ge> (n + k) div (k+1)"
+  shows "x * (k + 1) \<ge> n"
+proof -
+  have decomp: "(n + k) div (k + 1) * (k + 1) + (n + k) mod (k + 1) = n + k"
+    by (rule div_mult_mod_eq)
+  have remainder_bound: "(n + k) mod (k + 1) \<le> k"
+    using mod_less_divisor[of "k + 1" "n + k"] by simp
+  from decomp remainder_bound have "n \<le> (n + k) div (k + 1) * (k + 1)"
+    by linarith
+  also have "(n + k) div (k + 1) * (k + 1) \<le> x * (k + 1)"
+    using assms by (rule mult_le_mono1)
+  finally show ?thesis .
+qed
+
+lemma subformula_wf:
+  assumes "formula_well_formed a f"
+      and "is_subformula q f"
+    shows "formula_well_formed a q"
+  using assms
+proof (induction f)
+  case (Atom v)
+  from Atom.prems(2) have "q = Atom v" by simp
+  thus ?case by simp
+next
+  case (Conn c fs)
+  from Conn.prems(2) have disjunction:
+    "q = Conn c fs \<or> (\<exists> g \<in> set fs. is_subformula q g)"
+    by simp
+  show ?case
+  proof (cases "q = Conn c fs")
+    case True
+    thus ?thesis using Conn.prems(1) by simp
+  next
+    case False
+    with disjunction obtain g where g_in: "g \<in> set fs"
+                                and g_sub: "is_subformula q g"
+      by auto
+    have wf_child: "formula_well_formed a g"
+      using Conn.prems(1) g_in by simp
+    show ?thesis using Conn.IH g_in wf_child g_sub by blast
+  qed
+qed
+
 lemma spiras_selection:
-  assumes "well_formed_formula (alphabet F) p"
-      and "\<exists> c. p = Conn c fs" (* It's not a single atom *)
+  assumes "formula_well_formed (alphabet F) p"
+      and "len_formula p \<ge> 2" (* It's not a single atom *)
       and "k = Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
       and "k > 1" (* k == 1 is a special case *)
   obtains q where
@@ -1892,7 +1939,66 @@ proof -
     "\<forall> c \<in> children q. len_formula c < ?T"
     using p_ge_T by blast
   hence "(k + 1) * len_formula q \<ge> len_formula p"
+    by (metis mult.commute nat_div_to_mult)
+  have "(k + 1) * len_formula q \<le> k * len_formula p"
+  proof (cases q)
+    case (Atom v)
+    hence "len_formula q = 1" by simp
+    thus ?thesis using assms
+      by (simp add: Suc_leI)
+  next
+    case (Conn c fs)
+    have "formula_well_formed (alphabet F) (Conn c fs)" 
+      using assms w subformula_wf Conn by blast
+    hence "length fs = arity (alphabet F) c"
+      by force
+    hence "length fs \<le> k"
+    proof -
+      have alphabet_finite: "finite (UNIV :: 'c set)"
+        by (meson frege_balancing_axioms frege_balancing_def
+                  frege_system.finite_alphabet)
+      hence finite_image: "finite ((arity (alphabet F)) ` (UNIV :: 'c set))"
+        by simp
+      have "arity (alphabet F) c \<in> (arity (alphabet F)) ` (UNIV :: 'c set)"
+        by simp
+      with finite_image have
+        "arity (alphabet F) c \<le> Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
+        by (rule Max_ge)
+      thus ?thesis
+        using \<open>length fs = arity (alphabet F) c\<close> assms(3) by simp
+    qed
+    hence "len_formula (Conn c fs) \<le> 1 + k * Max (set (map len_formula fs))"
+    proof -
+      let ?M = "Max (set (map len_formula fs))"
+      show ?thesis
+      proof (cases "fs = []")
+        case True
+        thus ?thesis by simp
+      next
+        case False
+        have fin: "finite (set (map len_formula fs))" by simp
+        have each_le: "\<And>x. x \<in> set fs \<Longrightarrow> len_formula x \<le> ?M"
+        proof -
+          fix x assume "x \<in> set fs"
+          hence "len_formula x \<in> set (map len_formula fs)" by simp
+          with fin show "len_formula x \<le> ?M" by simp
+        qed
+        have "sum_list (map len_formula fs) \<le> sum_list (map (\<lambda>_. ?M) fs)"
+          using each_le by (rule sum_list_mono)
+        also have "sum_list (map (\<lambda>_. ?M) fs) = length fs * ?M"
+          by (simp add: sum_list_triv)
+        also have "length fs * ?M \<le> k * ?M"
+          using \<open>length fs \<le> k\<close> by (rule mult_le_mono1)
+        finally have sum_le:
+          "sum_list (map len_formula fs) \<le> k * ?M" .
+        have "len_formula (Conn c fs) = 1 + sum_list (map len_formula fs)"
+          by simp
+        also have "\<dots> \<le> 1 + k * ?M" using sum_le by simp
+        finally show ?thesis .
+      qed
+    qed
   
+
 
 
 (* theorem 1.1 *)
