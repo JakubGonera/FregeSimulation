@@ -505,6 +505,11 @@ qed
 definition formulas_equiv :: "'c1 formula \<Rightarrow> 'c1 alphabet \<Rightarrow> 'c2 formula \<Rightarrow> 'c2 alphabet \<Rightarrow> bool" where
   "formulas_equiv f1 a1 f2 a2 \<longleftrightarrow> (\<forall> val. eval a1 val f1 = eval a2 val f2)"
 
+fun formula_well_formed :: "'c alphabet \<Rightarrow> 'c formula \<Rightarrow> bool" where
+  "formula_well_formed alph (Atom _) = True" |
+  "formula_well_formed alph (Conn c fs) =
+     (length fs = arity alph c \<and> (\<forall>g \<in> set fs. formula_well_formed alph g))"
+
 locale frege_system =
   fixes F :: "'c frege"
   assumes sound: "\<forall> r \<in> rules F. sound_rule F r"
@@ -518,7 +523,8 @@ locale frege_system =
   and finite_alphabet: "finite (UNIV :: 'c set)"
   and func_complete:
     "\<forall>f :: dm_conn formula.
-       \<exists> f' :: 'c formula. formulas_equiv f dm_alphabet f' (alphabet F)"
+       \<exists> f' :: 'c formula. formula_well_formed (alphabet F) f' \<and> 
+                           formulas_equiv f dm_alphabet f' (alphabet F)"
 begin
 
 lemma combining_valid_proofs_pr1:

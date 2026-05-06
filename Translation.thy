@@ -155,11 +155,6 @@ proof -
   thus ?thesis by auto
 qed
 
-fun formula_well_formed :: "'c alphabet \<Rightarrow> 'c formula \<Rightarrow> bool" where
-  "formula_well_formed alph (Atom _) = True" |
-  "formula_well_formed alph (Conn c fs) =
-     (length fs = arity alph c \<and> (\<forall>g \<in> set fs. formula_well_formed alph g))"
-
 locale frege_balancing =
   fixes F :: "'c frege"
   assumes "frege_system F"
@@ -1812,7 +1807,8 @@ definition dm_balancing where
 
 lemma balancing_formula_exists:
   shows "\<exists> f. formula_well_formed (alphabet F) f \<and> formulas_equiv dm_balancing dm_alphabet f (alphabet F)"
-  using frege_balancing_axioms frege_balancing_def frege_system.func_complete by blast
+  using frege_balancing_axioms frege_balancing_def frege_system_def by auto
+  
   
 definition custom_balancing where
   "custom_balancing = (SOME f. formula_well_formed (alphabet F) f \<and> formulas_equiv dm_balancing dm_alphabet f (alphabet F))"
@@ -1863,16 +1859,40 @@ proof (induction "len_formula p" arbitrary: p rule: less_induct)
   qed
 qed
 
+lemma nat_ceil_le:
+  fixes k :: "nat"
+    and n :: "nat"
+  shows "(n + k) div (k + 1) \<le> n"
+proof -
+  have "(n + 1) * (k + 1) = n + k + (n * k + 1)"
+    by (simp add: algebra_simps)
+  hence "n + k < (n + 1) * (k + 1)"
+    by simp
+  hence "(n + k) div (k + 1) < n + 1"
+    by (rule less_mult_imp_div_less)
+  thus ?thesis by simp
+qed
+
 lemma spiras_selection:
   assumes "well_formed_formula (alphabet F) p"
-      and "\<exists> c. p = Conn c fs"
-      and "k = Max {arity (alphabet F) c}"
-    shows "\<exists> q. is_subformula q p \<and> 
-                (k + 1) * len_formula q \<ge> len_formula p \<and> 
-                (k + 1) * len_formula q \<le> k * len_formula p"
+      and "\<exists> c. p = Conn c fs" (* It's not a single atom *)
+      and "k = Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
+      and "k > 1" (* k == 1 is a special case *)
+  obtains q where
+      "is_subformula q p"
+      "(k + 1) * len_formula q \<ge> len_formula p"
+      "(k + 1) * len_formula q \<le> k * len_formula p"
 proof -
-
-
+  let ?n = "len_formula p"
+  let ?T = "(?n + k) div (k+1)" (* ceil(n/(k+1)) *)
+  have p_ge_T: "len_formula p \<ge> ?T"
+    using nat_ceil_le by simp
+  from spira_descent obtain q where w:
+    "is_subformula q p" "len_formula q \<ge> ?T"
+    "\<forall> c \<in> children q. len_formula c < ?T"
+    using p_ge_T by blast
+  hence "(k + 1) * len_formula q \<ge> len_formula p"
+  
 
 
 (* theorem 1.1 *)
