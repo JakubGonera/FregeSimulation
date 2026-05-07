@@ -3052,12 +3052,484 @@ next
   qed
 qed
 
+lemma recursive_arg_len_bound_gen:
+  fixes p :: "'c formula" and b :: bool
+  assumes "formula_well_formed (alphabet F) p"
+      and "len_formula p \<ge> spira_threshold"
+      and "k = Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
+      and "k > 1"
+    shows "(k + 1) * len_formula (spiras_sel p) \<le> k * len_formula p
+         \<and> (k + 1) * len_formula (fix_sub_formula (spiras_sel p) b p)
+            \<le> k * len_formula p + 2 * k + 1"
+proof -
+  let ?q = "spiras_sel p"
+  have p_ge_2: "len_formula p \<ge> 2"
+    using assms(2) unfolding spira_threshold_def by simp
+  have p_ge_k: "len_formula p \<ge> k"
+    using assms(2,3) unfolding spira_threshold_def by simp
+  let ?P = "\<lambda>q. is_subformula q p
+            \<and> (k + 1) * len_formula q + k \<ge> len_formula p
+            \<and> (k + 1) * len_formula q \<le> k * len_formula p"
+  have ex: "\<exists> q. ?P q"
+    using spiras_selection_gen[OF assms(1) p_ge_2 assms(3,4)] by blast
+  have "spiras_sel p = (SOME q. ?P q)"
+    unfolding spiras_sel_def using assms(3,4) by (simp add: Let_def)
+  hence pred: "?P ?q" using someI_ex[OF ex] by simp
+  hence sub: "is_subformula ?q p"
+    and lower: "(k + 1) * len_formula ?q + k \<ge> len_formula p"
+    and upper: "(k + 1) * len_formula ?q \<le> k * len_formula p"
+    by auto
+  have q_le_p: "len_formula ?q \<le> len_formula p"
+    using sub is_subformula_len_le by simp
+  have fix_sum: "len_formula ?q + len_formula (fix_sub_formula ?q b p)
+              \<le> len_formula p + 1"
+    using sub by (rule fix_sub_q_sum_bound)
+  have lower_in_nat: "(k + 1) * len_formula ?q \<ge> len_formula p - k"
+    using lower by simp
+  have "(k + 1) * len_formula (fix_sub_formula ?q b p)
+      \<le> (k + 1) * (len_formula p + 1 - len_formula ?q)"
+    using fix_sum by (intro mult_le_mono2) simp
+  also have "(k + 1) * (len_formula p + 1 - len_formula ?q)
+           = (k + 1) * (len_formula p + 1) - (k + 1) * len_formula ?q"
+    using q_le_p by (simp add: diff_mult_distrib2)
+  also have "\<dots> \<le> (k + 1) * (len_formula p + 1) - (len_formula p - k)"
+    using lower_in_nat by simp
+  also have "(k + 1) * (len_formula p + 1) - (len_formula p - k)
+           = k * len_formula p + 2 * k + 1"
+    using p_ge_k by (simp add: algebra_simps)
+  finally have fix_bound: "(k + 1) * len_formula (fix_sub_formula ?q b p)
+                         \<le> k * len_formula p + 2 * k + 1" .
+  show ?thesis using upper fix_bound by simp
+qed
+
+lemma recursive_arg_len_bound_one:
+  fixes p :: "'c formula" and b :: bool
+  assumes "formula_well_formed (alphabet F) p"
+      and "len_formula p \<ge> spira_threshold"
+      and "Max ((arity (alphabet F)) ` (UNIV :: 'c set)) = 1"
+    shows "3 * len_formula (spiras_sel p) \<le> 2 * len_formula p
+         \<and> 3 * len_formula (fix_sub_formula (spiras_sel p) b p)
+            \<le> 2 * len_formula p + 3"
+proof -
+  let ?q = "spiras_sel p"
+  have p_ge_2: "len_formula p \<ge> 2"
+    using assms(2) unfolding spira_threshold_def by simp
+  let ?P = "\<lambda>q. is_subformula q p
+            \<and> 3 * len_formula q \<ge> len_formula p
+            \<and> 3 * len_formula q \<le> 2 * len_formula p"
+  have ex: "\<exists> q. ?P q"
+    using spiras_selection_one[OF assms(1) p_ge_2 assms(3)] by blast
+  have "spiras_sel p = (SOME q. ?P q)"
+    unfolding spiras_sel_def using assms(3) by (simp add: Let_def)
+  hence pred: "?P ?q" using someI_ex[OF ex] by simp
+  hence sub: "is_subformula ?q p"
+    and lower: "3 * len_formula ?q \<ge> len_formula p"
+    and upper: "3 * len_formula ?q \<le> 2 * len_formula p"
+    by auto
+  have q_le_p: "len_formula ?q \<le> len_formula p"
+    using sub is_subformula_len_le by simp
+  have fix_sum: "len_formula ?q + len_formula (fix_sub_formula ?q b p)
+              \<le> len_formula p + 1"
+    using sub by (rule fix_sub_q_sum_bound)
+  have "3 * len_formula (fix_sub_formula ?q b p)
+      \<le> 3 * (len_formula p + 1 - len_formula ?q)"
+    using fix_sum by (intro mult_le_mono2) simp
+  also have "3 * (len_formula p + 1 - len_formula ?q)
+           = 3 * (len_formula p + 1) - 3 * len_formula ?q"
+    using q_le_p by (simp add: diff_mult_distrib2)
+  also have "\<dots> \<le> 3 * (len_formula p + 1) - len_formula p"
+    using lower by simp
+  also have "3 * (len_formula p + 1) - len_formula p = 2 * len_formula p + 3"
+    by (simp add: algebra_simps)
+  finally have fix_bound: "3 * len_formula (fix_sub_formula ?q b p)
+                         \<le> 2 * len_formula p + 3" .
+  show ?thesis using upper fix_bound by simp
+qed
+
+lemma wf_arity_zero_imp_len_1:
+  assumes "formula_well_formed (alphabet F) p"
+      and "Max ((arity (alphabet F)) ` (UNIV :: 'c set)) = 0"
+    shows "len_formula p = 1"
+proof -
+  have alphabet_finite: "finite (UNIV :: 'c set)"
+    by (meson frege_balancing_axioms frege_balancing_def
+              frege_system.finite_alphabet)
+  have all_zero: "\<forall> c. arity (alphabet F) c = 0"
+  proof
+    fix c
+    have x_in: "arity (alphabet F) c
+              \<in> (arity (alphabet F)) ` (UNIV :: 'c set)" by simp
+    have fin_im: "finite ((arity (alphabet F)) ` (UNIV :: 'c set))"
+      using alphabet_finite by simp
+    from fin_im x_in
+    have "arity (alphabet F) c
+        \<le> Max ((arity (alphabet F)) ` (UNIV :: 'c set))" by (rule Max_ge)
+    thus "arity (alphabet F) c = 0" using assms(2) by simp
+  qed
+  show ?thesis using assms(1) all_zero
+  proof (induction p)
+    case (Atom v) show ?case by simp
+  next
+    case (Conn c fs)
+    from Conn.prems(1) have "length fs = arity (alphabet F) c" by simp
+    with all_zero have "fs = []" by simp
+    thus ?case by simp
+  qed
+qed
+
+lemma spira_trans_id_when_small:
+  assumes "formula_well_formed (alphabet F) f"
+      and "len_formula f < spira_threshold"
+    shows "spira_trans f = f"
+proof -
+  from spira_trans_dom_and_eval[OF assms(1)] have dom: "spira_trans_dom f" by simp
+  show ?thesis
+  proof (cases f)
+    case (Atom v)
+    thus ?thesis using dom by (simp add: spira_trans.psimps)
+  next
+    case (Conn c fs)
+    show ?thesis
+    proof (cases fs)
+      case Nil
+      thus ?thesis using Conn dom by (simp add: spira_trans.psimps)
+    next
+      case (Cons f1 fs1)
+      hence "spira_trans (Conn c (f1 # fs1))
+           = (let p = Conn c (f1 # fs1); q = spiras_sel p in
+              if len_formula p < spira_threshold then p
+              else balance (spira_trans (fix_sub_formula q True p))
+                           (spira_trans (fix_sub_formula q False p))
+                           (spira_trans q))"
+        using dom Conn by (simp add: spira_trans.psimps)
+      thus ?thesis using assms(2) Conn Cons by (simp add: Let_def)
+    qed
+  qed
+qed
+
+text \<open>The depth bound: \<open>O(log n)\<close> with the constant determined by the alphabet's
+      max-arity \<open>k\<close> and the depth of \<open>custom_balancing\<close>.\<close>
+
+lemma trans_c_k0:
+  assumes "Max ((arity (alphabet F)) ` (UNIV :: 'c set)) = 0"
+  shows "\<forall> f :: 'c formula. formula_well_formed (alphabet F) f \<longrightarrow>
+           real (depth_formula (spira_trans f))
+           \<le> 1 * log 2 (real (len_formula f) + 1)"
+proof (intro allI impI)
+  fix f :: "'c formula" assume wf: "formula_well_formed (alphabet F) f"
+  have len_eq: "len_formula f = 1"
+    using wf assms by (rule wf_arity_zero_imp_len_1)
+  have len_lt: "len_formula f < spira_threshold"
+    using len_eq unfolding spira_threshold_def by simp
+  have st_eq: "spira_trans f = f"
+    using wf len_lt by (rule spira_trans_id_when_small)
+  have "depth_formula f \<le> len_formula f" by (rule depth_le_len)
+  hence "real (depth_formula f) \<le> 1" using len_eq by simp
+  moreover have "log 2 (real (len_formula f) + 1) = 1"
+    using len_eq by simp
+  ultimately show "real (depth_formula (spira_trans f))
+                 \<le> 1 * log 2 (real (len_formula f) + 1)"
+    using st_eq by simp
+qed
+
+lemma depth_formula_ge_1: "depth_formula f \<ge> 1"
+proof (induction f)
+  case (Atom v) show ?case by simp
+next
+  case (Conn c fs) show ?case by (cases fs) auto
+qed
+
 lemma trans_c:
   shows "\<exists> c :: real. \<forall> f :: 'c formula.
            formula_well_formed (alphabet F) f \<longrightarrow>
            real (depth_formula (spira_trans f))
            \<le> c * log 2 (real (len_formula f) + 1)"
-  sorry
+proof -
+  let ?k = "Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
+  consider (k0) "?k = 0" | (kpos) "?k \<ge> 1" by linarith
+  thus ?thesis
+  proof cases
+    case k0
+    show ?thesis using trans_c_k0[OF k0] by blast
+  next
+    case kpos
+    let ?D = "real (depth_formula custom_balancing)"
+    define A where "A = (if ?k > 1 then ?k + 1 else 3)"
+    define B where "B = (if ?k > 1 then ?k else 2)"
+    define C where "C = (if ?k > 1 then 2 * ?k + 1 else 3)"
+    define T where "T = spira_threshold"
+
+    have A_gt_B: "A > B" unfolding A_def B_def using kpos by auto
+    have AC_ge_B: "A + C \<ge> B" unfolding A_def C_def B_def by auto
+    have T_ge_2: "T \<ge> 2" unfolding T_def spira_threshold_def by simp
+
+    have ratio_pos: "B * T + C + A < A * (T + 1)"
+    proof (cases "?k > 1")
+      case True
+      have A_eq: "A = ?k + 1" using A_def True by simp
+      have B_eq: "B = ?k" using B_def True by simp
+      have C_eq: "C = 2 * ?k + 1" using C_def True by simp
+      have T_eq: "T = 2 * ?k + 2" using T_def spira_threshold_def by simp
+      show ?thesis unfolding A_eq B_eq C_eq T_eq by (simp add: algebra_simps)
+    next
+      case False
+      with kpos have keq: "?k = 1" by simp
+      have A_eq: "A = 3" using A_def False by simp
+      have B_eq: "B = 2" using B_def False by simp
+      have C_eq: "C = 3" using C_def False by simp
+      have T_eq: "T = 4" using T_def spira_threshold_def keq by simp
+      show ?thesis unfolding A_eq B_eq C_eq T_eq by simp
+    qed
+
+    let ?ratio = "real (A * (T + 1)) / real (B * T + C + A)"
+    have A_ge_1: "A \<ge> 1" unfolding A_def using kpos by auto
+    have ratio_gt_1: "?ratio > 1"
+    proof -
+      have denom_pos: "(0::real) < real (B * T + C + A)"
+      proof -
+        have "(0::real) < real A" using A_ge_1 by simp
+        also have "real A \<le> real (B * T + C + A)" by simp
+        finally show ?thesis .
+      qed
+      have num_gt: "real (B * T + C + A) < real (A * (T + 1))"
+        using ratio_pos by (simp only: of_nat_less_iff)
+      from denom_pos num_gt show ?thesis by (simp add: divide_simps)
+    qed
+    have log_ratio_pos: "log 2 ?ratio > 0" using ratio_gt_1 by simp
+
+    define c where "c = max (real T) (?D / log 2 ?ratio)"
+    have c_pos: "c \<ge> 0" unfolding c_def using T_ge_2 by simp
+    have c_ge_T: "c \<ge> real T" unfolding c_def by simp
+    have c_log_ge_D: "c * log 2 ?ratio \<ge> ?D"
+    proof -
+      have "?D / log 2 ?ratio \<le> c" unfolding c_def by simp
+      thus ?thesis using log_ratio_pos by (simp add: divide_le_eq)
+    qed
+
+    have arg_bound: "\<And> p b. formula_well_formed (alphabet F) p
+                       \<Longrightarrow> len_formula p \<ge> T
+                       \<Longrightarrow> A * (len_formula (spiras_sel p) + 1) \<le> B * len_formula p + C + A
+                         \<and> A * (len_formula (fix_sub_formula (spiras_sel p) b p) + 1)
+                            \<le> B * len_formula p + C + A"
+    proof -
+      fix p :: "'c formula" and b :: bool
+      assume wf: "formula_well_formed (alphabet F) p"
+         and lenge: "len_formula p \<ge> T"
+      have lenge_st: "len_formula p \<ge> spira_threshold"
+        using lenge T_def by simp
+      show "A * (len_formula (spiras_sel p) + 1) \<le> B * len_formula p + C + A
+          \<and> A * (len_formula (fix_sub_formula (spiras_sel p) b p) + 1)
+             \<le> B * len_formula p + C + A"
+      proof (cases "?k > 1")
+        case True
+        from recursive_arg_len_bound_gen[OF wf lenge_st refl True, of b]
+        show ?thesis
+          unfolding A_def B_def C_def using True by (auto simp: algebra_simps)
+      next
+        case False
+        with kpos have keq: "?k = 1" by simp
+        from recursive_arg_len_bound_one[OF wf lenge_st keq, of b]
+        show ?thesis
+          unfolding A_def B_def C_def using False by auto
+      qed
+    qed
+
+    have main: "\<forall> f :: 'c formula. formula_well_formed (alphabet F) f \<longrightarrow>
+                                   real (depth_formula (spira_trans f))
+                                   \<le> c * log 2 (real (len_formula f) + 1)"
+    proof (intro allI impI)
+      fix f :: "'c formula"
+      assume wf_f: "formula_well_formed (alphabet F) f"
+      from wf_f
+      show "real (depth_formula (spira_trans f))
+          \<le> c * log 2 (real (len_formula f) + 1)"
+      proof (induction "len_formula f" arbitrary: f rule: less_induct)
+        case less
+        show ?case
+        proof (cases "len_formula f < T")
+          case small: True
+          have f_lt: "len_formula f < spira_threshold"
+            using small T_def by simp
+          have st_eq: "spira_trans f = f"
+            using less.prems f_lt by (rule spira_trans_id_when_small)
+          have "depth_formula f \<le> len_formula f" by (rule depth_le_len)
+          hence "real (depth_formula f) \<le> real (len_formula f)" by simp
+          also have "\<dots> < real T" using small by simp
+          also have "\<dots> \<le> c" using c_ge_T by simp
+          also have "c \<le> c * log 2 (real (len_formula f) + 1)"
+          proof -
+            have len_ge_1: "len_formula f \<ge> 1" by (rule len_formula_positive)
+            hence "real (len_formula f) + 1 \<ge> 2" by simp
+            hence "log 2 (real (len_formula f) + 1) \<ge> log 2 (2::real)"
+              by (intro log_mono) auto
+            hence log_ge_1: "log 2 (real (len_formula f) + 1) \<ge> 1" by simp
+            from log_ge_1 c_pos
+            have "c * 1 \<le> c * log 2 (real (len_formula f) + 1)"
+              by (intro mult_left_mono) auto
+            thus ?thesis by simp
+          qed
+          finally show ?thesis using st_eq by simp
+        next
+          case big: False
+          have f_ge_T: "len_formula f \<ge> T" using big by simp
+          have f_ge_st: "len_formula f \<ge> spira_threshold"
+            using f_ge_T T_def by simp
+          have f_ge_2: "len_formula f \<ge> 2"
+            using f_ge_st spira_threshold_def by simp
+
+          obtain cn gs where f_eq: "f = Conn cn gs" and gs_ne: "gs \<noteq> []"
+          proof (cases f)
+            case (Atom v)
+            with f_ge_2 show ?thesis by simp
+          next
+            case (Conn cn gs)
+            with f_ge_2 have "gs \<noteq> []" by (cases gs) auto
+            with Conn show ?thesis using that by simp
+          qed
+          obtain g gs' where gs_eq: "gs = g # gs'" using gs_ne
+            by (cases gs) auto
+          let ?p = f
+          let ?q = "spiras_sel ?p"
+          let ?ft = "fix_sub_formula ?q True ?p"
+          let ?ff = "fix_sub_formula ?q False ?p"
+
+          have wf_p: "formula_well_formed (alphabet F) ?p" using less.prems .
+          from spira_trans_dom_and_eval[OF wf_p]
+          have dom_p: "spira_trans_dom ?p" by simp
+          have st_unfold: "spira_trans ?p
+                         = balance (spira_trans ?ft)
+                                   (spira_trans ?ff)
+                                   (spira_trans ?q)"
+          proof -
+            have psimp: "spira_trans (Conn cn (g # gs')) =
+                  (let p = Conn cn (g # gs'); q = spiras_sel p in
+                   if len_formula p < spira_threshold then p
+                   else balance (spira_trans (fix_sub_formula q True p))
+                                (spira_trans (fix_sub_formula q False p))
+                                (spira_trans q))"
+              using dom_p f_eq gs_eq
+              by (simp add: spira_trans.psimps)
+            thus ?thesis using f_ge_st f_eq gs_eq by (simp add: Let_def)
+          qed
+
+          have q_sub: "is_subformula ?q ?p"
+            and q_lt: "len_formula ?q < len_formula ?p"
+            using spiras_sel_pred_when_wf[OF wf_p f_ge_2] by auto
+          have wf_q: "formula_well_formed (alphabet F) ?q"
+            using wf_p q_sub subformula_wf by blast
+          have wf_T: "formula_well_formed (alphabet F) ?ft"
+            using wf_p by (rule fix_sub_formula_wf)
+          have wf_F: "formula_well_formed (alphabet F) ?ff"
+            using wf_p by (rule fix_sub_formula_wf)
+
+          have q_ge_2: "len_formula ?q \<ge> 2"
+            using spiras_sel_len_ge_2_when_wf[OF wf_p f_ge_st] .
+          have ft_lt: "len_formula ?ft < len_formula ?p"
+            using fix_sub_formula_len_strict[OF q_sub q_ge_2] .
+          have ff_lt: "len_formula ?ff < len_formula ?p"
+            using fix_sub_formula_len_strict[OF q_sub q_ge_2] .
+
+          from less.hyps[OF q_lt wf_q]
+          have ih_q: "real (depth_formula (spira_trans ?q))
+                    \<le> c * log 2 (real (len_formula ?q) + 1)" .
+          from less.hyps[OF ft_lt wf_T]
+          have ih_T: "real (depth_formula (spira_trans ?ft))
+                    \<le> c * log 2 (real (len_formula ?ft) + 1)" .
+          from less.hyps[OF ff_lt wf_F]
+          have ih_F: "real (depth_formula (spira_trans ?ff))
+                    \<le> c * log 2 (real (len_formula ?ff) + 1)" .
+
+          from arg_bound[of ?p True, OF wf_p f_ge_T]
+          have q_arg: "A * (len_formula ?q + 1) \<le> B * len_formula ?p + C + A"
+            and ft_arg: "A * (len_formula ?ft + 1) \<le> B * len_formula ?p + C + A" by auto
+          from arg_bound[of ?p False, OF wf_p f_ge_T]
+          have ff_arg: "A * (len_formula ?ff + 1) \<le> B * len_formula ?p + C + A" by auto
+
+          have log_q: "?D + c * log 2 (real (len_formula ?q) + 1)
+                     \<le> c * log 2 (real (len_formula ?p) + 1)"
+            using trans_c_log_step[OF A_gt_B AC_ge_B q_arg f_ge_T ratio_pos
+                                       c_log_ge_D c_pos] .
+          have log_T: "?D + c * log 2 (real (len_formula ?ft) + 1)
+                     \<le> c * log 2 (real (len_formula ?p) + 1)"
+            using trans_c_log_step[OF A_gt_B AC_ge_B ft_arg f_ge_T ratio_pos
+                                       c_log_ge_D c_pos] .
+          have log_F: "?D + c * log 2 (real (len_formula ?ff) + 1)
+                     \<le> c * log 2 (real (len_formula ?p) + 1)"
+            using trans_c_log_step[OF A_gt_B AC_ge_B ff_arg f_ge_T ratio_pos
+                                       c_log_ge_D c_pos] .
+
+          have stq_ge_1: "depth_formula (spira_trans ?q) \<ge> 1"
+            by (rule depth_formula_ge_1)
+          have stT_ge_1: "depth_formula (spira_trans ?ft) \<ge> 1"
+            by (rule depth_formula_ge_1)
+          have stF_ge_1: "depth_formula (spira_trans ?ff) \<ge> 1"
+            by (rule depth_formula_ge_1)
+
+          have max_collapse: "Max (insert 1 {depth_formula (spira_trans ?ft),
+                                              depth_formula (spira_trans ?ff),
+                                              depth_formula (spira_trans ?q)})
+                            = Max {depth_formula (spira_trans ?ft),
+                                   depth_formula (spira_trans ?ff),
+                                   depth_formula (spira_trans ?q)}"
+            using stq_ge_1 stT_ge_1 stF_ge_1 by auto
+
+          have "depth_formula (spira_trans ?p)
+              \<le> depth_formula custom_balancing
+              + Max (insert 1 {depth_formula (spira_trans ?ft),
+                               depth_formula (spira_trans ?ff),
+                               depth_formula (spira_trans ?q)})"
+            using st_unfold balance_depth_bound by simp
+          hence depth_real_bound:
+              "real (depth_formula (spira_trans ?p))
+             \<le> ?D
+             + real (Max {depth_formula (spira_trans ?ft),
+                          depth_formula (spira_trans ?ff),
+                          depth_formula (spira_trans ?q)})"
+            using max_collapse by simp
+
+          let ?MS = "{depth_formula (spira_trans ?ft),
+                      depth_formula (spira_trans ?ff),
+                      depth_formula (spira_trans ?q)}"
+          have max_le: "real (Max ?MS) \<le> c * log 2 (real (len_formula ?p) + 1) - ?D"
+          proof -
+            have ms_fin: "finite ?MS" by simp
+            have ms_ne: "?MS \<noteq> {}" by simp
+            from Max_in[OF ms_fin ms_ne]
+            have m_in: "Max ?MS \<in> ?MS" .
+            from m_in have "Max ?MS = depth_formula (spira_trans ?ft)
+                          \<or> Max ?MS = depth_formula (spira_trans ?ff)
+                          \<or> Max ?MS = depth_formula (spira_trans ?q)" by auto
+            thus ?thesis
+            proof (elim disjE)
+              assume eq: "Max ?MS = depth_formula (spira_trans ?ft)"
+              have "real (Max ?MS) \<le> c * log 2 (real (len_formula ?ft) + 1)"
+                using eq ih_T by simp
+              also have "\<dots> \<le> c * log 2 (real (len_formula ?p) + 1) - ?D"
+                using log_T by simp
+              finally show ?thesis .
+            next
+              assume eq: "Max ?MS = depth_formula (spira_trans ?ff)"
+              have "real (Max ?MS) \<le> c * log 2 (real (len_formula ?ff) + 1)"
+                using eq ih_F by simp
+              also have "\<dots> \<le> c * log 2 (real (len_formula ?p) + 1) - ?D"
+                using log_F by simp
+              finally show ?thesis .
+            next
+              assume eq: "Max ?MS = depth_formula (spira_trans ?q)"
+              have "real (Max ?MS) \<le> c * log 2 (real (len_formula ?q) + 1)"
+                using eq ih_q by simp
+              also have "\<dots> \<le> c * log 2 (real (len_formula ?p) + 1) - ?D"
+                using log_q by simp
+              finally show ?thesis .
+            qed
+          qed
+          from depth_real_bound max_le show ?thesis by simp
+        qed
+      qed
+    qed
+    show ?thesis using main by blast
+  qed
+qed
 
 paragraph \<open>(b)\<close>
 
