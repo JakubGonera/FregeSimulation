@@ -523,8 +523,12 @@ locale frege_system =
   and finite_alphabet: "finite (UNIV :: 'c set)"
   and func_complete:
     "\<forall>f :: dm_conn formula.
-       \<exists> f' :: 'c formula. formula_well_formed (alphabet F) f' \<and> 
+       \<exists> f' :: 'c formula. formula_well_formed (alphabet F) f' \<and>
                            formulas_equiv f dm_alphabet f' (alphabet F)"
+  and has_top:
+    "\<exists> t. arity (alphabet F) t = 0 \<and> (\<forall> val. eval (alphabet F) val (Conn t []) = True)"
+  and has_bot:
+    "\<exists> b. arity (alphabet F) b = 0 \<and> (\<forall> val. eval (alphabet F) val (Conn b []) = False)"
 begin
 
 lemma combining_valid_proofs_pr1:

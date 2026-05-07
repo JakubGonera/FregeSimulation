@@ -4,7 +4,7 @@ begin
 
 (* The numbering of lemmas follows Yuval Filmus' manuscript *)
 
-subsection \<open>Lemma 3.2\<close>
+paragraph \<open>Lemma 3.2\<close>
 
 definition plug :: "string \<Rightarrow> 'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula" where
   "plug h \<tau> \<chi> = sub_formula (\<lambda>v. if v = h then \<tau> else Atom v) \<chi>"
@@ -1807,11 +1807,58 @@ definition dm_balancing where
 
 lemma balancing_formula_exists:
   shows "\<exists> f. formula_well_formed (alphabet F) f \<and> formulas_equiv dm_balancing dm_alphabet f (alphabet F)"
-  using frege_balancing_axioms frege_balancing_def frege_system_def by auto
+  by (meson frege_balancing_axioms frege_balancing_def frege_system.func_complete)
   
   
 definition custom_balancing where
   "custom_balancing = (SOME f. formula_well_formed (alphabet F) f \<and> formulas_equiv dm_balancing dm_alphabet f (alphabet F))"
+
+fun balance :: "'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula" where
+  "balance x y z = (let sub = \<lambda>v.
+                  if v = ''x'' then x
+                  else if v = ''y'' then y
+                  else if v = ''z'' then z
+                  else Atom v in sub_formula sub custom_balancing)"
+
+lemma custom_balancing_spec:
+  shows "formula_well_formed (alphabet F) custom_balancing
+       \<and> formulas_equiv dm_balancing dm_alphabet custom_balancing (alphabet F)"
+  unfolding custom_balancing_def
+  using someI_ex[OF balancing_formula_exists] .
+
+lemma dm_balancing_eval:
+  shows "eval dm_alphabet val dm_balancing
+         = (if val ''z'' then val ''x'' else val ''y'')"
+  unfolding dm_balancing_def by (auto simp: dm_alphabet_def)
+
+lemma balance_eval:
+  shows "eval (alphabet F) val (balance x y z)
+         = (if eval (alphabet F) val z
+            then eval (alphabet F) val x
+            else eval (alphabet F) val y)"
+proof -
+  let ?sub = "\<lambda>v. if v = ''x'' then x
+                  else if v = ''y'' then y
+                  else if v = ''z'' then z
+                  else Atom v"
+  let ?val' = "\<lambda>v. eval (alphabet F) val (?sub v)"
+  have unfold: "balance x y z = sub_formula ?sub custom_balancing"
+    by (simp add: Let_def)
+  have step_sub: "eval (alphabet F) val (sub_formula ?sub custom_balancing)
+               = eval (alphabet F) ?val' custom_balancing"
+    by (rule eval_sub_formula)
+  have step_equiv: "eval (alphabet F) ?val' custom_balancing
+               = eval dm_alphabet ?val' dm_balancing"
+    using custom_balancing_spec unfolding formulas_equiv_def by auto
+  have step_dm: "eval dm_alphabet ?val' dm_balancing
+               = (if ?val' ''z'' then ?val' ''x'' else ?val' ''y'')"
+    by (rule dm_balancing_eval)
+  have "?val' ''x'' = eval (alphabet F) val x"
+   and "?val' ''y'' = eval (alphabet F) val y"
+   and "?val' ''z'' = eval (alphabet F) val z"
+    by simp_all
+  thus ?thesis using unfold step_sub step_equiv step_dm by simp
+qed
 
 (* I do not formalise the lemma 4.1 to see what exact form would be the most useful *)
 
@@ -1918,7 +1965,7 @@ next
   qed
 qed
 
-lemma spiras_selection:
+lemma spiras_selection_gen:
   assumes "formula_well_formed (alphabet F) p"
       and "len_formula p \<ge> 2" (* It's not a single atom *)
       and "k = Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
@@ -2061,6 +2108,858 @@ lemma spiras_selection_one:
       "is_subformula q p"
       "3 * len_formula q \<ge> len_formula p"
       "3 * len_formula q \<le> 2 * len_formula p"
+proof -
+  let ?n = "len_formula p"
+  let ?T = "(2 * ?n) div 3"
+  have T_ge_1: "?T \<ge> 1"
+  proof -
+    have "(3::nat) \<le> 2 * ?n" using assms(2) by simp
+    hence "(3::nat) div 3 \<le> (2 * ?n) div 3" by (rule div_le_mono)
+    thus ?thesis by simp
+  qed
+  have T_le_n: "?T \<le> ?n"
+  proof -
+    have "2 * ?n \<le> 3 * ?n" by simp
+    hence "(2 * ?n) div 3 \<le> (3 * ?n) div 3" by (rule div_le_mono)
+    also have "(3 * ?n) div 3 = ?n" by simp
+    finally show ?thesis .
+  qed
+  from spira_descent T_le_n obtain q where w:
+    "is_subformula q p" "len_formula q \<ge> ?T"
+    "\<forall> c \<in> children q. len_formula c < ?T"
+    by blast
+  have wf_q: "formula_well_formed (alphabet F) q"
+    using assms(1) w(1) subformula_wf by blast
+  have alphabet_finite: "finite (UNIV :: 'c set)"
+    by (meson frege_balancing_axioms frege_balancing_def
+              frege_system.finite_alphabet)
+  hence finite_image: "finite ((arity (alphabet F)) ` (UNIV :: 'c set))"
+    by simp
+  have len_q_le_T: "len_formula q \<le> ?T"
+  proof (cases q)
+    case (Atom v)
+    hence "len_formula q = 1" by simp
+    thus ?thesis using T_ge_1 by simp
+  next
+    case (Conn c fs)
+    have "arity (alphabet F) c \<in> (arity (alphabet F)) ` (UNIV :: 'c set)"
+      by simp
+    with finite_image have
+      "arity (alphabet F) c \<le> Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
+      by (rule Max_ge)
+    hence arity_le_1: "arity (alphabet F) c \<le> 1" using assms(3) by simp
+    have "length fs = arity (alphabet F) c" using wf_q Conn by simp
+    hence len_fs: "length fs \<le> 1" using arity_le_1 by simp
+    show ?thesis
+    proof (cases fs)
+      case Nil
+      hence "len_formula q = 1" using Conn by simp
+      thus ?thesis using T_ge_1 by simp
+    next
+      case (Cons f fs')
+      have "length fs' = 0" using len_fs Cons by simp
+      hence "fs' = []" by simp
+      with Cons have fs_singleton: "fs = [f]" by simp
+      hence q_unfold: "len_formula q = 1 + len_formula f" using Conn by simp
+      have "f \<in> children q" using fs_singleton Conn by simp
+      hence "len_formula f < ?T" using w(3) by blast
+      hence "len_formula f \<le> ?T - 1" by simp
+      thus ?thesis using q_unfold T_ge_1 by simp
+    qed
+  qed
+  from w(2) len_q_le_T have len_q_eq: "len_formula q = ?T" by simp
+  have bound1: "3 * len_formula q \<ge> ?n"
+  proof -
+    have decomp: "?T * 3 + (2 * ?n) mod 3 = 2 * ?n"
+      by (rule div_mult_mod_eq)
+    have mod_le: "(2 * ?n) mod 3 \<le> 2"
+      using mod_less_divisor[of 3 "2 * ?n"] by simp
+    from decomp mod_le assms(2) have "?T * 3 \<ge> ?n" by linarith
+    hence "3 * ?T \<ge> ?n" by (simp add: algebra_simps)
+    thus ?thesis using len_q_eq by simp
+  qed
+  have bound2: "3 * len_formula q \<le> 2 * ?n"
+  proof -
+    have "?T * 3 \<le> 2 * ?n"
+      using div_mult_mod_eq[of "2 * ?n" 3] by linarith
+    hence "3 * ?T \<le> 2 * ?n" by (simp add: algebra_simps)
+    thus ?thesis using len_q_eq by simp
+  qed
+  show ?thesis using w(1) bound1 bound2 that by blast
+qed
+
+definition spira_threshold :: nat where
+  "spira_threshold = 2 * Max ((arity (alphabet F)) ` (UNIV :: 'c set)) + 2"
+
+definition spiras_sel :: "'c formula \<Rightarrow> 'c formula" where
+  "spiras_sel p = (
+     let k = Max ((arity (alphabet F)) ` (UNIV :: 'c set)) in
+     if k > 1 then
+       (SOME q. is_subformula q p
+                \<and> (k + 1) * len_formula q + k \<ge> len_formula p
+                \<and> (k + 1) * len_formula q \<le> k * len_formula p)
+     else
+       (SOME q. is_subformula q p
+                \<and> 3 * len_formula q \<ge> len_formula p
+                \<and> 3 * len_formula q \<le> 2 * len_formula p))"
+
+
+paragraph \<open>Lemma 4.3\<close>
+
+definition top_conn :: "'c" where
+  "top_conn = (SOME t. arity (alphabet F) t = 0
+                     \<and> (\<forall> val. eval (alphabet F) val (Conn t []) = True))"
+
+definition bot_conn :: "'c" where
+  "bot_conn = (SOME b. arity (alphabet F) b = 0
+                     \<and> (\<forall> val. eval (alphabet F) val (Conn b []) = False))"
+
+lemma top_conn_spec:
+  shows "arity (alphabet F) top_conn = 0
+       \<and> (\<forall> val. eval (alphabet F) val (Conn top_conn []) = True)"
+proof -
+  have "\<exists> t. arity (alphabet F) t = 0
+           \<and> (\<forall> val. eval (alphabet F) val (Conn t []) = True)"
+    by (meson frege_balancing_axioms frege_balancing_def frege_system.has_top)
+  thus ?thesis unfolding top_conn_def by (rule someI_ex)
+qed
+
+lemma bot_conn_spec:
+  shows "arity (alphabet F) bot_conn = 0
+       \<and> (\<forall> val. eval (alphabet F) val (Conn bot_conn []) = False)"
+proof -
+  have "\<exists> b. arity (alphabet F) b = 0
+           \<and> (\<forall> val. eval (alphabet F) val (Conn b []) = False)"
+    by (meson frege_balancing_axioms frege_balancing_def frege_system.has_bot)
+  thus ?thesis unfolding bot_conn_def by (rule someI_ex)
+qed
+
+definition true_const :: "'c formula" where
+  "true_const = Conn top_conn []"
+
+definition false_const :: "'c formula" where
+  "false_const = Conn bot_conn []"
+
+lemma true_const_eval:
+  shows "eval (alphabet F) val true_const = True"
+  unfolding true_const_def using top_conn_spec by simp
+
+lemma false_const_eval:
+  shows "eval (alphabet F) val false_const = False"
+  unfolding false_const_def using bot_conn_spec by simp
+
+lemma true_const_wf:
+  shows "formula_well_formed (alphabet F) true_const"
+  unfolding true_const_def using top_conn_spec by simp
+
+lemma false_const_wf:
+  shows "formula_well_formed (alphabet F) false_const"
+  unfolding false_const_def using bot_conn_spec by simp
+
+lemma true_const_len:
+  shows "len_formula true_const = 1"
+  unfolding true_const_def by simp
+
+lemma false_const_len:
+  shows "len_formula false_const = 1"
+  unfolding false_const_def by simp
+
+(* Equivalent to the notation P_Q=1 etc.*)
+
+fun fix_sub_formula :: "'c formula \<Rightarrow> bool \<Rightarrow> 'c formula \<Rightarrow> 'c formula" where
+  "fix_sub_formula q b (Atom v) = (if (Atom v) = q then (if b then true_const else false_const)
+                            else (Atom v))" |
+  "fix_sub_formula q b (Conn c fs) = (if (Conn c fs) = q then (if b then true_const else false_const)
+                                      else (Conn c (map (fix_sub_formula q b) fs)))"
+
+lemma fix_sub_formula_eval:
+  shows "eval (alphabet F) val p
+         = (if eval (alphabet F) val q
+            then eval (alphabet F) val (fix_sub_formula q True p)
+            else eval (alphabet F) val (fix_sub_formula q False p))"
+proof (induction p)
+  case (Atom v)
+  show ?case
+  proof (cases "Atom v = q")
+    case True
+    hence q_eq: "q = Atom v" by simp
+    have ftrue: "fix_sub_formula q True (Atom v) = true_const"
+      by (subst q_eq) simp
+    have ffalse: "fix_sub_formula q False (Atom v) = false_const"
+      by (subst q_eq) simp
+    show ?thesis
+      using True ftrue ffalse true_const_eval false_const_eval by simp
+  next
+    case False
+    thus ?thesis by simp
+  qed
+next
+  case (Conn c fs)
+  let ?ev = "eval (alphabet F) val"
+  show ?case
+  proof (cases "Conn c fs = q")
+    case True
+    thus ?thesis
+      using true_const_eval false_const_eval by auto
+  next
+    case neq: False
+    show ?thesis
+    proof (cases "?ev q")
+      case True
+      have each: "\<And>a. a \<in> set fs \<Longrightarrow> ?ev a = ?ev (fix_sub_formula q True a)"
+        using Conn.IH True by simp
+      have map_eq: "map ?ev fs = map ?ev (map (fix_sub_formula q True) fs)"
+      proof -
+        have "map ?ev fs = map (\<lambda>a. ?ev (fix_sub_formula q True a)) fs"
+          by (intro list.map_cong0) (simp add: each)
+        thus ?thesis by simp
+      qed
+      have "?ev (Conn c fs) = conn_evals (alphabet F) c (map ?ev fs)" by simp
+      also have "conn_evals (alphabet F) c (map ?ev fs)
+                 = conn_evals (alphabet F) c (map ?ev (map (fix_sub_formula q True) fs))"
+        by (subst map_eq) (rule refl)
+      also have "\<dots> = ?ev (Conn c (map (fix_sub_formula q True) fs))" by simp
+      finally show ?thesis using True neq by simp
+    next
+      case False
+      have each: "\<And>a. a \<in> set fs \<Longrightarrow> ?ev a = ?ev (fix_sub_formula q False a)"
+        using Conn.IH False by simp
+      have map_eq: "map ?ev fs = map ?ev (map (fix_sub_formula q False) fs)"
+      proof -
+        have "map ?ev fs = map (\<lambda>a. ?ev (fix_sub_formula q False a)) fs"
+          by (intro list.map_cong0) (simp add: each)
+        thus ?thesis by simp
+      qed
+      have "?ev (Conn c fs) = conn_evals (alphabet F) c (map ?ev fs)" by simp
+      also have "conn_evals (alphabet F) c (map ?ev fs)
+                 = conn_evals (alphabet F) c (map ?ev (map (fix_sub_formula q False) fs))"
+        by (subst map_eq) (rule refl)
+      also have "\<dots> = ?ev (Conn c (map (fix_sub_formula q False) fs))" by simp
+      finally show ?thesis using False neq by simp
+    qed
+  qed
+qed
+
+lemma sum_list_pointwise_le:
+  fixes f g :: "'a \<Rightarrow> nat"
+  assumes "\<forall> x \<in> set xs. f x \<le> g x"
+  shows "sum_list (map f xs) \<le> sum_list (map g xs)"
+  using assms
+proof (induction xs)
+  case Nil
+  show ?case by simp
+next
+  case (Cons a xs)
+  hence head: "f a \<le> g a" by simp
+  have tail: "sum_list (map f xs) \<le> sum_list (map g xs)"
+    using Cons.IH Cons.prems by simp
+  from head tail show ?case by simp
+qed
+
+lemma fix_sub_formula_len_le:
+  shows "len_formula (fix_sub_formula q b p) \<le> len_formula p"
+proof (induction p)
+  case (Atom v)
+  show ?case
+  proof (cases "Atom v = q")
+    case True
+    hence q_eq: "q = Atom v" by simp
+    have "fix_sub_formula q b (Atom v)
+        = (if b then true_const else false_const)"
+      unfolding q_eq by simp
+    thus ?thesis
+      using true_const_len false_const_len by simp
+  next
+    case False
+    thus ?thesis by simp
+  qed
+next
+  case (Conn c fs)
+  show ?case
+  proof (cases "Conn c fs = q")
+    case True
+    hence q_eq: "q = Conn c fs" by simp
+    have "fix_sub_formula q b (Conn c fs)
+        = (if b then true_const else false_const)"
+      unfolding q_eq by simp
+    moreover have "len_formula (Conn c fs) \<ge> 1"
+      by (rule len_formula_positive)
+    ultimately show ?thesis
+      using true_const_len false_const_len by simp
+  next
+    case False
+    hence unfold: "fix_sub_formula q b (Conn c fs)
+                 = Conn c (map (fix_sub_formula q b) fs)"
+      by simp
+    have "sum_list (map (len_formula \<circ> fix_sub_formula q b) fs)
+        \<le> sum_list (map len_formula fs)"
+    proof (rule sum_list_pointwise_le, intro ballI)
+      fix x assume "x \<in> set fs"
+      thus "(len_formula \<circ> fix_sub_formula q b) x \<le> len_formula x"
+        using Conn.IH by simp
+    qed
+    thus ?thesis using unfold by simp
+  qed
+qed
+
+lemma sum_list_len_lt_aux:
+  assumes "g \<in> set fs"
+      and "len_formula (fix_sub_formula q b g) < len_formula g"
+  shows "sum_list (map (len_formula \<circ> fix_sub_formula q b) fs)
+       < sum_list (map len_formula fs)"
+  using assms
+proof (induction fs)
+  case Nil
+  show ?case using Nil.prems by simp
+next
+  case (Cons a fs)
+  show ?case
+  proof (cases "g = a")
+    case True
+    have head: "len_formula (fix_sub_formula q b a) < len_formula a"
+      using Cons.prems(2) True by simp
+    have tail: "sum_list (map (len_formula \<circ> fix_sub_formula q b) fs)
+              \<le> sum_list (map len_formula fs)"
+    proof (induction fs)
+      case Nil
+      show ?case by simp
+    next
+      case (Cons a fs)
+      have head_le: "len_formula (fix_sub_formula q b a) \<le> len_formula a"
+        by (rule fix_sub_formula_len_le)
+      from head_le Cons.IH
+      have "len_formula (fix_sub_formula q b a)
+            + sum_list (map (len_formula \<circ> fix_sub_formula q b) fs)
+          \<le> len_formula a + sum_list (map len_formula fs)"
+        by (rule add_mono)
+      thus ?case by (simp add: o_def)
+    qed
+    from head tail show ?thesis by (simp add: o_def)
+  next
+    case False
+    with Cons.prems(1) have g_in_fs: "g \<in> set fs" by simp
+    hence "sum_list (map (len_formula \<circ> fix_sub_formula q b) fs)
+         < sum_list (map len_formula fs)"
+      using Cons.prems(2) Cons.IH by blast
+    moreover have "len_formula (fix_sub_formula q b a) \<le> len_formula a"
+      using fix_sub_formula_len_le by simp
+    ultimately show ?thesis by (simp add: o_def)
+  qed
+qed
+
+lemma fix_sub_formula_len_strict:
+  assumes "is_subformula q p"
+      and "len_formula q \<ge> 2"
+    shows "len_formula (fix_sub_formula q b p) < len_formula p"
+  using assms
+proof (induction p)
+  case (Atom v)
+  from Atom.prems(1) have "q = Atom v" by simp
+  hence "len_formula q = 1" by simp
+  with Atom.prems(2) show ?case by simp
+next
+  case (Conn c fs)
+  show ?case
+  proof (cases "Conn c fs = q")
+    case True
+    hence q_eq: "q = Conn c fs" by simp
+    have "fix_sub_formula q b (Conn c fs) = (if b then true_const else false_const)"
+      unfolding q_eq by simp
+    moreover have "len_formula (if b then true_const else false_const) = 1"
+      using true_const_len false_const_len by simp
+    ultimately have lhs_eq: "len_formula (fix_sub_formula q b (Conn c fs)) = 1"
+      by simp
+    have "len_formula (Conn c fs) \<ge> 2"
+      using True Conn.prems(2) by simp
+    thus ?thesis using lhs_eq by simp
+  next
+    case False
+    from Conn.prems(1) False
+    obtain g where g_in: "g \<in> set fs" and g_sub: "is_subformula q g"
+      by auto
+    have ih_g: "len_formula (fix_sub_formula q b g) < len_formula g"
+      using Conn.IH g_in g_sub Conn.prems(2) by blast
+    have unfold: "fix_sub_formula q b (Conn c fs)
+                = Conn c (map (fix_sub_formula q b) fs)"
+      using False by simp
+    have sum_lt: "sum_list (map (len_formula \<circ> fix_sub_formula q b) fs)
+                < sum_list (map len_formula fs)"
+      using g_in ih_g by (rule sum_list_len_lt_aux)
+    show ?thesis using unfold sum_lt by simp
+  qed
+qed
+
+
+function (domintros) spira_trans :: "'c formula \<Rightarrow> 'c formula" where
+  "spira_trans (Atom v) = (Atom v)" |
+  "spira_trans (Conn c []) = (Conn c [])" |
+  "spira_trans (Conn c (f # fs)) =
+     (let p = Conn c (f # fs); q = spiras_sel p in
+        if len_formula p < spira_threshold then p
+        else balance (spira_trans (fix_sub_formula q True p))
+                     (spira_trans (fix_sub_formula q False p))
+                     (spira_trans q))"
+  by pat_completeness auto
+
+lemma is_subformula_len_le:
+  shows "is_subformula q p \<Longrightarrow> len_formula q \<le> len_formula p"
+proof (induction p)
+  case (Atom v)
+  thus ?case by simp
+next
+  case (Conn c fs)
+  from Conn.prems have "q = Conn c fs \<or> (\<exists> g \<in> set fs. is_subformula q g)"
+    by simp
+  thus ?case
+  proof
+    assume "q = Conn c fs"
+    thus ?case by simp
+  next
+    assume "\<exists> g \<in> set fs. is_subformula q g"
+    then obtain g where g_in: "g \<in> set fs" and g_sub: "is_subformula q g"
+      by blast
+    hence "len_formula q \<le> len_formula g" using Conn.IH by simp
+    moreover have "len_formula g \<le> sum_list (map len_formula fs)"
+      using g_in by (induction fs) auto
+    ultimately show ?case by simp
+  qed
+qed
+
+lemma is_subformula_in_child_len_lt:
+  assumes "g \<in> set fs"
+      and "is_subformula q g"
+    shows "len_formula q < len_formula (Conn c fs)"
+proof -
+  have "len_formula q \<le> len_formula g" using assms(2) is_subformula_len_le by simp
+  also have "len_formula g \<le> sum_list (map len_formula fs)"
+    using assms(1) by (induction fs) auto
+  also have "sum_list (map len_formula fs) < len_formula (Conn c fs)" by simp
+  finally show ?thesis .
+qed
+
+lemma sub_in_cons_list_len_lt:
+  assumes "is_subformula q g"
+      and "g = f \<or> g \<in> set fs"
+    shows "len_formula q < Suc (len_formula f + sum_list (map len_formula fs))"
+proof -
+  have "len_formula q \<le> len_formula g"
+    using assms(1) is_subformula_len_le by simp
+  also have "len_formula g \<le> sum_list (map len_formula (f # fs))"
+    using assms(2) member_le_sum_list[where xs="map len_formula (f # fs)"] by auto
+  also have "sum_list (map len_formula (f # fs))
+           = Suc (len_formula f + sum_list (map len_formula fs)) - 1"
+    by simp
+  finally show ?thesis by simp
+qed
+
+lemma sum_fix_lt_when_q_in_tail:
+  assumes "xb \<in> set fs"
+      and "is_subformula q xb"
+      and "len_formula q \<ge> 2"
+    shows "len_formula (fix_sub_formula q b f)
+         + sum_list (map (len_formula \<circ> fix_sub_formula q b) fs)
+         < len_formula f + sum_list (map len_formula fs)"
+proof -
+  have head_le: "len_formula (fix_sub_formula q b f) \<le> len_formula f"
+    by (rule fix_sub_formula_len_le)
+  have child_lt: "len_formula (fix_sub_formula q b xb) < len_formula xb"
+    using assms(2,3) by (rule fix_sub_formula_len_strict)
+  have tail_lt: "sum_list (map (len_formula \<circ> fix_sub_formula q b) fs)
+              < sum_list (map len_formula fs)"
+    using assms(1) child_lt by (rule sum_list_len_lt_aux)
+  from head_le tail_lt show ?thesis by simp
+qed
+
+lemma sum_fix_lt_when_q_is_head:
+  assumes "is_subformula q f"
+      and "len_formula q \<ge> 2"
+    shows "len_formula (fix_sub_formula q b f)
+         + sum_list (map (len_formula \<circ> fix_sub_formula q b) fs)
+         < len_formula f + sum_list (map len_formula fs)"
+proof -
+  have head_lt: "len_formula (fix_sub_formula q b f) < len_formula f"
+    using assms by (rule fix_sub_formula_len_strict)
+  have tail_le: "sum_list (map (len_formula \<circ> fix_sub_formula q b) fs)
+              \<le> sum_list (map len_formula fs)"
+  proof (rule sum_list_pointwise_le, intro ballI)
+    fix x assume "x \<in> set fs"
+    show "(len_formula \<circ> fix_sub_formula q b) x \<le> len_formula x"
+      using fix_sub_formula_len_le by simp
+  qed
+  from head_lt tail_le show ?thesis by simp
+qed
+
+
+lemma spiras_sel_pred_when_wf:
+  assumes "formula_well_formed (alphabet F) p"
+      and "len_formula p \<ge> 2"
+    shows "is_subformula (spiras_sel p) p
+         \<and> len_formula (spiras_sel p) < len_formula p"
+proof -
+  let ?k = "Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
+  show ?thesis
+  proof (cases "?k > 1")
+    case True
+    let ?P = "\<lambda>q. is_subformula q p
+              \<and> (?k + 1) * len_formula q + ?k \<ge> len_formula p
+              \<and> (?k + 1) * len_formula q \<le> ?k * len_formula p"
+    have ex: "\<exists> q. ?P q"
+      using spiras_selection_gen[OF assms(1,2) refl True] by blast
+    have sel_eq: "spiras_sel p = (SOME q. ?P q)"
+      unfolding spiras_sel_def using True by (simp add: Let_def)
+    hence "?P (spiras_sel p)" using someI_ex[OF ex] by simp
+    hence sub: "is_subformula (spiras_sel p) p"
+      and upper: "(?k + 1) * len_formula (spiras_sel p) \<le> ?k * len_formula p"
+      by auto
+    have "len_formula (spiras_sel p) < len_formula p"
+    proof (rule ccontr)
+      assume "\<not> len_formula (spiras_sel p) < len_formula p"
+      hence le: "len_formula p \<le> len_formula (spiras_sel p)" by simp
+      have "(?k + 1) * len_formula p \<le> (?k + 1) * len_formula (spiras_sel p)"
+        using le by (rule mult_le_mono2)
+      with upper have "(?k + 1) * len_formula p \<le> ?k * len_formula p" by linarith
+      with assms(2) show False by (simp add: algebra_simps)
+    qed
+    thus ?thesis using sub by simp
+  next
+    case k_le: False
+    show ?thesis
+    proof (cases "?k = 1")
+      case True
+      let ?P = "\<lambda>q. is_subformula q p
+                \<and> 3 * len_formula q \<ge> len_formula p
+                \<and> 3 * len_formula q \<le> 2 * len_formula p"
+      have ex: "\<exists> q. ?P q"
+        using spiras_selection_one[OF assms(1,2) True] by blast
+      have sel_eq: "spiras_sel p = (SOME q. ?P q)"
+        unfolding spiras_sel_def using k_le by (simp add: Let_def)
+      hence "?P (spiras_sel p)" using someI_ex[OF ex] by simp
+      hence sub: "is_subformula (spiras_sel p) p"
+       and upper: "3 * len_formula (spiras_sel p) \<le> 2 * len_formula p"
+        by auto
+      have "len_formula (spiras_sel p) < len_formula p"
+        using upper assms(2) by linarith
+      thus ?thesis using sub by simp
+    next
+      case False
+      with k_le have k0: "?k = 0" by simp
+      \<comment> \<open>If max arity is 0, all connectives are nullary, so well-formed
+          formulas have length at most 1, contradicting assms(2).\<close>
+      have alphabet_finite: "finite (UNIV :: 'c set)"
+        by (meson frege_balancing_axioms frege_balancing_def
+                  frege_system.finite_alphabet)
+      have all_arity_zero: "\<forall> c. arity (alphabet F) c = 0"
+      proof
+        fix c
+        have x_in: "arity (alphabet F) c
+                  \<in> (arity (alphabet F)) ` (UNIV :: 'c set)" by simp
+        have fin_im: "finite ((arity (alphabet F)) ` (UNIV :: 'c set))"
+          using alphabet_finite by simp
+        from fin_im x_in
+        have "arity (alphabet F) c \<le> ?k" by (rule Max_ge)
+        thus "arity (alphabet F) c = 0" using k0 by simp
+      qed
+      have "len_formula p \<le> 1"
+        using assms(1) all_arity_zero
+      proof (induction p)
+        case (Atom v)
+        show ?case by simp
+      next
+        case (Conn c fs)
+        from Conn.prems(1) have "length fs = arity (alphabet F) c"
+                            and "\<forall> g \<in> set fs. formula_well_formed (alphabet F) g"
+          by auto
+        with all_arity_zero have "fs = []" by simp
+        thus ?case by simp
+      qed
+      with assms(2) show ?thesis by simp
+    qed
+  qed
+qed
+
+lemma spiras_sel_len_ge_2_when_wf:
+  assumes "formula_well_formed (alphabet F) p"
+      and "len_formula p \<ge> spira_threshold"
+    shows "len_formula (spiras_sel p) \<ge> 2"
+proof -
+  let ?k = "Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
+  have p_ge_2: "len_formula p \<ge> 2"
+    using assms(2) unfolding spira_threshold_def by simp
+  show ?thesis
+  proof (cases "?k > 1")
+    case True
+    let ?P = "\<lambda>q. is_subformula q p
+              \<and> (?k + 1) * len_formula q + ?k \<ge> len_formula p
+              \<and> (?k + 1) * len_formula q \<le> ?k * len_formula p"
+    have ex: "\<exists> q. ?P q"
+      using spiras_selection_gen[OF assms(1) p_ge_2 refl True] by blast
+    have "spiras_sel p = (SOME q. ?P q)"
+      unfolding spiras_sel_def using True by (simp add: Let_def)
+    hence pred: "?P (spiras_sel p)" using someI_ex[OF ex] by simp
+    hence lower: "(?k + 1) * len_formula (spiras_sel p) + ?k \<ge> len_formula p"
+      by auto
+    have "len_formula p \<ge> 2 * ?k + 2"
+      using assms(2) unfolding spira_threshold_def by simp
+    with lower have key: "(?k + 1) * len_formula (spiras_sel p) \<ge> ?k + 2"
+      by linarith
+    show ?thesis
+    proof (rule ccontr)
+      assume "\<not> len_formula (spiras_sel p) \<ge> 2"
+      hence le1: "len_formula (spiras_sel p) \<le> 1" by simp
+      have "(?k + 1) * len_formula (spiras_sel p) \<le> (?k + 1) * 1"
+        using le1 by (rule mult_le_mono2)
+      hence "(?k + 1) * len_formula (spiras_sel p) \<le> ?k + 1" by simp
+      with key show False by linarith
+    qed
+  next
+    case k_le: False
+    show ?thesis
+    proof (cases "?k = 1")
+      case True
+      let ?P = "\<lambda>q. is_subformula q p
+                \<and> 3 * len_formula q \<ge> len_formula p
+                \<and> 3 * len_formula q \<le> 2 * len_formula p"
+      have ex: "\<exists> q. ?P q"
+        using spiras_selection_one[OF assms(1) p_ge_2 True] by blast
+      have "spiras_sel p = (SOME q. ?P q)"
+        unfolding spiras_sel_def using k_le by (simp add: Let_def)
+      hence pred: "?P (spiras_sel p)" using someI_ex[OF ex] by simp
+      hence lower: "3 * len_formula (spiras_sel p) \<ge> len_formula p"
+        by auto
+      have "len_formula p \<ge> 4"
+        using assms(2) True unfolding spira_threshold_def by simp
+      with lower have key: "3 * len_formula (spiras_sel p) \<ge> 4" by linarith
+      show ?thesis
+      proof (rule ccontr)
+        assume "\<not> len_formula (spiras_sel p) \<ge> 2"
+        hence "len_formula (spiras_sel p) \<le> 1" by simp
+        hence "3 * len_formula (spiras_sel p) \<le> 3" by simp
+        with key show False by linarith
+      qed
+    next
+      case False
+      with k_le have k0: "?k = 0" by simp
+      have alphabet_finite: "finite (UNIV :: 'c set)"
+        by (meson frege_balancing_axioms frege_balancing_def
+                  frege_system.finite_alphabet)
+      have all_arity_zero: "\<forall> c. arity (alphabet F) c = 0"
+      proof
+        fix c
+        have x_in: "arity (alphabet F) c
+                  \<in> (arity (alphabet F)) ` (UNIV :: 'c set)" by simp
+        have fin_im: "finite ((arity (alphabet F)) ` (UNIV :: 'c set))"
+          using alphabet_finite by simp
+        from fin_im x_in
+        have "arity (alphabet F) c \<le> ?k" by (rule Max_ge)
+        thus "arity (alphabet F) c = 0" using k0 by simp
+      qed
+      have "len_formula p \<le> 1"
+        using assms(1) all_arity_zero
+      proof (induction p)
+        case (Atom v)
+        show ?case by simp
+      next
+        case (Conn c fs)
+        from Conn.prems(1) have "length fs = arity (alphabet F) c" by simp
+        with all_arity_zero have "fs = []" by simp
+        thus ?case by simp
+      qed
+      with p_ge_2 show ?thesis by simp
+    qed
+  qed
+qed
+
+lemma spiras_sel_neq:
+  assumes "formula_well_formed (alphabet F) p"
+      and "len_formula p \<ge> 2"
+    shows "spiras_sel p \<noteq> p"
+proof
+  assume "spiras_sel p = p"
+  hence "len_formula (spiras_sel p) = len_formula p" by simp
+  moreover have "len_formula (spiras_sel p) < len_formula p"
+    using spiras_sel_pred_when_wf[OF assms] by simp
+  ultimately show False by simp
+qed
+
+lemma fix_sub_formula_wf:
+  assumes "formula_well_formed (alphabet F) p"
+  shows "formula_well_formed (alphabet F) (fix_sub_formula q b p)"
+  using assms
+proof (induction p)
+  case (Atom v)
+  show ?case
+    using true_const_wf false_const_wf by simp
+next
+  case (Conn c fs)
+  show ?case
+  proof (cases "Conn c fs = q")
+    case True
+    hence q_eq: "q = Conn c fs" by simp
+    have "fix_sub_formula q b (Conn c fs) = (if b then true_const else false_const)"
+      unfolding q_eq by simp
+    thus ?thesis
+      using true_const_wf false_const_wf by simp
+  next
+    case False
+    hence unfold: "fix_sub_formula q b (Conn c fs)
+                 = Conn c (map (fix_sub_formula q b) fs)"
+      by simp
+    from Conn.prems have "length fs = arity (alphabet F) c"
+                     and child_wf: "\<forall> g \<in> set fs. formula_well_formed (alphabet F) g"
+      by auto
+    hence len_eq: "length (map (fix_sub_formula q b) fs) = arity (alphabet F) c"
+      by simp
+    have all_wf:
+      "\<forall> g \<in> set (map (fix_sub_formula q b) fs).
+         formula_well_formed (alphabet F) g"
+      using child_wf Conn.IH by auto
+    show ?thesis
+      using unfold len_eq all_wf by simp
+  qed
+qed
+
+lemma spira_trans_dom_and_eval:
+  assumes "formula_well_formed (alphabet F) f"
+  shows "spira_trans_dom f
+       \<and> (\<forall> val. eval (alphabet F) val f = eval (alphabet F) val (spira_trans f))"
+  using assms
+proof (induction "len_formula f" arbitrary: f rule: less_induct)
+  case less
+  show ?case
+  proof (cases f)
+    case (Atom v)
+    have dom_unfolded: "spira_trans_dom (Atom v)"
+      by (rule spira_trans.domintros)
+    hence dom: "spira_trans_dom f" using Atom by simp
+    moreover have "spira_trans f = f"
+      using dom Atom by (simp add: spira_trans.psimps(1))
+    ultimately show ?thesis by simp
+  next
+    case (Conn c fs)
+    show ?thesis
+    proof (cases fs)
+      case Nil
+      have dom_unfolded: "spira_trans_dom (Conn c [])"
+        by (rule spira_trans.domintros)
+      hence dom: "spira_trans_dom f" using Conn Nil by simp
+      moreover have "spira_trans f = f"
+        using dom Conn Nil by (simp add: spira_trans.psimps(2))
+      ultimately show ?thesis by simp
+    next
+      case (Cons f1 fs1)
+      let ?p = f
+      let ?q = "spiras_sel ?p"
+      let ?ev = "\<lambda>val. eval (alphabet F) val"
+      show ?thesis
+      proof (cases "len_formula ?p < spira_threshold")
+        case small: True
+        \<comment> \<open>Below threshold: function returns \<open>p\<close> (identity).\<close>
+        have dom_unfolded: "spira_trans_dom (Conn c (f1 # fs1))"
+          apply (rule spira_trans.domintros)
+          using small Conn Cons apply simp_all
+          done
+        hence dom: "spira_trans_dom ?p" using Conn Cons by simp
+        have eq: "spira_trans ?p = ?p"
+        proof -
+          have "spira_trans (Conn c (f1 # fs1)) =
+                (let p = Conn c (f1 # fs1); q = spiras_sel p in
+                  if len_formula p < spira_threshold then p
+                  else balance (spira_trans (fix_sub_formula q True p))
+                               (spira_trans (fix_sub_formula q False p))
+                               (spira_trans q))"
+            using dom Conn Cons by (simp add: spira_trans.psimps(3))
+          thus ?thesis using small Conn Cons by (simp add: Let_def)
+        qed
+        thus ?thesis using dom by simp
+      next
+        case big: False
+        \<comment> \<open>At/above threshold: recursion fires; spiras_sel gives a strict
+            subformula of length \<open>\<ge> 2\<close>.\<close>
+        have wf_p: "formula_well_formed (alphabet F) ?p" using less.prems .
+        have p_ge_threshold: "len_formula ?p \<ge> spira_threshold" using big by simp
+        have p_ge_2: "len_formula ?p \<ge> 2"
+          using p_ge_threshold spira_threshold_def by simp
+        from spiras_sel_pred_when_wf[OF wf_p p_ge_2]
+        have q_sub: "is_subformula ?q ?p"
+         and q_lt: "len_formula ?q < len_formula ?p" by auto
+        have q_neq: "?q \<noteq> ?p"
+          using spiras_sel_neq[OF wf_p p_ge_2] .
+        have q_ge_2: "len_formula ?q \<ge> 2"
+          using spiras_sel_len_ge_2_when_wf[OF wf_p p_ge_threshold] .
+        have wf_q: "formula_well_formed (alphabet F) ?q"
+          using wf_p q_sub subformula_wf by blast
+        have wf_T: "formula_well_formed (alphabet F) (fix_sub_formula ?q True ?p)"
+          using wf_p by (rule fix_sub_formula_wf)
+        have wf_F: "formula_well_formed (alphabet F) (fix_sub_formula ?q False ?p)"
+          using wf_p by (rule fix_sub_formula_wf)
+        have len_T: "len_formula (fix_sub_formula ?q True ?p) < len_formula ?p"
+          using fix_sub_formula_len_strict[OF q_sub q_ge_2] .
+        have len_F: "len_formula (fix_sub_formula ?q False ?p) < len_formula ?p"
+          using fix_sub_formula_len_strict[OF q_sub q_ge_2] .
+        from less.hyps[OF q_lt wf_q]
+        have dom_q: "spira_trans_dom ?q"
+         and ih_q: "\<forall> val. ?ev val ?q = ?ev val (spira_trans ?q)" by auto
+        from less.hyps[OF len_T wf_T]
+        have dom_T: "spira_trans_dom (fix_sub_formula ?q True ?p)"
+         and ih_T: "\<forall> val. ?ev val (fix_sub_formula ?q True ?p)
+                          = ?ev val (spira_trans (fix_sub_formula ?q True ?p))" by auto
+        from less.hyps[OF len_F wf_F]
+        have dom_F: "spira_trans_dom (fix_sub_formula ?q False ?p)"
+         and ih_F: "\<forall> val. ?ev val (fix_sub_formula ?q False ?p)
+                          = ?ev val (spira_trans (fix_sub_formula ?q False ?p))" by auto
+        have dom_unfolded: "spira_trans_dom (Conn c (f1 # fs1))"
+          apply (rule spira_trans.domintros)
+          using Conn Cons dom_q dom_T dom_F big apply simp_all
+          done
+        hence dom: "spira_trans_dom ?p" using Conn Cons by simp
+        have st_eq: "spira_trans ?p = balance (spira_trans (fix_sub_formula ?q True ?p))
+                                              (spira_trans (fix_sub_formula ?q False ?p))
+                                              (spira_trans ?q)"
+        proof -
+          have psimp: "spira_trans (Conn c (f1 # fs1)) =
+                       (let p = Conn c (f1 # fs1); q = spiras_sel p in
+                         if len_formula p < spira_threshold then p
+                         else balance (spira_trans (fix_sub_formula q True p))
+                                      (spira_trans (fix_sub_formula q False p))
+                                      (spira_trans q))"
+            using dom Conn Cons by (simp add: spira_trans.psimps(3))
+          thus ?thesis using big Conn Cons by (simp add: Let_def)
+        qed
+        have eval_eq: "\<forall> val. ?ev val ?p = ?ev val (spira_trans ?p)"
+        proof
+          fix val
+          have "?ev val (spira_trans ?p)
+              = ?ev val (balance (spira_trans (fix_sub_formula ?q True ?p))
+                                 (spira_trans (fix_sub_formula ?q False ?p))
+                                 (spira_trans ?q))"
+            using st_eq by simp
+          also have "\<dots> = (if ?ev val (spira_trans ?q)
+                           then ?ev val (spira_trans (fix_sub_formula ?q True ?p))
+                           else ?ev val (spira_trans (fix_sub_formula ?q False ?p)))"
+            by (rule balance_eval)
+          also have "\<dots> = (if ?ev val ?q
+                           then ?ev val (fix_sub_formula ?q True ?p)
+                           else ?ev val (fix_sub_formula ?q False ?p))"
+            using ih_T ih_F ih_q by simp
+          also have "\<dots> = ?ev val ?p"
+            using fix_sub_formula_eval[symmetric] by simp
+          finally show "?ev val ?p = ?ev val (spira_trans ?p)" by simp
+        qed
+        from dom eval_eq show ?thesis by simp
+      qed
+    qed
+  qed
+qed
+
+lemma trans_a:
+  assumes "formula_well_formed (alphabet F) f"
+  shows "formulas_equiv f (alphabet F) (spira_trans f) (alphabet F)"
+  using spira_trans_dom_and_eval[OF assms]
+  unfolding formulas_equiv_def by blast
+
+lemma trans_b:
+  shows "\<exists> poly_bound. \<forall> f. len_formula (spira_trans f) \<le> poly poly_bound (len_formula f)"
+  sorry
 
 (* theorem 1.1 *)
 theorem proof_balancing:
