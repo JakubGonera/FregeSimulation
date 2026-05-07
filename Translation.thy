@@ -1,10 +1,10 @@
 theory Translation
-  imports Frege "HOL.Transcendental"
+  imports Frege Arithmetic "HOL.Transcendental"
 begin
 
 (* The numbering of lemmas follows Yuval Filmus' manuscript *)
 
-paragraph \<open>Lemma 3.2\<close>
+subsection \<open>Lemma 3.2\<close>
 
 definition plug :: "string \<Rightarrow> 'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula" where
   "plug h \<tau> \<chi> = sub_formula (\<lambda>v. if v = h then \<tau> else Atom v) \<chi>"
@@ -1799,7 +1799,7 @@ proof -
   qed
 qed
 
-paragraph  \<open>Lemma 4.1\<close>
+subsection  \<open>Lemma 4.1\<close>
 
 definition dm_balancing where
   "dm_balancing = Conn Or [Conn And [Atom ''x'', Atom ''z''], 
@@ -1862,7 +1862,7 @@ qed
 
 (* I do not formalise the lemma 4.1 to see what exact form would be the most useful *)
 
-paragraph \<open>Lemma 4.2\<close>
+subsection \<open>Lemma 4.2\<close>
 
 
 fun children :: "'c formula \<Rightarrow> 'c formula set" where
@@ -1904,36 +1904,6 @@ proof (induction "len_formula p" arbitrary: p rule: less_induct)
     thus ?thesis
       by (metis children.elims empty_iff is_subformula.simps(2) less.hyps q_def)
   qed
-qed
-
-lemma nat_ceil_le:
-  fixes k :: "nat"
-    and n :: "nat"
-  shows "(n + k) div (k + 1) \<le> n"
-proof -
-  have "(n + 1) * (k + 1) = n + k + (n * k + 1)"
-    by (simp add: algebra_simps)
-  hence "n + k < (n + 1) * (k + 1)"
-    by simp
-  hence "(n + k) div (k + 1) < n + 1"
-    by (rule less_mult_imp_div_less)
-  thus ?thesis by simp
-qed
-
-lemma nat_div_to_mult:
-  fixes x :: "nat"
-    and n :: "nat"
-    and k :: "nat"
-  assumes "x \<ge> n div (k+1)"
-  shows "(k+1) * x + k \<ge> n"
-proof -
-  have decomp: "(k + 1) * (n div (k + 1)) + n mod (k + 1) = n"
-    using div_mult_mod_eq[of n "k + 1"] by (simp add: algebra_simps)
-  have remainder_bound: "n mod (k + 1) \<le> k"
-    using mod_less_divisor[of "k + 1" n] by simp
-  have step: "(k + 1) * (n div (k + 1)) \<le> (k + 1) * x"
-    using assms by (rule mult_le_mono2)
-  from decomp remainder_bound step show ?thesis by linarith
 qed
 
 lemma subformula_wf:
@@ -2204,7 +2174,9 @@ definition spiras_sel :: "'c formula \<Rightarrow> 'c formula" where
                 \<and> 3 * len_formula q \<le> 2 * len_formula p))"
 
 
-paragraph \<open>Lemma 4.3\<close>
+subsection \<open>Lemma 4.3\<close>
+
+paragraph \<open>(a)\<close>
 
 definition top_conn :: "'c" where
   "top_conn = (SOME t. arity (alphabet F) t = 0
@@ -2338,22 +2310,6 @@ next
       finally show ?thesis using False neq by simp
     qed
   qed
-qed
-
-lemma sum_list_pointwise_le:
-  fixes f g :: "'a \<Rightarrow> nat"
-  assumes "\<forall> x \<in> set xs. f x \<le> g x"
-  shows "sum_list (map f xs) \<le> sum_list (map g xs)"
-  using assms
-proof (induction xs)
-  case Nil
-  show ?case by simp
-next
-  case (Cons a xs)
-  hence head: "f a \<le> g a" by simp
-  have tail: "sum_list (map f xs) \<le> sum_list (map g xs)"
-    using Cons.IH Cons.prems by simp
-  from head tail show ?case by simp
 qed
 
 lemma fix_sub_formula_len_le:
@@ -2957,9 +2913,159 @@ lemma trans_a:
   using spira_trans_dom_and_eval[OF assms]
   unfolding formulas_equiv_def by blast
 
+
+paragraph \<open>(c)\<close>
+
+
+lemma balance_depth_bound:
+  shows "depth_formula (balance x y z)
+       \<le> depth_formula custom_balancing
+         + Max (insert 1 {depth_formula x, depth_formula y, depth_formula z})"
+proof -
+  let ?sub = "\<lambda>v. if v = ''x'' then x
+                  else if v = ''y'' then y
+                  else if v = ''z'' then z
+                  else Atom v"
+  let ?vs = "{''x'', ''y'', ''z''}"
+  have wf_sub: "\<forall> v. v \<notin> ?vs \<longrightarrow> ?sub v = Atom v" by auto
+  have fin_vs: "finite ?vs" by simp
+  have unfold: "balance x y z = sub_formula ?sub custom_balancing"
+    by (simp add: Let_def)
+  have "depth_formula (sub_formula ?sub custom_balancing)
+      \<le> depth_formula custom_balancing + depth_sub ?vs ?sub"
+    by (rule sub_formula_depth_bound[OF fin_vs wf_sub])
+  moreover have "depth_sub ?vs ?sub
+               = Max (insert 1 ((\<lambda>v. depth_formula (?sub v)) ` ?vs))"
+    by (simp add: depth_sub_def)
+  moreover have "(\<lambda>v. depth_formula (?sub v)) ` ?vs
+               = {depth_formula x, depth_formula y, depth_formula z}"
+    by auto
+  ultimately show ?thesis using unfold by simp
+qed
+
+lemma depth_le_len:
+  shows "depth_formula f \<le> len_formula f"
+proof (induction f)
+  case (Atom v) show ?case by simp
+next
+  case (Conn c fs)
+  show ?case
+  proof (cases fs)
+    case Nil show ?thesis using Nil by simp
+  next
+    case (Cons g gs)
+    have fin: "finite (set (map depth_formula fs))" by simp
+    have ne: "set (map depth_formula fs) \<noteq> {}" using Cons by simp
+    have "Max (set (map depth_formula fs)) \<in> set (map depth_formula fs)"
+      using fin ne Max_in by blast
+    then obtain h where h_in: "h \<in> set fs"
+                    and h_eq: "depth_formula h = Max (set (map depth_formula fs))"
+      by auto
+    have "depth_formula h \<le> len_formula h" using Conn.IH h_in by simp
+    moreover have "len_formula h \<le> sum_list (map len_formula fs)"
+      using h_in by (induction fs) auto
+    ultimately have "Max (set (map depth_formula fs))
+                   \<le> sum_list (map len_formula fs)"
+      using h_eq by simp
+    thus ?thesis using Cons by simp
+  qed
+qed
+
+lemma fix_sub_q_sum_bound:
+  shows "is_subformula q p
+       \<Longrightarrow> len_formula q + len_formula (fix_sub_formula q b p) \<le> len_formula p + 1"
+proof (induction p)
+  case (Atom v)
+  hence "q = Atom v" by simp
+  hence "len_formula q = 1" "len_formula (fix_sub_formula q b (Atom v)) = 1"
+    using true_const_len false_const_len by auto
+  thus ?case by simp
+next
+  case (Conn c fs)
+  show ?case
+  proof (cases "Conn c fs = q")
+    case True
+    hence q_eq: "q = Conn c fs" by simp
+    have "fix_sub_formula q b (Conn c fs) = (if b then true_const else false_const)"
+      unfolding q_eq by simp
+    hence "len_formula (fix_sub_formula q b (Conn c fs)) = 1"
+      using true_const_len false_const_len by simp
+    moreover have "len_formula q = len_formula (Conn c fs)" using True by simp
+    moreover have "len_formula (Conn c fs) \<ge> 1" by (rule len_formula_positive)
+    ultimately show ?thesis by simp
+  next
+    case neq: False
+    from Conn.prems neq
+    obtain g where g_in: "g \<in> set fs" and g_sub: "is_subformula q g" by auto
+    have ih_g: "len_formula q + len_formula (fix_sub_formula q b g)
+              \<le> len_formula g + 1"
+      using Conn.IH g_in g_sub by blast
+    hence g_bound: "len_formula (fix_sub_formula q b g) + len_formula q
+                  \<le> len_formula g + 1" by simp
+    have unfold: "fix_sub_formula q b (Conn c fs)
+                = Conn c (map (fix_sub_formula q b) fs)"
+      using neq by simp
+    have q_le_g: "len_formula q \<le> len_formula g"
+      using g_sub is_subformula_len_le by simp
+    have q_le_sum: "len_formula q \<le> sum_list (map len_formula fs)"
+      using q_le_g g_in member_le_sum_list[where xs="map len_formula fs"]
+      by (cases "g = g") fastforce+
+    have sum_bound:
+      "sum_list (map (len_formula \<circ> fix_sub_formula q b) fs) + len_formula q
+       \<le> sum_list (map len_formula fs) + 1"
+      using g_in g_bound q_le_g
+    proof (induction fs)
+      case Nil
+      thus ?case by simp
+    next
+      case (Cons h hs)
+      show ?case
+      proof (cases "h = g")
+        case True
+        have other_le:
+          "sum_list (map (len_formula \<circ> fix_sub_formula q b) hs)
+           \<le> sum_list (map len_formula hs)"
+        proof (rule sum_list_pointwise_le, intro ballI)
+          fix x assume "x \<in> set hs"
+          show "(len_formula \<circ> fix_sub_formula q b) x \<le> len_formula x"
+            using fix_sub_formula_len_le by simp
+        qed
+        thus ?thesis using True g_bound by (simp add: o_def)
+      next
+        case False
+        with Cons.prems(1) have g_in_hs: "g \<in> set hs" by simp
+        from Cons.IH[OF g_in_hs Cons.prems(2,3)]
+        have ih: "sum_list (map (len_formula \<circ> fix_sub_formula q b) hs)
+                  + len_formula q
+                \<le> sum_list (map len_formula hs) + 1" .
+        have head_le: "len_formula (fix_sub_formula q b h) \<le> len_formula h"
+          using fix_sub_formula_len_le by simp
+        from ih head_le show ?thesis by (simp add: o_def)
+      qed
+    qed
+    have "len_formula (fix_sub_formula q b (Conn c fs))
+        = 1 + sum_list (map (len_formula \<circ> fix_sub_formula q b) fs)"
+      using unfold by (simp add: o_def)
+    moreover have "len_formula (Conn c fs) = 1 + sum_list (map len_formula fs)"
+      by simp
+    ultimately show ?thesis using sum_bound by simp
+  qed
+qed
+
+lemma trans_c:
+  shows "\<exists> c :: real. \<forall> f :: 'c formula.
+           formula_well_formed (alphabet F) f \<longrightarrow>
+           real (depth_formula (spira_trans f))
+           \<le> c * log 2 (real (len_formula f) + 1)"
+  sorry
+
+paragraph \<open>(b)\<close>
+
 lemma trans_b:
+  fixes f :: "'c formula"
   shows "\<exists> poly_bound. \<forall> f. len_formula (spira_trans f) \<le> poly poly_bound (len_formula f)"
   sorry
+
 
 (* theorem 1.1 *)
 theorem proof_balancing:
