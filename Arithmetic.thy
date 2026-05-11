@@ -36,6 +36,11 @@ proof -
   from decomp remainder_bound step show ?thesis by linarith
 qed
 
+lemma sum_list_const_nat:
+  fixes K :: nat
+  shows "sum_list (map (\<lambda>_. K) xs) = length xs * K"
+  by (induction xs) auto
+
 lemma sum_list_pointwise_le:
   fixes f g :: "'a \<Rightarrow> nat"
   assumes "\<forall> x \<in> set xs. f x \<le> g x"

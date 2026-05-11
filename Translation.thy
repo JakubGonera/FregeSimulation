@@ -3533,10 +3533,342 @@ qed
 
 paragraph \<open>(b)\<close>
 
-lemma trans_b:
+lemma sub_formula_wf:
+  fixes sub :: "string \<Rightarrow> 'c formula" and g :: "'c formula"
+  assumes wf_g: "formula_well_formed (alphabet F) g"
+      and wf_sub: "\<And> v. formula_well_formed (alphabet F) (sub v)"
+  shows "formula_well_formed (alphabet F) (sub_formula sub g)"
+  using wf_g
+proof (induction g)
+  case (Atom v)
+  show ?case using wf_sub by simp
+next
+  case (Conn cn fs)
+  have len_eq: "length fs = arity (alphabet F) cn"
+   and wf_each: "\<forall> g \<in> set fs. formula_well_formed (alphabet F) g"
+    using Conn.prems by auto
+  have new_len: "length (map (sub_formula sub) fs) = arity (alphabet F) cn"
+    using len_eq by simp
+  have new_each: "\<forall> g' \<in> set (map (sub_formula sub) fs).
+                  formula_well_formed (alphabet F) g'"
+  proof
+    fix g' assume "g' \<in> set (map (sub_formula sub) fs)"
+    then obtain g where g_in: "g \<in> set fs" and g'_eq: "g' = sub_formula sub g"
+      by auto
+    have wf_inner: "formula_well_formed (alphabet F) g"
+      using wf_each g_in by simp
+    show "formula_well_formed (alphabet F) g'"
+      using Conn.IH g_in wf_inner g'_eq by simp
+  qed
+  show ?case using new_len new_each by simp
+qed
+
+lemma balance_wf:
+  assumes wf_x: "formula_well_formed (alphabet F) x"
+      and wf_y: "formula_well_formed (alphabet F) y"
+      and wf_z: "formula_well_formed (alphabet F) z"
+  shows "formula_well_formed (alphabet F) (balance x y z)"
+proof -
+  let ?sub = "\<lambda>v. if v = ''x'' then x
+                  else if v = ''y'' then y
+                  else if v = ''z'' then z
+                  else Atom v"
+  have wf_sub: "\<And> v. formula_well_formed (alphabet F) (?sub v)"
+    using wf_x wf_y wf_z by simp
+  have wf_cb: "formula_well_formed (alphabet F) custom_balancing"
+    using custom_balancing_spec by simp
+  have unfold: "balance x y z = sub_formula ?sub custom_balancing"
+    by (simp add: Let_def)
+  show ?thesis using unfold sub_formula_wf[OF wf_cb wf_sub] by simp
+qed
+
+lemma spira_trans_wf:
   fixes f :: "'c formula"
-  shows "\<exists> poly_bound. \<forall> f. len_formula (spira_trans f) \<le> poly poly_bound (len_formula f)"
-  sorry
+  assumes "formula_well_formed (alphabet F) f"
+  shows "formula_well_formed (alphabet F) (spira_trans f)"
+  using assms
+proof (induction "len_formula f" arbitrary: f rule: less_induct)
+  case less
+  show ?case
+  proof (cases f)
+    case (Atom v)
+    have dom: "spira_trans_dom f"
+      using spira_trans_dom_and_eval[OF less.prems] by simp
+    have "spira_trans f = f"
+      using dom Atom by (simp add: spira_trans.psimps(1))
+    thus ?thesis using less.prems by simp
+  next
+    case (Conn cn fs)
+    show ?thesis
+    proof (cases fs)
+      case Nil
+      have dom: "spira_trans_dom f"
+        using spira_trans_dom_and_eval[OF less.prems] by simp
+      have "spira_trans f = f"
+        using dom Conn Nil by (simp add: spira_trans.psimps(2))
+      thus ?thesis using less.prems by simp
+    next
+      case (Cons f1 fs1)
+      let ?p = f
+      let ?q = "spiras_sel ?p"
+      let ?ft = "fix_sub_formula ?q True ?p"
+      let ?ff = "fix_sub_formula ?q False ?p"
+      have wf_p: "formula_well_formed (alphabet F) ?p" using less.prems .
+      have dom_p: "spira_trans_dom ?p"
+        using spira_trans_dom_and_eval[OF wf_p] by simp
+      show ?thesis
+      proof (cases "len_formula ?p < spira_threshold")
+        case True
+        have psimp: "spira_trans (Conn cn (f1 # fs1)) =
+                     (let p = Conn cn (f1 # fs1); q = spiras_sel p in
+                       if len_formula p < spira_threshold then p
+                       else balance (spira_trans (fix_sub_formula q True p))
+                                    (spira_trans (fix_sub_formula q False p))
+                                    (spira_trans q))"
+          using dom_p Conn Cons by (simp add: spira_trans.psimps(3))
+        have "spira_trans ?p = ?p"
+          using psimp True Conn Cons by (simp add: Let_def)
+        thus ?thesis using less.prems by simp
+      next
+        case big: False
+        have ge: "len_formula ?p \<ge> spira_threshold" using big by simp
+        have ge2: "len_formula ?p \<ge> 2"
+          using ge spira_threshold_def by simp
+        from spiras_sel_pred_when_wf[OF wf_p ge2]
+        have q_sub: "is_subformula ?q ?p"
+         and q_lt: "len_formula ?q < len_formula ?p" by auto
+        have q_ge_2: "len_formula ?q \<ge> 2"
+          using spiras_sel_len_ge_2_when_wf[OF wf_p ge] .
+        have wf_q: "formula_well_formed (alphabet F) ?q"
+          using wf_p q_sub subformula_wf by blast
+        have wf_ft: "formula_well_formed (alphabet F) ?ft"
+          using wf_p by (rule fix_sub_formula_wf)
+        have wf_ff: "formula_well_formed (alphabet F) ?ff"
+          using wf_p by (rule fix_sub_formula_wf)
+        have ft_lt: "len_formula ?ft < len_formula ?p"
+          using fix_sub_formula_len_strict[OF q_sub q_ge_2] .
+        have ff_lt: "len_formula ?ff < len_formula ?p"
+          using fix_sub_formula_len_strict[OF q_sub q_ge_2] .
+        from less.hyps[OF q_lt wf_q]
+        have wf_t_q: "formula_well_formed (alphabet F) (spira_trans ?q)" .
+        from less.hyps[OF ft_lt wf_ft]
+        have wf_t_ft: "formula_well_formed (alphabet F) (spira_trans ?ft)" .
+        from less.hyps[OF ff_lt wf_ff]
+        have wf_t_ff: "formula_well_formed (alphabet F) (spira_trans ?ff)" .
+        have st_eq: "spira_trans ?p
+                   = balance (spira_trans ?ft) (spira_trans ?ff) (spira_trans ?q)"
+        proof -
+          have psimp: "spira_trans (Conn cn (f1 # fs1)) =
+                       (let p = Conn cn (f1 # fs1); q = spiras_sel p in
+                         if len_formula p < spira_threshold then p
+                         else balance (spira_trans (fix_sub_formula q True p))
+                                      (spira_trans (fix_sub_formula q False p))
+                                      (spira_trans q))"
+            using dom_p Conn Cons by (simp add: spira_trans.psimps(3))
+          thus ?thesis using big Conn Cons by (simp add: Let_def)
+        qed
+        show ?thesis
+          using st_eq balance_wf[OF wf_t_ft wf_t_ff wf_t_q] by simp
+      qed
+    qed
+  qed
+qed
+
+lemma len_le_arity_pow_depth:
+  fixes f :: "'c formula"
+  assumes "formula_well_formed (alphabet F) f"
+  shows "len_formula f \<le>
+         (Max ((arity (alphabet F)) ` (UNIV :: 'c set)) + 1) ^ depth_formula f"
+  using assms
+proof (induction f)
+  case (Atom v) show ?case by simp
+next
+  case (Conn cn fs)
+  let ?M = "Max ((arity (alphabet F)) ` (UNIV :: 'c set)) + 1"
+  let ?k = "Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
+  have alphabet_finite: "finite (UNIV :: 'c set)"
+    by (meson frege_balancing_axioms frege_balancing_def
+              frege_system.finite_alphabet)
+  hence finite_image: "finite ((arity (alphabet F)) ` (UNIV :: 'c set))" by simp
+  have len_eq: "length fs = arity (alphabet F) cn"
+   and wf_each: "\<forall> g \<in> set fs. formula_well_formed (alphabet F) g"
+    using Conn.prems by auto
+  have arity_le_k: "arity (alphabet F) cn \<le> ?k"
+    using Max_ge[OF finite_image] by auto
+  show ?case
+  proof (cases fs)
+    case Nil
+    show ?thesis using Nil by simp
+  next
+    case (Cons g0 gs0)
+    have fs_ne: "fs \<noteq> []" using Cons by simp
+    let ?max_depth = "Max (set (map depth_formula fs))"
+    have depths_finite: "finite (set (map depth_formula fs))" by simp
+    have depth_eq: "depth_formula (Conn cn fs) = 1 + ?max_depth"
+      using fs_ne by simp
+    have len_unfold: "len_formula (Conn cn fs) = 1 + sum_list (map len_formula fs)"
+      by simp
+    have each_le: "\<forall> g \<in> set fs. len_formula g \<le> ?M ^ ?max_depth"
+    proof
+      fix g assume g_in: "g \<in> set fs"
+      have wf_g: "formula_well_formed (alphabet F) g" using wf_each g_in by simp
+      have ih_g: "len_formula g \<le> ?M ^ depth_formula g"
+        using Conn.IH g_in wf_g by simp
+      have depth_g_le: "depth_formula g \<le> ?max_depth"
+        using Max_ge[OF depths_finite] g_in by simp
+      have M_pow_mono: "?M ^ depth_formula g \<le> ?M ^ ?max_depth"
+        using depth_g_le by (rule power_increasing) simp
+      from ih_g M_pow_mono show "len_formula g \<le> ?M ^ ?max_depth" by linarith
+    qed
+    have sum_le: "sum_list (map len_formula fs) \<le> length fs * (?M ^ ?max_depth)"
+    proof -
+      have step: "sum_list (map len_formula fs)
+                \<le> sum_list (map (\<lambda>_. ?M ^ ?max_depth) fs)"
+        using each_le by (intro sum_list_pointwise_le) auto
+      have const_sum: "sum_list (map (\<lambda>_. ?M ^ ?max_depth) fs)
+                     = length fs * (?M ^ ?max_depth)"
+        by (rule sum_list_const_nat)
+      from step const_sum show ?thesis by linarith
+    qed
+    have step1: "len_formula (Conn cn fs) \<le> 1 + length fs * (?M ^ ?max_depth)"
+      using len_unfold sum_le by linarith
+    have step2: "1 + length fs * (?M ^ ?max_depth) \<le> 1 + ?k * (?M ^ ?max_depth)"
+      using arity_le_k len_eq by simp
+    have step3: "1 + ?k * (?M ^ ?max_depth) \<le> ?M * (?M ^ ?max_depth)"
+    proof -
+      have eq: "?M * ?M ^ ?max_depth = ?k * ?M ^ ?max_depth + ?M ^ ?max_depth"
+        by (simp add: distrib_right)
+      have one_le: "(1::nat) \<le> ?M ^ ?max_depth" by simp
+      from eq one_le show ?thesis by linarith
+    qed
+    have step4: "?M * ?M ^ ?max_depth = ?M ^ depth_formula (Conn cn fs)"
+      using depth_eq by simp
+    from step1 step2 step3 step4 show ?thesis by linarith
+  qed
+qed
+
+lemma trans_b:
+  shows "\<exists> p :: nat poly. \<forall> f :: 'c formula.
+           formula_well_formed (alphabet F) f \<longrightarrow>
+           len_formula (spira_trans f) \<le> poly p (len_formula f)"
+proof -
+  define M :: nat where "M = Max ((arity (alphabet F)) ` (UNIV :: 'c set)) + 1"
+  have M_ge_1: "M \<ge> 1" unfolding M_def by simp
+  have M_real_ge_1: "real M \<ge> 1" using M_ge_1 by simp
+  have M_real_pos: "real M > 0" using M_ge_1 by simp
+  obtain c :: real where c_bound:
+    "\<forall> g :: 'c formula. formula_well_formed (alphabet F) g \<longrightarrow>
+                       real (depth_formula (spira_trans g))
+                       \<le> c * log 2 (real (len_formula g) + 1)"
+    using trans_c by blast
+  define c' :: real where "c' = max c 0"
+  have c'_nn: "c' \<ge> 0" unfolding c'_def by simp
+  have c'_ge_c: "c' \<ge> c" unfolding c'_def by simp
+  define a :: real where "a = c' * log 2 (real M)"
+  have logM_nn: "log 2 (real M) \<ge> 0" using M_real_ge_1 by simp
+  have a_nn: "a \<ge> 0"
+    unfolding a_def using c'_nn logM_nn by simp
+  define e :: nat where "e = nat \<lceil>a\<rceil>"
+  have a_le_e: "a \<le> real e"
+    unfolding e_def using a_nn by linarith
+  define p :: "nat poly" where "p = monom (2 ^ e) e"
+  have poly_eval: "\<And> L :: nat. poly p L = 2 ^ e * L ^ e"
+    unfolding p_def by (simp add: poly_monom)
+
+  show ?thesis
+  proof (intro exI[of _ p] allI impI)
+    fix f :: "'c formula"
+    assume wf: "formula_well_formed (alphabet F) f"
+    define L :: nat where "L = len_formula f"
+    have L_ge_1: "L \<ge> 1" unfolding L_def using len_formula_positive by simp
+    have L_real_ge_1: "real L \<ge> 1" using L_ge_1 by simp
+    have Lp1_real_ge_1: "real L + 1 \<ge> 1" using L_real_ge_1 by simp
+    have wf_t: "formula_well_formed (alphabet F) (spira_trans f)"
+      by (rule spira_trans_wf[OF wf])
+    have len_pow: "len_formula (spira_trans f) \<le> M ^ depth_formula (spira_trans f)"
+      using wf_t unfolding M_def by (rule len_le_arity_pow_depth)
+    have depth_log: "real (depth_formula (spira_trans f))
+                   \<le> c' * log 2 (real L + 1)"
+    proof -
+      have logL_nn: "log 2 (real L + 1) \<ge> 0" using L_real_ge_1 by simp
+      have base: "real (depth_formula (spira_trans f))
+                \<le> c * log 2 (real (len_formula f) + 1)"
+        using c_bound wf by simp
+      hence "real (depth_formula (spira_trans f)) \<le> c * log 2 (real L + 1)"
+        using L_def by simp
+      also have "\<dots> \<le> c' * log 2 (real L + 1)"
+        using c'_ge_c logL_nn by (intro mult_right_mono) auto
+      finally show ?thesis .
+    qed
+    have swap_id: "real M powr (c' * log 2 (real L + 1))
+                 = (real L + 1) powr (c' * log 2 (real M))"
+    proof -
+      have M_ne: "real M \<noteq> 0" using M_real_pos by simp
+      have Lp1_ne: "real L + 1 \<noteq> 0" using L_real_ge_1 by simp
+      have "real M powr (c' * log 2 (real L + 1))
+          = exp (c' * log 2 (real L + 1) * ln (real M))"
+        using M_ne by (simp add: powr_def)
+      also have "\<dots> = exp (c' * (ln (real L + 1) / ln 2) * ln (real M))"
+        by (simp add: log_def)
+      also have "\<dots> = exp (c' * (ln (real M) / ln 2) * ln (real L + 1))"
+        by (simp add: ac_simps)
+      also have "\<dots> = exp (c' * log 2 (real M) * ln (real L + 1))"
+        by (simp add: log_def)
+      also have "\<dots> = (real L + 1) powr (c' * log 2 (real M))"
+        using Lp1_ne by (simp add: powr_def)
+      finally show ?thesis .
+    qed
+    have step_real: "real (M ^ depth_formula (spira_trans f))
+                   \<le> (real L + 1) powr a"
+    proof -
+      have "real (M ^ depth_formula (spira_trans f))
+          = real M ^ depth_formula (spira_trans f)" by simp
+      also have "\<dots> = real M powr real (depth_formula (spira_trans f))"
+        using M_real_pos by (simp add: powr_realpow)
+      also have "\<dots> \<le> real M powr (c' * log 2 (real L + 1))"
+        using depth_log M_real_ge_1 by (rule powr_mono)
+      also have "\<dots> = (real L + 1) powr (c' * log 2 (real M))"
+        using swap_id .
+      finally show ?thesis unfolding a_def .
+    qed
+    have step_pow: "(real L + 1) powr a \<le> (real L + 1) powr real e"
+      using a_le_e Lp1_real_ge_1 by (rule powr_mono)
+    have step_to_nat_pow: "(real L + 1) powr real e = real ((L + 1) ^ e)"
+    proof -
+      have pos: "(0::real) < real L + 1" using L_real_ge_1 by simp
+      have "(real L + 1) powr real e = (real L + 1) ^ e"
+        using pos by (simp add: powr_realpow)
+      also have "\<dots> = real ((L + 1) ^ e)" by (simp add: add.commute)
+      finally show ?thesis .
+    qed
+    have step_2L: "(L + 1) ^ e \<le> (2 * L) ^ e"
+      using L_ge_1 by (intro power_mono) auto
+    have step_split: "(2 * L :: nat) ^ e = 2 ^ e * L ^ e"
+      by (simp add: power_mult_distrib)
+    have real_to_pow: "real (len_formula (spira_trans f)) \<le> real ((L + 1) ^ e)"
+    proof -
+      have "real (len_formula (spira_trans f))
+          \<le> real (M ^ depth_formula (spira_trans f))"
+        using len_pow by simp
+      also have "\<dots> \<le> (real L + 1) powr a" using step_real .
+      also have "\<dots> \<le> (real L + 1) powr real e" using step_pow .
+      also have "\<dots> = real ((L + 1) ^ e)" using step_to_nat_pow .
+      finally show ?thesis .
+    qed
+    have nat_chain: "len_formula (spira_trans f) \<le> 2 ^ e * L ^ e"
+    proof -
+      have step_a: "len_formula (spira_trans f) \<le> (L + 1) ^ e"
+        using real_to_pow by linarith
+      have step_b: "(L + 1) ^ e \<le> (2 * L) ^ e" using step_2L .
+      have step_c: "(2 * L :: nat) ^ e = 2 ^ e * L ^ e" using step_split .
+      from step_a step_b step_c show ?thesis by linarith
+    qed
+    show "len_formula (spira_trans f) \<le> poly p (len_formula f)"
+      using nat_chain poly_eval[of L] L_def by simp
+  qed
+qed
+
+subsection \<open>Lemma 5.1\<close>
 
 
 (* theorem 1.1 *)
