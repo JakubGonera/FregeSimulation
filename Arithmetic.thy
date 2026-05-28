@@ -1,10 +1,54 @@
 theory Arithmetic
-  imports Complex_Main
+  imports Complex_Main "HOL-Computational_Algebra.Polynomial"
 begin
 
 text \<open>Pure arithmetic / list-arithmetic lemmas, independent of any
       formula-specific types. These are used throughout the project's
       combinatorial bounds.\<close>
+
+lemma poly_nat_mono:
+  fixes p :: "nat poly" and a b :: nat
+  assumes "a \<le> b"
+  shows "poly p a \<le> poly p b"
+proof (induction p)
+  case 0 thus ?case by simp
+next
+  case (pCons k p)
+  have "a * poly p a \<le> b * poly p b"
+    using assms pCons.IH by (rule mult_le_mono)
+  thus ?case by simp
+qed
+
+lemma poly_le_poly1_pow:
+  fixes p :: "nat poly"
+  assumes "1 \<le> n"
+  shows "poly p n \<le> poly p 1 * n ^ degree p"
+proof (induction p)
+  case 0 thus ?case by simp
+next
+  case (pCons k p)
+  show ?case
+  proof (cases "p = 0")
+    case True thus ?thesis by simp
+  next
+    case False
+    have deg_eq: "degree (pCons k p) = Suc (degree p)" using False by simp
+    have npow_ge: "1 \<le> n ^ Suc (degree p)" using assms by simp
+    have IH: "poly p n \<le> poly p 1 * n ^ degree p" using pCons.IH .
+    have "poly (pCons k p) n = k + n * poly p n" by simp
+    also have "\<dots> \<le> k + n * (poly p 1 * n ^ degree p)"
+      using IH by simp
+    also have "\<dots> = k + poly p 1 * n ^ Suc (degree p)"
+      by (simp add: mult.left_commute)
+    also have "\<dots> \<le> k * n ^ Suc (degree p) + poly p 1 * n ^ Suc (degree p)"
+      using npow_ge by (intro add_mono mult_le_mono2) simp_all
+    also have "\<dots> = (k + poly p 1) * n ^ Suc (degree p)"
+      by (simp add: algebra_simps)
+    also have "\<dots> = poly (pCons k p) 1 * n ^ degree (pCons k p)"
+      using deg_eq by simp
+    finally show ?thesis .
+  qed
+qed
 
 lemma nat_ceil_le:
   fixes k :: "nat"

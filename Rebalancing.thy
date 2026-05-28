@@ -143,30 +143,8 @@ lemma provable_balanced_iff_weaken:
   assumes "provable_balanced_iff A B lines sz dep"
       and "lines \<le> lines'" and "sz \<le> sz'" and "dep \<le> dep'"
     shows "provable_balanced_iff A B lines' sz' dep'"
-proof -
-  from assms(1) obtain pr where pr:
-    "valid_proof F pr" "assumptions pr = {}" "frege_proof.thesis pr = iff_form A B"
-    "length (steps pr) \<le> lines"
-    "\<forall>s \<in> set (steps pr). len_formula s \<le> sz"
-    "\<forall>s \<in> set (steps pr). depth_formula s \<le> dep"
-    unfolding provable_balanced_iff_def by blast
-  have l: "length (steps pr) \<le> lines'" using pr(4) assms(2) by simp
-  have s: "\<forall>s \<in> set (steps pr). len_formula s \<le> sz'"
-  proof
-    fix s assume s_in: "s \<in> set (steps pr)"
-    have "len_formula s \<le> sz" using pr(5) s_in by blast
-    thus "len_formula s \<le> sz'" using assms(3) by simp
-  qed
-  have d: "\<forall>s \<in> set (steps pr). depth_formula s \<le> dep'"
-  proof
-    fix s assume s_in: "s \<in> set (steps pr)"
-    have "depth_formula s \<le> dep" using pr(6) s_in by blast
-    thus "depth_formula s \<le> dep'" using assms(4) by simp
-  qed
-  show ?thesis
-    unfolding provable_balanced_iff_def
-    using pr(1,2,3) l s d by blast
-qed
+  using assms unfolding provable_balanced_iff_def
+  by (meson order.trans)
 
 (*
   Fresh atoms. avoid_atoms collects every variable the fixed gluing formulas
@@ -222,148 +200,6 @@ definition refl_step_len :: nat where
 
 definition refl_step_depth :: nat where
   "refl_step_depth = Max (insert 1 (depth_formula ` set (steps refl_base_proof)))"
-
-lemma refl_base_proof_spec:
-  "valid_proof F refl_base_proof \<and> assumptions refl_base_proof = {}
-   \<and> thesis refl_base_proof = iff_form (Atom refl_atom) (Atom refl_atom)"
-proof -
-  have "\<forall>val. eval (alphabet F) val (iff_form (Atom refl_atom) (Atom refl_atom))"
-    using iff_form_eval by simp
-  thus ?thesis
-    unfolding refl_base_proof_def using taut_proof_spec by blast
-qed
-
-lemma iff_refl:
-  "provable_balanced_iff A A
-      refl_lines (refl_step_len * len_formula A) (refl_step_depth + depth_formula A)"
-proof -
-  have fs_F: "frege_system F"
-    by (meson frege_balancing_axioms frege_balancing_def)
-  let ?z = "refl_atom"
-  let ?sub = "\<lambda>w. if w = ?z then A else Atom w"
-  let ?base = "refl_base_proof"
-  let ?pr = "sub_proof ?sub ?base"
-
-  have base_spec:
-    "valid_proof F ?base \<and> assumptions ?base = {}
-     \<and> thesis ?base = iff_form (Atom ?z) (Atom ?z)"
-    using refl_base_proof_spec .
-  have sub_id_all: "\<forall>v. v \<notin> {?z} \<longrightarrow> ?sub v = Atom v" by simp
-  have fin_z: "finite {?z}" by simp
-
-  have valid_pr: "valid_proof F ?pr"
-    using frege_system.proof_substitution[OF fs_F] base_spec by blast
-  have asm_pr: "assumptions ?pr = {}"
-    using base_spec by simp
-  have thesis_pr: "thesis ?pr = iff_form A A"
-  proof -
-    have "thesis ?pr = sub_formula ?sub (iff_form (Atom ?z) (Atom ?z))"
-      using base_spec by simp
-    also have "\<dots> = iff_form (sub_formula ?sub (Atom ?z)) (sub_formula ?sub (Atom ?z))"
-    proof (rule sub_formula_iff_form)
-      fix w assume "w \<in> var_set_form conn_iff" and "w \<noteq> ''a''" and "w \<noteq> ''b''"
-      have "w \<noteq> ?z" using \<open>w \<in> var_set_form conn_iff\<close> refl_atom_not_conn_iff by blast
-      thus "?sub w = Atom w" by simp
-    qed
-    also have "\<dots> = iff_form A A" by simp
-    finally show ?thesis .
-  qed
-  have len_steps: "length (steps ?pr) = refl_lines"
-    unfolding refl_lines_def by simp
-
-  have len_sub_eq: "len_sub {?z} ?sub = len_formula A"
-  proof -
-    have "len_sub {?z} ?sub = max 1 (len_formula A)"
-      unfolding len_sub_def by simp
-    thus ?thesis using len_formula_positive[of A] by simp
-  qed
-  have depth_sub_eq: "depth_sub {?z} ?sub = depth_formula A"
-  proof -
-    have "depth_sub {?z} ?sub = max 1 (depth_formula A)"
-      unfolding depth_sub_def by (simp add: Max_insert)
-    thus ?thesis using depth_formula_ge_1[of A] by simp
-  qed
-
-  have fin_lens: "finite (insert 1 (len_formula ` set (steps ?base)))" by simp
-  have fin_deps: "finite (insert 1 (depth_formula ` set (steps ?base)))" by simp
-
-  have step_len: "\<forall>s' \<in> set (steps ?pr). len_formula s' \<le> refl_step_len * len_formula A"
-  proof
-    fix s' assume "s' \<in> set (steps ?pr)"
-    then obtain s where s_in: "s \<in> set (steps ?base)"
-                    and s'_eq: "s' = sub_formula ?sub s"
-      by auto
-    have "len_formula s' \<le> len_formula s * len_sub {?z} ?sub"
-      using s'_eq sub_formula_bound[OF fin_z sub_id_all] by simp
-    also have "\<dots> = len_formula s * len_formula A"
-      using len_sub_eq by simp
-    also have "\<dots> \<le> refl_step_len * len_formula A"
-    proof -
-      have "len_formula s \<in> insert 1 (len_formula ` set (steps ?base))"
-        using s_in by simp
-      hence "len_formula s \<le> refl_step_len"
-        unfolding refl_step_len_def using Max_ge[OF fin_lens] by blast
-      thus ?thesis by (rule mult_le_mono1)
-    qed
-    finally show "len_formula s' \<le> refl_step_len * len_formula A" .
-  qed
-
-  have step_depth: "\<forall>s' \<in> set (steps ?pr). depth_formula s' \<le> refl_step_depth + depth_formula A"
-  proof
-    fix s' assume "s' \<in> set (steps ?pr)"
-    then obtain s where s_in: "s \<in> set (steps ?base)"
-                    and s'_eq: "s' = sub_formula ?sub s"
-      by auto
-    have "depth_formula s' \<le> depth_formula s + depth_sub {?z} ?sub"
-      using s'_eq sub_formula_depth_bound[OF fin_z sub_id_all] by simp
-    also have "\<dots> = depth_formula s + depth_formula A"
-      using depth_sub_eq by simp
-    also have "\<dots> \<le> refl_step_depth + depth_formula A"
-    proof -
-      have "depth_formula s \<in> insert 1 (depth_formula ` set (steps ?base))"
-        using s_in by simp
-      hence "depth_formula s \<le> refl_step_depth"
-        unfolding refl_step_depth_def using Max_ge[OF fin_deps] by blast
-      thus ?thesis by (rule add_le_mono1)
-    qed
-    finally show "depth_formula s' \<le> refl_step_depth + depth_formula A" .
-  qed
-
-  show ?thesis
-    unfolding provable_balanced_iff_def
-  proof (intro exI[where x = ?pr] conjI)
-    show "valid_proof F ?pr" using valid_pr .
-    show "assumptions ?pr = {}" using asm_pr .
-    show "thesis ?pr = iff_form A A" using thesis_pr .
-    show "length (steps ?pr) \<le> refl_lines" using len_steps by simp
-    show "\<forall>s \<in> set (steps ?pr). len_formula s \<le> refl_step_len * len_formula A"
-      using step_len .
-    show "\<forall>s \<in> set (steps ?pr). depth_formula s \<le> refl_step_depth + depth_formula A"
-      using step_depth .
-  qed
-qed
-
-(*
-  entails_proof fs th: a fixed Frege proof of th from assumptions fs, whenever
-  fs semantically entails th. The assumption-bearing generalisation of
-  taut_proof, used to build the fixed transitivity / congruence proofs.
-*)
-definition entails_proof :: "'c formula set \<Rightarrow> 'c formula \<Rightarrow> 'c frege_proof" where
-  "entails_proof fs th =
-     (SOME pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th)"
-
-lemma entails_proof_spec:
-  assumes "\<forall>val. (\<forall>f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th"
-  shows "valid_proof F (entails_proof fs th)
-       \<and> assumptions (entails_proof fs th) = fs
-       \<and> thesis (entails_proof fs th) = th"
-proof -
-  have fs_F: "frege_system F"
-    by (meson frege_balancing_axioms frege_balancing_def)
-  have "\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th"
-    using frege_system.impl_complete[OF fs_F] assms by blast
-  thus ?thesis unfolding entails_proof_def by (rule someI_ex)
-qed
 
 (*
   Substitution lifting for provable_balanced_iff (Filmus' lemma 3.1): a
@@ -469,6 +305,55 @@ proof -
   show ?thesis
     unfolding provable_balanced_iff_def
     using spec step_len step_dep by blast
+qed
+
+lemma iff_refl:
+  "provable_balanced_iff A A
+      refl_lines (refl_step_len * len_formula A) (refl_step_depth + depth_formula A)"
+proof -
+  let ?z = "refl_atom"
+  let ?sub = "\<lambda>w. if w = ?z then A else Atom w"
+  have taut: "\<forall>val. eval (alphabet F) val (iff_form (Atom ?z) (Atom ?z))"
+    by (simp add: iff_form_eval)
+  have base: "provable_balanced_iff (Atom ?z) (Atom ?z)
+                refl_lines refl_step_len refl_step_depth"
+    using iff_from_taut[OF taut]
+    unfolding refl_lines_def refl_step_len_def refl_step_depth_def refl_base_proof_def
+    by simp
+  have fin: "finite {?z}" by simp
+  have sub_id: "\<forall>v. v \<notin> {?z} \<longrightarrow> ?sub v = Atom v" by simp
+  have sub_ci: "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
+                 \<Longrightarrow> ?sub w = Atom w"
+    using refl_atom_not_conn_iff by auto
+  have len_sub_eq: "len_sub {?z} ?sub = len_formula A"
+    using len_formula_positive[of A] by (simp add: len_sub_def)
+  have depth_sub_eq: "depth_sub {?z} ?sub = depth_formula A"
+    using depth_formula_ge_1[of A] by (simp add: depth_sub_def)
+  show ?thesis
+    using provable_balanced_iff_subst[OF base fin sub_id sub_ci]
+    by (simp add: len_sub_eq depth_sub_eq)
+qed
+
+(*
+  entails_proof fs th: a fixed Frege proof of th from assumptions fs, whenever
+  fs semantically entails th. The assumption-bearing generalisation of
+  taut_proof, used to build the fixed transitivity / congruence proofs.
+*)
+definition entails_proof :: "'c formula set \<Rightarrow> 'c formula \<Rightarrow> 'c frege_proof" where
+  "entails_proof fs th =
+     (SOME pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th)"
+
+lemma entails_proof_spec:
+  assumes "\<forall>val. (\<forall>f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th"
+  shows "valid_proof F (entails_proof fs th)
+       \<and> assumptions (entails_proof fs th) = fs
+       \<and> thesis (entails_proof fs th) = th"
+proof -
+  have fs_F: "frege_system F"
+    by (meson frege_balancing_axioms frege_balancing_def)
+  have "\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th"
+    using frege_system.impl_complete[OF fs_F] assms by blast
+  thus ?thesis unfolding entails_proof_def by (rule someI_ex)
 qed
 
 (* iff_trans: transitivity, from the fixed identity (x \<leftrightarrow> y), (y \<leftrightarrow> z) \<turnstile> (x \<leftrightarrow> z). *)
@@ -4490,203 +4375,6 @@ proof -
 qed
 
 (*
-  Polynomial closure of the rebalancing line-count recurrence. Filmus' analysis
-  reduces to L(n,n) \<le> O(n) + 10\<cdot>L(2n/3, 2n/3). Taking the bound polynomial of
-  degree 6 makes the recursion contractive: 729\<cdot>m^6 \<le> 64\<cdot>n^6 whenever
-  3m \<le> 2n, and 10\<cdot>64 = 640 < 729, so the recursive contribution is a strict
-  fraction of n^6. The closure is then a direct strong induction, no general
-  master theorem required. The constant constraint 1458\<cdot>K \<le> 80\<cdot>C is what a
-  caller must satisfy when instantiating C (e.g. C = 19\<cdot>K + 1).
-*)
-lemma poly_master_closure:
-  fixes f :: "nat \<Rightarrow> nat" and K C :: nat
-  assumes rec: "\<And>n. n \<ge> 3 \<Longrightarrow>
-                  \<exists>m. 3 * m \<le> 2 * n \<and> f n \<le> K * (n + 1) + 10 * f m"
-      and base: "\<And>n. n < 3 \<Longrightarrow> f n \<le> C"
-      and CK: "1458 * K \<le> 80 * C"
-    shows "f n \<le> C * n ^ 6 + C"
-proof (induction n rule: less_induct)
-  case (less n)
-  show ?case
-  proof (cases "n \<ge> 3")
-    case False
-    hence "f n \<le> C" using base by simp
-    thus ?thesis by simp
-  next
-    case True
-    obtain m where m_le: "3 * m \<le> 2 * n"
-              and fn: "f n \<le> K * (n + 1) + 10 * f m"
-      using rec[OF True] by blast
-    have mn: "m < n" using m_le True by linarith
-    have IH: "f m \<le> C * m ^ 6 + C" using less.IH[OF mn] .
-
-    have "(3 * m) ^ 6 \<le> (2 * n) ^ 6"
-      by (rule power_mono[OF m_le]) simp
-    hence contr: "729 * m ^ 6 \<le> 64 * n ^ 6"
-      by (simp add: power_mult_distrib)
-    have n6: "(729::nat) \<le> n ^ 6"
-    proof -
-      have "(3::nat) ^ 6 \<le> n ^ 6" by (rule power_mono[OF True]) simp
-      thus ?thesis by simp
-    qed
-    have n1: "n + 1 \<le> 2 * n ^ 6"
-    proof -
-      have "n \<le> n ^ 6" using True power_increasing[of 1 6 n] by simp
-      thus ?thesis using n6 by linarith
-    qed
-
-    have A3: "7290 * (C * m ^ 6) \<le> 640 * (C * n ^ 6)"
-    proof -
-      have "(10 * C) * (729 * m ^ 6) \<le> (10 * C) * (64 * n ^ 6)"
-        using contr by (rule mult_le_mono2)
-      thus ?thesis by (simp add: algebra_simps)
-    qed
-    have A4: "729 * (K * (n + 1)) \<le> 1458 * (K * n ^ 6)"
-    proof -
-      have "(729 * K) * (n + 1) \<le> (729 * K) * (2 * n ^ 6)"
-        using n1 by (rule mult_le_mono2)
-      thus ?thesis by (simp add: algebra_simps)
-    qed
-    have A5: "1458 * (K * n ^ 6) \<le> 80 * (C * n ^ 6)"
-    proof -
-      have "(1458 * K) * n ^ 6 \<le> (80 * C) * n ^ 6"
-        using CK by (rule mult_le_mono1)
-      thus ?thesis by (simp add: algebra_simps)
-    qed
-    have A6: "6561 * C \<le> 9 * (C * n ^ 6)"
-    proof -
-      have "(9 * C) * 729 \<le> (9 * C) * n ^ 6"
-        using n6 by (rule mult_le_mono2)
-      thus ?thesis by (simp add: algebra_simps)
-    qed
-
-    have "729 * f n \<le> 729 * (K * (n + 1) + 10 * f m)"
-      using fn by (rule mult_le_mono2)
-    also have "\<dots> = 729 * (K * (n + 1)) + 7290 * f m"
-      by (simp add: algebra_simps)
-    also have "\<dots> \<le> 729 * (K * (n + 1)) + 7290 * (C * m ^ 6 + C)"
-      using IH by simp
-    also have "\<dots> = 729 * (K * (n + 1)) + 7290 * (C * m ^ 6) + 7290 * C"
-      by (simp add: algebra_simps)
-    also have "\<dots> \<le> 1458 * (K * n ^ 6) + 640 * (C * n ^ 6) + 7290 * C"
-      using A3 A4 by linarith
-    also have "\<dots> \<le> 80 * (C * n ^ 6) + 640 * (C * n ^ 6) + 7290 * C"
-      using A5 by linarith
-    also have "\<dots> = 720 * (C * n ^ 6) + 7290 * C"
-      by simp
-    also have "\<dots> \<le> 720 * (C * n ^ 6) + 9 * (C * n ^ 6) + 729 * C"
-      using A6 by linarith
-    also have "\<dots> = 729 * (C * n ^ 6 + C)"
-      by (simp add: algebra_simps)
-    finally have "729 * f n \<le> 729 * (C * n ^ 6 + C)" .
-    thus ?thesis by simp
-  qed
-qed
-
-(*
-  Polynomial closure with a monotone glue factor h. The per-line size
-  recurrence has glue K\<cdot>h(n), where h bounds the size of the intermediate
-  formulas (itself polynomial in |P|), rather than the constant glue of the
-  line-count recurrence. The same degree-6 contraction closes it.
-*)
-lemma poly_master_closure_gen:
-  fixes f h :: "nat \<Rightarrow> nat" and K C :: nat
-  assumes rec: "\<And>n. n \<ge> 3 \<Longrightarrow>
-                  \<exists>m. 3 * m \<le> 2 * n \<and> f n \<le> K * h n + 10 * f m"
-      and base: "\<And>n. n < 3 \<Longrightarrow> f n \<le> C"
-      and hmono: "\<And>a b. a \<le> b \<Longrightarrow> h a \<le> h b"
-      and hpos: "\<And>n. 1 \<le> h n"
-      and CK: "1458 * K \<le> 80 * C"
-    shows "f n \<le> C * (h n * n ^ 6) + C"
-proof (induction n rule: less_induct)
-  case (less n)
-  show ?case
-  proof (cases "n \<ge> 3")
-    case False
-    hence "f n \<le> C" using base by simp
-    thus ?thesis by simp
-  next
-    case True
-    obtain m where m_le: "3 * m \<le> 2 * n"
-              and fn: "f n \<le> K * h n + 10 * f m"
-      using rec[OF True] by blast
-    have mn: "m < n" using m_le True by linarith
-    have IH: "f m \<le> C * (h m * m ^ 6) + C" using less.IH[OF mn] .
-    have hmn: "h m \<le> h n" by (rule hmono[OF less_imp_le[OF mn]])
-    have IH': "f m \<le> C * (h n * m ^ 6) + C"
-    proof -
-      have "h m * m ^ 6 \<le> h n * m ^ 6" using hmn by (rule mult_le_mono1)
-      hence "C * (h m * m ^ 6) \<le> C * (h n * m ^ 6)" by (rule mult_le_mono2)
-      thus ?thesis using IH by linarith
-    qed
-
-    have "(3 * m) ^ 6 \<le> (2 * n) ^ 6"
-      by (rule power_mono[OF m_le]) simp
-    hence contr: "729 * m ^ 6 \<le> 64 * n ^ 6"
-      by (simp add: power_mult_distrib)
-    have n6: "(729::nat) \<le> n ^ 6"
-    proof -
-      have "(3::nat) ^ 6 \<le> n ^ 6" by (rule power_mono[OF True]) simp
-      thus ?thesis by simp
-    qed
-    have hge1: "1 \<le> h n" by (rule hpos)
-
-    have A3: "7290 * (C * (h n * m ^ 6)) \<le> 640 * (C * (h n * n ^ 6))"
-    proof -
-      have "(10 * C * h n) * (729 * m ^ 6) \<le> (10 * C * h n) * (64 * n ^ 6)"
-        using contr by (rule mult_le_mono2)
-      thus ?thesis by (simp add: algebra_simps)
-    qed
-    have A4: "729 * (K * h n) \<le> 40 * (C * (h n * n ^ 6))"
-    proof -
-      have k729: "729 * K \<le> 40 * C" using CK by linarith
-      have "729 * (K * h n) = (729 * K) * h n" by (simp add: algebra_simps)
-      also have "\<dots> \<le> (40 * C) * h n" using k729 by (rule mult_le_mono1)
-      also have "\<dots> \<le> (40 * C) * (h n * n ^ 6)"
-      proof -
-        have "(1::nat) \<le> n ^ 6" using n6 by simp
-        hence "h n * 1 \<le> h n * n ^ 6" by (rule mult_le_mono2)
-        hence "h n \<le> h n * n ^ 6" by simp
-        thus ?thesis by (rule mult_le_mono2)
-      qed
-      also have "\<dots> = 40 * (C * (h n * n ^ 6))" by (simp add: algebra_simps)
-      finally show ?thesis .
-    qed
-    have A6: "6561 * C \<le> 9 * (C * (h n * n ^ 6))"
-    proof -
-      have "(729::nat) \<le> h n * n ^ 6"
-        using mult_le_mono[OF hge1 n6] by simp
-      hence "(9 * C) * 729 \<le> (9 * C) * (h n * n ^ 6)"
-        by (rule mult_le_mono2)
-      thus ?thesis by (simp add: algebra_simps)
-    qed
-
-    have "729 * f n \<le> 729 * (K * h n + 10 * f m)"
-      using fn by (rule mult_le_mono2)
-    also have "\<dots> = 729 * (K * h n) + 7290 * f m"
-      by (simp add: algebra_simps)
-    also have "\<dots> \<le> 729 * (K * h n) + 7290 * (C * (h n * m ^ 6) + C)"
-      using IH' by simp
-    also have "\<dots> = 729 * (K * h n) + 7290 * (C * (h n * m ^ 6)) + 7290 * C"
-      by (simp add: algebra_simps)
-    also have "\<dots> \<le> 40 * (C * (h n * n ^ 6)) + 640 * (C * (h n * n ^ 6))
-                     + 7290 * C"
-      using A3 A4 by linarith
-    also have "\<dots> = 680 * (C * (h n * n ^ 6)) + 7290 * C"
-      by simp
-    also have "\<dots> \<le> 680 * (C * (h n * n ^ 6)) + 9 * (C * (h n * n ^ 6))
-                     + 729 * C"
-      using A6 by linarith
-    also have "\<dots> = 689 * (C * (h n * n ^ 6)) + 729 * C"
-      by simp
-    also have "\<dots> \<le> 729 * (C * (h n * n ^ 6) + C)"
-      by (simp add: algebra_simps)
-    finally have "729 * f n \<le> 729 * (C * (h n * n ^ 6) + C)" .
-    thus ?thesis by simp
-  qed
-qed
-
-(*
   The well-founded measure for Lemma 5.1's induction: the lexical pair
   (|P|, |P| - |subterm_at P pos|) linearised to a single nat. The first
   component dominates --- any drop in |P| decreases the measure regardless
@@ -4972,55 +4660,38 @@ proof -
                 pos_empty_lines pos_empty_step_len pos_empty_step_depth"
     using iff_from_taut[OF pos_empty_taut]
     unfolding pos_empty_lines_def pos_empty_step_len_def pos_empty_step_depth_def .
-  have z_avoid: "?z \<notin> avoid_atoms" by (rule refl_atom_fresh)
-  have vsfin: "finite {?z}" by simp
+  have fin: "finite {?z}" by simp
   have sig_id: "\<forall>v. v \<notin> {?z} \<longrightarrow> ?sub v = Atom v" by simp
   have sig_conn: "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
                        \<Longrightarrow> ?sub w = Atom w"
-  proof -
-    fix w assume "w \<in> var_set_form conn_iff"
-    hence "w \<noteq> ?z" using refl_atom_not_conn_iff by blast
-    thus "?sub w = Atom w" by simp
-  qed
-  note subst_pbi = provable_balanced_iff_subst[OF base vsfin sig_id sig_conn]
-
+    using refl_atom_not_conn_iff by auto
+  have sig_cb: "\<And>v. v \<in> var_set_form custom_balancing \<Longrightarrow> v \<noteq> ''x''
+                     \<Longrightarrow> v \<noteq> ''y'' \<Longrightarrow> v \<noteq> ''z'' \<Longrightarrow> ?sub v = Atom v"
+    using refl_atom_fresh unfolding avoid_atoms_def by auto
   have subL: "sub_formula ?sub pos_empty_lhs = G"
-    unfolding pos_empty_lhs_def by simp
+    by (simp add: pos_empty_lhs_def)
   have subR: "sub_formula ?sub pos_empty_rhs = balance true_const false_const G"
   proof -
-    have sig_cb: "\<And>v. v \<in> var_set_form custom_balancing \<Longrightarrow> v \<noteq> ''x''
-                       \<Longrightarrow> v \<noteq> ''y'' \<Longrightarrow> v \<noteq> ''z'' \<Longrightarrow> ?sub v = Atom v"
-    proof -
-      fix v assume "v \<in> var_set_form custom_balancing"
-      hence "v \<in> avoid_atoms" unfolding avoid_atoms_def by blast
-      hence "v \<noteq> ?z" using z_avoid by blast
-      thus "?sub v = Atom v" by simp
-    qed
     have "sub_formula ?sub pos_empty_rhs
         = balance (sub_formula ?sub true_const) (sub_formula ?sub false_const)
                   (sub_formula ?sub (Atom ?z))"
       unfolding pos_empty_rhs_def by (rule sub_formula_balance[OF sig_cb])
-    also have "\<dots> = balance true_const false_const G"
-      by (simp add: true_const_def false_const_def)
-    finally show ?thesis .
+    thus ?thesis by (simp add: true_const_def false_const_def)
   qed
   have lensub: "len_sub {?z} ?sub = len_formula G"
-  proof -
-    have "len_sub {?z} ?sub = max 1 (len_formula G)"
-      unfolding len_sub_def by simp
-    thus ?thesis using len_formula_positive[of G] by simp
-  qed
-  have depsub: "depth_sub {?z} ?sub = max 1 (depth_formula G)"
-    unfolding depth_sub_def by simp
-
-  note pbi = subst_pbi[unfolded subL subR lensub depsub]
+    using len_formula_positive[of G] by (simp add: len_sub_def)
+  have depsub: "depth_sub {?z} ?sub \<le> 1 + depth_formula G"
+    by (simp add: depth_sub_def max_def)
+  have pbi: "provable_balanced_iff G (balance true_const false_const G)
+               pos_empty_lines (pos_empty_step_len * len_formula G)
+               (pos_empty_step_depth + depth_sub {?z} ?sub)"
+    using provable_balanced_iff_subst[OF base fin sig_id sig_conn]
+    by (simp add: subL subR lensub)
   show ?thesis
   proof (rule provable_balanced_iff_weaken[OF pbi order_refl order_refl])
-    have "max 1 (depth_formula G) \<le> 1 + depth_formula G"
-      by (simp add: max_def)
-    thus "pos_empty_step_depth + max 1 (depth_formula G)
-            \<le> pos_empty_step_depth + 1 + depth_formula G"
-      by linarith
+    show "pos_empty_step_depth + depth_sub {?z} ?sub
+          \<le> pos_empty_step_depth + 1 + depth_formula G"
+      using depsub by linarith
   qed
 qed
 
@@ -5640,47 +5311,35 @@ definition reassoc_max_step_depth :: nat where
   "reassoc_max_step_depth =
      Max (insert 0 ((\<lambda>(c,i). reassoc_conn_step_depth c i) ` reassoc_index_set))"
 
+\<comment> \<open>Shared shape of the three _le bounds: f(c,i) for (c,i) in the finite
+    reassoc_index_set is bounded by Max over that set.\<close>
+lemma reassoc_max_ge:
+  fixes f :: "'c \<Rightarrow> nat \<Rightarrow> nat"
+  assumes "i < arity (alphabet F) c"
+  shows "f c i \<le> Max (insert 0 ((\<lambda>(c,i). f c i) ` reassoc_index_set))"
+proof -
+  have "f c i \<in> insert 0 ((\<lambda>(c,i). f c i) ` reassoc_index_set)"
+    using assms unfolding reassoc_index_set_def by auto
+  thus ?thesis using reassoc_index_set_finite by simp
+qed
+
 lemma reassoc_conn_lines_le:
   assumes "i < arity (alphabet F) c"
   shows "reassoc_conn_lines c i \<le> reassoc_max_lines"
-proof -
-  have "reassoc_conn_lines c i
-        \<in> insert 0 ((\<lambda>(c,i). reassoc_conn_lines c i) ` reassoc_index_set)"
-    using assms unfolding reassoc_index_set_def by auto
-  moreover have "finite (insert 0 ((\<lambda>(c,i). reassoc_conn_lines c i)
-                                     ` reassoc_index_set))"
-    using reassoc_index_set_finite by simp
-  ultimately show ?thesis
-    unfolding reassoc_max_lines_def by (rule Max_ge[rotated])
-qed
+  using reassoc_max_ge[OF assms, of reassoc_conn_lines]
+  unfolding reassoc_max_lines_def .
 
 lemma reassoc_conn_step_len_le:
   assumes "i < arity (alphabet F) c"
   shows "reassoc_conn_step_len c i \<le> reassoc_max_step_len"
-proof -
-  have "reassoc_conn_step_len c i
-        \<in> insert 0 ((\<lambda>(c,i). reassoc_conn_step_len c i) ` reassoc_index_set)"
-    using assms unfolding reassoc_index_set_def by auto
-  moreover have "finite (insert 0 ((\<lambda>(c,i). reassoc_conn_step_len c i)
-                                     ` reassoc_index_set))"
-    using reassoc_index_set_finite by simp
-  ultimately show ?thesis
-    unfolding reassoc_max_step_len_def by (rule Max_ge[rotated])
-qed
+  using reassoc_max_ge[OF assms, of reassoc_conn_step_len]
+  unfolding reassoc_max_step_len_def .
 
 lemma reassoc_conn_step_depth_le:
   assumes "i < arity (alphabet F) c"
   shows "reassoc_conn_step_depth c i \<le> reassoc_max_step_depth"
-proof -
-  have "reassoc_conn_step_depth c i
-        \<in> insert 0 ((\<lambda>(c,i). reassoc_conn_step_depth c i) ` reassoc_index_set)"
-    using assms unfolding reassoc_index_set_def by auto
-  moreover have "finite (insert 0 ((\<lambda>(c,i). reassoc_conn_step_depth c i)
-                                     ` reassoc_index_set))"
-    using reassoc_index_set_finite by simp
-  ultimately show ?thesis
-    unfolding reassoc_max_step_depth_def by (rule Max_ge[rotated])
-qed
+  using reassoc_max_ge[OF assms, of reassoc_conn_step_depth]
+  unfolding reassoc_max_step_depth_def .
 
 (*
   Below threshold spira_trans is the identity, so rebalancing collapses to a
@@ -6566,9 +6225,6 @@ qed
 definition rebal_kk :: nat where
   "rebal_kk = max (Max ((arity (alphabet F)) ` (UNIV :: 'c set))) 2"
 
-lemma rebal_kk_ge_2: "rebal_kk \<ge> 2"
-  unfolding rebal_kk_def by simp
-
 \<comment> \<open>The spira_trans size polynomial, fixed globally so rebal_deg can be
     sized to dominate its degree (needed for the size bound, not just lines).\<close>
 definition rebal_tb :: "nat poly" where
@@ -6589,9 +6245,6 @@ lemma rebal_deg_ge: "rebal_deg \<ge> 10 * (2 * rebal_kk + 1)"
 
 lemma rebal_deg_ge_tb: "rebal_deg \<ge> degree rebal_tb"
   unfolding rebal_deg_def by simp
-
-lemma rebal_deg_pos: "rebal_deg \<ge> 1"
-  using rebal_deg_ge by simp
 
 lemma rebal_pow_key:
   "11 * (2 * rebal_kk + 1) ^ rebal_deg \<le> (2 * rebal_kk + 2) ^ rebal_deg"
@@ -6793,51 +6446,29 @@ proof -
           \<and> sz \<le> length pos * shgc + shbase
           \<and> dep \<le> length pos * shgc + shbase)"
     using shannon_construction by blast
-  have "\<forall> P pos.
-       formula_well_formed (alphabet F) P \<and> valid_position P pos
-       \<and> len_formula P < spira_threshold
-     \<longrightarrow> (\<exists> lines sz dep.
-            provable_balanced_iff (spira_trans P) (rebalancing P pos)
-              lines sz dep
+  have *: "\<exists> lines sz dep.
+            provable_balanced_iff (spira_trans P) (rebalancing P pos) lines sz dep
           \<and> lines \<le> spira_threshold * shgc + shbase
           \<and> sz \<le> spira_threshold * shgc + shbase
-          \<and> dep \<le> spira_threshold * shgc + shbase)"
-  proof (intro allI impI)
-    fix P pos
-    assume "formula_well_formed (alphabet F) P \<and> valid_position P pos
-            \<and> len_formula P < spira_threshold"
-    hence wfP: "formula_well_formed (alphabet F) P"
-      and vpP: "valid_position P pos"
-      and ltP: "len_formula P < spira_threshold" by auto
-    have lpt: "length pos \<le> spira_threshold"
-      using valid_position_length_le[OF vpP] ltP by linarith
+          \<and> dep \<le> spira_threshold * shgc + shbase"
+    if wf: "formula_well_formed (alphabet F) P" and vp: "valid_position P pos"
+       and small: "len_formula P < spira_threshold" for P pos
+  proof -
     have key: "length pos * shgc + shbase \<le> spira_threshold * shgc + shbase"
-      using mult_le_mono1[OF lpt, of shgc] by simp
+      using valid_position_length_le[OF vp] small by (simp add: mult_le_mono1)
     obtain lines sz dep where d:
         "provable_balanced_iff (spira_trans P) (rebalancing P pos) lines sz dep"
         "lines \<le> length pos * shgc + shbase"
         "sz \<le> length pos * shgc + shbase"
         "dep \<le> length pos * shgc + shbase"
-      using sh[OF wfP vpP ltP] by blast
-    show "\<exists> lines sz dep.
-            provable_balanced_iff (spira_trans P) (rebalancing P pos)
-              lines sz dep
-          \<and> lines \<le> spira_threshold * shgc + shbase
-          \<and> sz \<le> spira_threshold * shgc + shbase
-          \<and> dep \<le> spira_threshold * shgc + shbase"
-    proof (rule exI[where x = lines], rule exI[where x = sz],
-           rule exI[where x = dep], intro conjI)
-      show "provable_balanced_iff (spira_trans P) (rebalancing P pos)
-              lines sz dep" by (rule d(1))
-      from d(2) key show "lines \<le> spira_threshold * shgc + shbase"
-        by linarith
-      from d(3) key show "sz \<le> spira_threshold * shgc + shbase"
-        by linarith
-      from d(4) key show "dep \<le> spira_threshold * shgc + shbase"
-        by linarith
-    qed
+      using sh[OF wf vp small] by blast
+    have "lines \<le> spira_threshold * shgc + shbase"
+     and "sz \<le> spira_threshold * shgc + shbase"
+     and "dep \<le> spira_threshold * shgc + shbase"
+      using d(2) d(3) d(4) key by linarith+
+    thus ?thesis using d(1) by blast
   qed
-  thus ?thesis by blast
+  show ?thesis using * by blast
 qed
 
 lemma rebal_shc_spec:
@@ -6914,15 +6545,6 @@ definition rebal_gap_K_step :: nat where
 definition rebal_gap_bnd :: "nat \<Rightarrow> nat" where
   "rebal_gap_bnd n = (rebal_gap_K_base + rebal_gap_K_step) * 5 ^ n"
 
-lemma rebal_gap_bnd_pos: "1 \<le> rebal_gap_bnd n"
-proof -
-  have "(1::nat) \<le> rebal_gap_K_base + rebal_gap_K_step"
-    unfolding rebal_gap_K_step_def by simp
-  also have "\<dots> \<le> (rebal_gap_K_base + rebal_gap_K_step) * 5 ^ n"
-    by simp
-  finally show ?thesis unfolding rebal_gap_bnd_def .
-qed
-
 lemma rebal_gap_bnd_mono:
   assumes "n \<le> n'"
   shows "rebal_gap_bnd n \<le> rebal_gap_bnd n'"
@@ -6932,15 +6554,6 @@ lemma rebal_gap_bnd_mono:
 lemma rebal_gap_K_base_le_bnd: "rebal_gap_K_base \<le> rebal_gap_bnd n"
 proof -
   have "rebal_gap_K_base \<le> rebal_gap_K_base + rebal_gap_K_step" by simp
-  also have "\<dots> = (rebal_gap_K_base + rebal_gap_K_step) * 1" by simp
-  also have "\<dots> \<le> (rebal_gap_K_base + rebal_gap_K_step) * 5 ^ n"
-    by (intro mult_le_mono2) simp
-  finally show ?thesis unfolding rebal_gap_bnd_def .
-qed
-
-lemma rebal_gap_K_step_le_bnd: "rebal_gap_K_step \<le> rebal_gap_bnd n"
-proof -
-  have "rebal_gap_K_step \<le> rebal_gap_K_base + rebal_gap_K_step" by simp
   also have "\<dots> = (rebal_gap_K_base + rebal_gap_K_step) * 1" by simp
   also have "\<dots> \<le> (rebal_gap_K_base + rebal_gap_K_step) * 5 ^ n"
     by (intro mult_le_mono2) simp
@@ -8036,55 +7649,29 @@ proof -
   let ?B = "4 * rebal_kk + 3"
   let ?Kmax = "?B * (?B + 1) + ?B"
   let ?m = "rebal_gap_bnd ?Kmax"
-  have "\<forall> P pos.
-       formula_well_formed (alphabet F) P \<and> valid_position P pos
-       \<and> spira_threshold \<le> len_formula P
-       \<and> len_formula P < 4 * rebal_kk + 4
-     \<longrightarrow> (\<exists> lines sz dep.
-            provable_balanced_iff (spira_trans P) (rebalancing P pos)
-              lines sz dep \<and> lines \<le> ?m \<and> sz \<le> ?m \<and> dep \<le> ?m)"
-  proof (intro allI impI)
-    fix P :: "'c formula" and pos :: "nat list"
-    assume A: "formula_well_formed (alphabet F) P \<and> valid_position P pos
-               \<and> spira_threshold \<le> len_formula P
-               \<and> len_formula P < 4 * rebal_kk + 4"
-    hence wfP: "formula_well_formed (alphabet F) P"
-      and vpP: "valid_position P pos"
-      and ltP: "len_formula P < 4 * rebal_kk + 4" by auto
+  have *: "\<exists> lines sz dep.
+              provable_balanced_iff (spira_trans P) (rebalancing P pos)
+                lines sz dep \<and> lines \<le> ?m \<and> sz \<le> ?m \<and> dep \<le> ?m"
+    if wfP: "formula_well_formed (alphabet F) P" and vpP: "valid_position P pos"
+       and ltP: "len_formula P < 4 * rebal_kk + 4" for P pos
+  proof -
     have lle: "len_formula P \<le> ?B" using ltP by simp
-    have rR_pos: "1 \<le> len_formula (subterm_at P pos)"
-      by (rule len_formula_positive)
     have meas_le: "rebal_measure P pos \<le> ?Kmax"
-    proof -
-      have a1: "len_formula P * (len_formula P + 1) \<le> ?B * (?B + 1)"
-        using lle by (intro mult_le_mono) auto
-      have a2: "len_formula P - len_formula (subterm_at P pos) \<le> ?B"
-        using lle rR_pos by linarith
-      have "rebal_measure P pos
-            = len_formula P * (len_formula P + 1)
-              + (len_formula P - len_formula (subterm_at P pos))"
-        unfolding rebal_measure_def by simp
-      also have "\<dots> \<le> ?B * (?B + 1) + ?B" using a1 a2 by simp
-      finally show ?thesis .
-    qed
-    obtain lines sz dep where
-        pbi: "provable_balanced_iff (spira_trans P) (rebalancing P pos)
-                lines sz dep"
-      and lb0: "lines \<le> rebal_gap_bnd (rebal_measure P pos)"
-      and sb0: "sz \<le> rebal_gap_bnd (rebal_measure P pos)"
-      and db0: "dep \<le> rebal_gap_bnd (rebal_measure P pos)"
-      using rebal_gap_aux[OF wfP vpP ltP] by blast
+      using lle len_formula_positive[of "subterm_at P pos"]
+      unfolding rebal_measure_def
+      by (intro add_mono mult_le_mono) auto
     have grow: "rebal_gap_bnd (rebal_measure P pos) \<le> ?m"
       by (rule rebal_gap_bnd_mono[OF meas_le])
-    have lb: "lines \<le> ?m" using lb0 grow by linarith
-    have sb: "sz \<le> ?m" using sb0 grow by linarith
-    have db: "dep \<le> ?m" using db0 grow by linarith
-    show "\<exists> lines sz dep.
-            provable_balanced_iff (spira_trans P) (rebalancing P pos)
-              lines sz dep \<and> lines \<le> ?m \<and> sz \<le> ?m \<and> dep \<le> ?m"
-      using pbi lb sb db by blast
+    obtain lines sz dep where d:
+        "provable_balanced_iff (spira_trans P) (rebalancing P pos) lines sz dep"
+      and "lines \<le> rebal_gap_bnd (rebal_measure P pos)"
+      and "sz \<le> rebal_gap_bnd (rebal_measure P pos)"
+      and "dep \<le> rebal_gap_bnd (rebal_measure P pos)"
+      using rebal_gap_aux[OF wfP vpP ltP] by blast
+    hence "lines \<le> ?m" "sz \<le> ?m" "dep \<le> ?m" using grow by linarith+
+    thus ?thesis using d by blast
   qed
-  thus ?thesis by blast
+  show ?thesis using * by blast
 qed
 
 lemma rebal_gapc_spec:
@@ -8218,80 +7805,82 @@ qed
 \<comment> \<open>Every base-case constant K \<le> rebal_base_K, multiplied by poly rebal_tb n,
     sits below rebal_L n m.  This discharges the reflexivity / pos = [] / Shannon
     cases against the rebal_L invariant.\<close>
+\<comment> \<open>Common shape factored out of the four bound lemmas below:
+    tbpow_helper bounds poly rebal_tb n by poly rebal_tb 1 \<cdot> n^rebal_deg;
+    rebal_base_to_glue absorbs the base constant into the glue constant;
+    rebal_glue_to_L lifts a glue_K \<cdot> n^rebal_deg bound to rebal_L n m.\<close>
+lemma tbpow_helper:
+  assumes "1 \<le> n"
+  shows "poly rebal_tb n \<le> poly rebal_tb 1 * n ^ rebal_deg"
+proof -
+  have "poly rebal_tb n \<le> poly rebal_tb 1 * n ^ (degree rebal_tb)"
+    by (rule poly_le_poly1_pow[OF assms])
+  also have "\<dots> \<le> poly rebal_tb 1 * n ^ rebal_deg"
+    using rebal_deg_ge_tb assms by (intro mult_le_mono2 power_increasing) auto
+  finally show ?thesis .
+qed
+
+lemma rebal_base_to_glue: "rebal_base_K \<le> rebal_glue_K"
+proof -
+  have "rebal_base_K = rebal_base_K * 1" by simp
+  also have "\<dots> \<le> rebal_base_K * (10 * poly rebal_tb 1 + 1)"
+    by (intro mult_le_mono2) simp
+  also have "\<dots> \<le> rebal_glue_K" unfolding rebal_glue_K_def by simp
+  finally show ?thesis .
+qed
+
+lemma rebal_glue_to_L:
+  assumes "1 \<le> n"
+  shows "rebal_glue_K * n ^ rebal_deg \<le> rebal_L n m"
+proof -
+  have "rebal_glue_K = 1 * rebal_glue_K" by simp
+  also have "\<dots> \<le> (2 * (2 * rebal_kk + 2) ^ rebal_deg) * rebal_glue_K"
+    by (intro mult_le_mono1) simp
+  also have "\<dots> = rebal_A" unfolding rebal_A_def by (simp add: mult.assoc)
+  finally have gA: "rebal_glue_K \<le> rebal_A" .
+  have "rebal_glue_K * n ^ rebal_deg \<le> rebal_A * n ^ rebal_deg"
+    using gA by (rule mult_le_mono1)
+  also have "\<dots> \<le> rebal_L n m" unfolding rebal_L_def by simp
+  finally show ?thesis .
+qed
+
 lemma rebal_L_dom:
   assumes Kle: "K \<le> rebal_base_K" and n1: "1 \<le> n"
   shows "K * poly rebal_tb n \<le> rebal_L n m"
 proof -
-  have tbpow: "poly rebal_tb n \<le> poly rebal_tb 1 * n ^ rebal_deg"
-  proof -
-    have "poly rebal_tb n \<le> poly rebal_tb 1 * n ^ (degree rebal_tb)"
-      by (rule poly_le_poly1_pow[OF n1])
-    also have "\<dots> \<le> poly rebal_tb 1 * n ^ rebal_deg"
-      using rebal_deg_ge_tb n1 by (intro mult_le_mono2 power_increasing) auto
-    finally show ?thesis .
-  qed
-  have glueK: "rebal_base_K * poly rebal_tb 1 \<le> rebal_glue_K"
+  have "K * poly rebal_tb n \<le> rebal_base_K * poly rebal_tb n"
+    using Kle by (rule mult_le_mono1)
+  also have "\<dots> \<le> rebal_base_K * (poly rebal_tb 1 * n ^ rebal_deg)"
+    using tbpow_helper[OF n1] by (rule mult_le_mono2)
+  also have "\<dots> = (rebal_base_K * poly rebal_tb 1) * n ^ rebal_deg"
+    by (simp add: mult.assoc)
+  also have "\<dots> \<le> rebal_glue_K * n ^ rebal_deg"
   proof -
     have "rebal_base_K * poly rebal_tb 1
           \<le> rebal_base_K * (10 * poly rebal_tb 1 + 1)"
       by (intro mult_le_mono2) simp
     also have "\<dots> \<le> rebal_glue_K" unfolding rebal_glue_K_def by simp
-    finally show ?thesis .
+    finally show ?thesis by (rule mult_le_mono1)
   qed
-  have glueA: "rebal_glue_K \<le> rebal_A"
-  proof -
-    have "rebal_glue_K = 1 * rebal_glue_K" by simp
-    also have "\<dots> \<le> (2 * (2 * rebal_kk + 2) ^ rebal_deg) * rebal_glue_K"
-      by (intro mult_le_mono1) simp
-    also have "\<dots> = rebal_A" unfolding rebal_A_def by (simp add: mult.assoc)
-    finally show ?thesis .
-  qed
-  have "K * poly rebal_tb n \<le> rebal_base_K * poly rebal_tb n"
-    using Kle by (rule mult_le_mono1)
-  also have "\<dots> \<le> rebal_base_K * (poly rebal_tb 1 * n ^ rebal_deg)"
-    using tbpow by (rule mult_le_mono2)
-  also have "\<dots> = (rebal_base_K * poly rebal_tb 1) * n ^ rebal_deg"
-    by (simp add: mult.assoc)
-  also have "\<dots> \<le> rebal_glue_K * n ^ rebal_deg"
-    using glueK by (rule mult_le_mono1)
-  also have "\<dots> \<le> rebal_A * n ^ rebal_deg"
-    using glueA by (rule mult_le_mono1)
-  also have "\<dots> \<le> rebal_L n m" unfolding rebal_L_def by simp
+  also have "\<dots> \<le> rebal_L n m" by (rule rebal_glue_to_L[OF n1])
   finally show ?thesis .
 qed
 
-\<comment> \<open>The constant-only version of rebal_L_dom (no poly rebal_tb factor):
-    any K \<le> rebal_base_K is itself bounded by rebal_L n m for n \<ge> 1.\<close>
+\<comment> \<open>Constant-only version: any K \<le> rebal_base_K fits in rebal_L for n \<ge> 1.\<close>
 lemma rebal_L_dom_const:
   assumes Kle: "K \<le> rebal_base_K" and n1: "1 \<le> n"
   shows "K \<le> rebal_L n m"
 proof -
-  have step1: "rebal_base_K \<le> rebal_glue_K"
+  have "K \<le> rebal_glue_K * n ^ rebal_deg"
   proof -
-    have "rebal_base_K = rebal_base_K * 1" by simp
-    also have "\<dots> \<le> rebal_base_K * (10 * poly rebal_tb 1 + 1)"
-      by (intro mult_le_mono2) simp
-    also have "\<dots> \<le> rebal_glue_K" unfolding rebal_glue_K_def by simp
-    finally show ?thesis .
-  qed
-  have step2: "rebal_glue_K \<le> rebal_A"
-  proof -
-    have "rebal_glue_K = 1 * rebal_glue_K" by simp
-    also have "\<dots> \<le> (2 * (2 * rebal_kk + 2) ^ rebal_deg) * rebal_glue_K"
-      by (intro mult_le_mono1) simp
-    also have "\<dots> = rebal_A" unfolding rebal_A_def by (simp add: mult.assoc)
-    finally show ?thesis .
-  qed
-  have step3: "rebal_A \<le> rebal_A * n ^ rebal_deg"
-  proof -
-    have "rebal_A = rebal_A * 1" by simp
-    also have "\<dots> \<le> rebal_A * n ^ rebal_deg"
+    have "K \<le> rebal_glue_K" using Kle rebal_base_to_glue by linarith
+    also have "\<dots> = rebal_glue_K * 1" by simp
+    also have "\<dots> \<le> rebal_glue_K * n ^ rebal_deg"
       by (intro mult_le_mono2) (rule one_le_power[OF n1])
     finally show ?thesis .
   qed
-  have step4: "rebal_A * n ^ rebal_deg \<le> rebal_L n m"
-    unfolding rebal_L_def by simp
-  from Kle step1 step2 step3 step4 show ?thesis by linarith
+  also have "\<dots> \<le> rebal_L n m" by (rule rebal_glue_to_L[OF n1])
+  finally show ?thesis .
 qed
 
 \<comment> \<open>The spira node Q satisfies |Q| \<le> rebal_cn |P|: directly from spiras_sel_ratio
@@ -8403,15 +7992,7 @@ lemma rebal_glue_const_bound:
   assumes Kle: "K \<le> rebal_base_K" and n1: "1 \<le> n"
   shows "K \<le> rebal_glue_K * n ^ rebal_deg"
 proof -
-  have step1: "K \<le> rebal_base_K" by (rule Kle)
-  also have "rebal_base_K \<le> rebal_glue_K"
-  proof -
-    have "rebal_base_K = rebal_base_K * 1" by simp
-    also have "\<dots> \<le> rebal_base_K * (10 * poly rebal_tb 1 + 1)"
-      by (intro mult_le_mono2) simp
-    also have "\<dots> \<le> rebal_glue_K" unfolding rebal_glue_K_def by simp
-    finally show ?thesis .
-  qed
+  have "K \<le> rebal_glue_K" using Kle rebal_base_to_glue by linarith
   also have "\<dots> = rebal_glue_K * 1" by simp
   also have "\<dots> \<le> rebal_glue_K * n ^ rebal_deg"
     by (intro mult_le_mono2) (rule one_le_power[OF n1])
@@ -8428,13 +8009,7 @@ lemma rebal_glue_poly_bound:
     shows "K * (S + 1) \<le> rebal_glue_K * n ^ rebal_deg"
 proof -
   have tbpow: "poly rebal_tb n \<le> poly rebal_tb 1 * n ^ rebal_deg"
-  proof -
-    have "poly rebal_tb n \<le> poly rebal_tb 1 * n ^ (degree rebal_tb)"
-      by (rule poly_le_poly1_pow[OF n1])
-    also have "\<dots> \<le> poly rebal_tb 1 * n ^ rebal_deg"
-      using rebal_deg_ge_tb n1 by (intro mult_le_mono2 power_increasing) auto
-    finally show ?thesis .
-  qed
+    by (rule tbpow_helper[OF n1])
   have npow_ge1: "1 \<le> n ^ rebal_deg" by (rule one_le_power[OF n1])
   have "K * (S + 1) = K * S + K" by (simp add: algebra_simps)
   also have "\<dots> \<le> K * (10 * poly rebal_tb n) + K"
