@@ -2159,7 +2159,7 @@ proof -
 qed
 
 definition spira_threshold :: nat where
-  "spira_threshold = 2 * Max ((arity (alphabet F)) ` (UNIV :: 'c set)) + 2"
+  "spira_threshold = 4 * max (Max ((arity (alphabet F)) ` (UNIV :: 'c set))) 2 + 4"
 
 definition spiras_sel :: "'c formula \<Rightarrow> 'c formula" where
   "spiras_sel p = (
@@ -3701,7 +3701,7 @@ proof -
       have A_eq: "A = ?k + 1" using A_def True by simp
       have B_eq: "B = ?k" using B_def True by simp
       have C_eq: "C = 2 * ?k + 1" using C_def True by simp
-      have T_eq: "T = 2 * ?k + 2" using T_def spira_threshold_def by simp
+      have T_eq: "T = 4 * ?k + 4" using T_def spira_threshold_def True by simp
       show ?thesis unfolding A_eq B_eq C_eq T_eq by (simp add: algebra_simps)
     next
       case False
@@ -3709,7 +3709,7 @@ proof -
       have A_eq: "A = 3" using A_def False by simp
       have B_eq: "B = 2" using B_def False by simp
       have C_eq: "C = 3" using C_def False by simp
-      have T_eq: "T = 4" using T_def spira_threshold_def keq by simp
+      have T_eq: "T = 12" using T_def spira_threshold_def keq by simp
       show ?thesis unfolding A_eq B_eq C_eq T_eq by simp
     qed
 
