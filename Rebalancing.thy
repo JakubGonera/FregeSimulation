@@ -159,6 +159,33 @@ definition avoid_atoms :: "string set" where
 lemma avoid_atoms_finite: "finite avoid_atoms"
   unfolding avoid_atoms_def by (simp add: var_set_form_finite)
 
+\<comment> \<open>A substitution that is the identity outside an avoid-disjoint atom set fixes
+    every variable of conn_iff (resp. custom_balancing) other than a,b (resp.
+    x,y,z) --- the recurring substitution-hygiene obligation discharged at every
+    fixed-proof lift site.\<close>
+lemma fresh_sub_conn:
+  assumes disj: "set atoms \<inter> avoid_atoms = {}"
+      and sid: "\<forall>v. v \<notin> set atoms \<longrightarrow> sub v = Atom v"
+      and "w \<in> var_set_form conn_iff" and "w \<noteq> ''a''" and "w \<noteq> ''b''"
+    shows "sub w = Atom w"
+proof -
+  have "w \<in> avoid_atoms" using assms(3) unfolding avoid_atoms_def by blast
+  hence "w \<notin> set atoms" using disj by blast
+  thus ?thesis using sid by blast
+qed
+
+lemma fresh_sub_cb:
+  assumes disj: "set atoms \<inter> avoid_atoms = {}"
+      and sid: "\<forall>v. v \<notin> set atoms \<longrightarrow> sub v = Atom v"
+      and "v \<in> var_set_form custom_balancing"
+          "v \<noteq> ''x''" "v \<noteq> ''y''" "v \<noteq> ''z''"
+    shows "sub v = Atom v"
+proof -
+  have "v \<in> avoid_atoms" using assms(3) unfolding avoid_atoms_def by blast
+  hence "v \<notin> set atoms" using disj by blast
+  thus ?thesis using sid by blast
+qed
+
 definition fresh_atoms :: "nat \<Rightarrow> string list" where
   "fresh_atoms n =
      (SOME vs. length vs = n \<and> distinct vs \<and> set vs \<inter> avoid_atoms = {})"
@@ -923,25 +950,8 @@ proof -
   qed
   have sub_id: "\<forall>v. v \<notin> set cong_atoms \<longrightarrow> ?csub v = Atom v"
     using csub_off by blast
-  have csub_conn: "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
-                        \<Longrightarrow> ?csub w = Atom w"
-  proof -
-    fix w assume "w \<in> var_set_form conn_iff" and "w \<noteq> ''a''" and "w \<noteq> ''b''"
-    have "w \<in> avoid_atoms"
-      using \<open>w \<in> var_set_form conn_iff\<close> unfolding avoid_atoms_def by blast
-    hence "w \<notin> set cong_atoms" using cong_disj by blast
-    thus "?csub w = Atom w" by (rule csub_off)
-  qed
-  have csub_cb: "\<And>v. v \<in> var_set_form custom_balancing \<Longrightarrow> v \<noteq> ''x''
-                      \<Longrightarrow> v \<noteq> ''y'' \<Longrightarrow> v \<noteq> ''z'' \<Longrightarrow> ?csub v = Atom v"
-  proof -
-    fix v assume "v \<in> var_set_form custom_balancing"
-      and "v \<noteq> ''x''" and "v \<noteq> ''y''" and "v \<noteq> ''z''"
-    have "v \<in> avoid_atoms"
-      using \<open>v \<in> var_set_form custom_balancing\<close> unfolding avoid_atoms_def by blast
-    hence "v \<notin> set cong_atoms" using cong_disj by blast
-    thus "?csub v = Atom v" by (rule csub_off)
-  qed
+  note csub_conn = fresh_sub_conn[OF cong_disj sub_id]
+  note csub_cb = fresh_sub_cb[OF cong_disj sub_id]
   have csub_in_vals: "\<And>v. v \<in> set cong_atoms \<Longrightarrow> ?csub v \<in> set ?vals"
   proof -
     fix v assume "v \<in> set cong_atoms"
@@ -1871,6 +1881,96 @@ proof -
 qed
 
 (*
+  Budget lemmas shared by the three case constructions. Each construction
+  defines opaque budgets cb/dcb, LS/DS and the two-step ladders NN1/NN,
+  SDB1/SDB; these lemmas carry the definitional equations as hypotheses so a
+  construction re-binds them via [OF cbdef NN1def] etc. A balance of three
+  LS-bounded (resp. NN1-/DS-/SDB1-bounded) formulas fits the next budget.
+*)
+lemma balance_len_below:
+  assumes cbdef: "cb = len_formula custom_balancing"
+      and NN1def: "NN1 = cb * (3 * LS + 1)"
+      and "len_formula A \<le> LS" and "len_formula B \<le> LS" and "len_formula C \<le> LS"
+    shows "len_formula (balance A B C) \<le> NN1"
+proof -
+  have "len_formula (balance A B C)
+        \<le> cb * (len_formula A + len_formula B + len_formula C + 1)"
+    unfolding cbdef by (rule len_balance_le)
+  also have "\<dots> \<le> cb * (3 * LS + 1)"
+    using assms(3,4,5) by (intro mult_le_mono2) simp
+  finally show ?thesis unfolding NN1def .
+qed
+
+lemma balance_len_below_step:
+  assumes cbdef: "cb = len_formula custom_balancing"
+      and NNdef: "NN = cb * (3 * NN1 + 1)"
+      and "len_formula A \<le> NN1" and "len_formula B \<le> NN1" and "len_formula C \<le> NN1"
+    shows "len_formula (balance A B C) \<le> NN"
+proof -
+  have "len_formula (balance A B C)
+        \<le> cb * (len_formula A + len_formula B + len_formula C + 1)"
+    unfolding cbdef by (rule len_balance_le)
+  also have "\<dots> \<le> cb * (3 * NN1 + 1)"
+    using assms(3,4,5) by (intro mult_le_mono2) simp
+  finally show ?thesis unfolding NNdef .
+qed
+
+lemma balance_depth_below:
+  assumes dcbdef: "dcb = depth_formula custom_balancing"
+      and SDB1def: "SDB1 = dcb + 3 * DS + 1"
+      and "depth_formula A \<le> DS" and "depth_formula B \<le> DS" and "depth_formula C \<le> DS"
+    shows "depth_formula (balance A B C) \<le> SDB1"
+proof -
+  have "depth_formula (balance A B C)
+        \<le> dcb + (depth_formula A + depth_formula B + depth_formula C + 1)"
+    unfolding dcbdef by (rule depth_balance_le)
+  also have "\<dots> \<le> dcb + (3 * DS + 1)" using assms(3,4,5) by simp
+  finally show ?thesis unfolding SDB1def by simp
+qed
+
+lemma balance_depth_below_step:
+  assumes dcbdef: "dcb = depth_formula custom_balancing"
+      and SDBdef: "SDB = dcb + 3 * SDB1 + 1"
+      and "depth_formula A \<le> SDB1" and "depth_formula B \<le> SDB1"
+          "depth_formula C \<le> SDB1"
+    shows "depth_formula (balance A B C) \<le> SDB"
+proof -
+  have "depth_formula (balance A B C)
+        \<le> dcb + (depth_formula A + depth_formula B + depth_formula C + 1)"
+    unfolding dcbdef by (rule depth_balance_le)
+  also have "\<dots> \<le> dcb + (3 * SDB1 + 1)" using assms(3,4,5) by simp
+  finally show ?thesis unfolding SDBdef by simp
+qed
+
+lemma NN1_linear:
+  fixes cb LS :: nat
+  assumes NN1def: "NN1 = cb * (3 * LS + 1)"
+  shows "NN1 \<le> 3 * cb * (LS + 1)"
+proof -
+  have "NN1 = cb * (3 * LS + 1)" unfolding NN1def by simp
+  also have "\<dots> \<le> cb * (3 * (LS + 1))" by (intro mult_le_mono2) simp
+  also have "\<dots> = 3 * cb * (LS + 1)" by (simp add: algebra_simps)
+  finally show ?thesis .
+qed
+
+lemma NN_linear:
+  fixes cb LS :: nat
+  assumes cb1: "(1::nat) \<le> cb"
+      and NN1def: "NN1 = cb * (3 * LS + 1)"
+      and NNdef: "NN = cb * (3 * NN1 + 1)"
+  shows "NN \<le> 12 * (cb * cb) * (LS + 1)"
+proof -
+  have NN1_1: "1 \<le> NN1" unfolding NN1def using cb1 by simp
+  have "NN = cb * (3 * NN1 + 1)" unfolding NNdef by simp
+  also have "\<dots> \<le> cb * (4 * NN1)" using NN1_1 by (intro mult_le_mono2) simp
+  also have "\<dots> = 4 * cb * NN1" by (simp add: algebra_simps)
+  also have "\<dots> \<le> 4 * cb * (3 * cb * (LS + 1))"
+    using NN1_linear[OF NN1def] by (rule mult_le_mono2)
+  also have "\<dots> = 12 * (cb * cb) * (LS + 1)" by (simp add: algebra_simps)
+  finally show ?thesis .
+qed
+
+(*
   Bounded combinators. iff_sym / balance_cong / iff_trans state their per-line
   size as a sum of step costs and their depth as a max; for the L(n,m) recurrence
   the constructions need a composable bound in which every glued formula's
@@ -2109,22 +2209,8 @@ proof -
   qed
   have sig_id: "\<forall>v. v \<notin> set reassoc_atoms \<longrightarrow> ?sigma v = Atom v"
     using sig_off by blast
-  have sig_conn: "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
-                       \<Longrightarrow> ?sigma w = Atom w"
-  proof -
-    fix w assume "w \<in> var_set_form conn_iff"
-    hence "w \<in> avoid_atoms" unfolding avoid_atoms_def by blast
-    hence "w \<notin> set reassoc_atoms" using ra_disj by blast
-    thus "?sigma w = Atom w" by (rule sig_off)
-  qed
-  have sig_cb: "\<And>v. v \<in> var_set_form custom_balancing \<Longrightarrow> v \<noteq> ''x''
-                     \<Longrightarrow> v \<noteq> ''y'' \<Longrightarrow> v \<noteq> ''z'' \<Longrightarrow> ?sigma v = Atom v"
-  proof -
-    fix v assume "v \<in> var_set_form custom_balancing"
-    hence "v \<in> avoid_atoms" unfolding avoid_atoms_def by blast
-    hence "v \<notin> set reassoc_atoms" using ra_disj by blast
-    thus "?sigma v = Atom v" by (rule sig_off)
-  qed
+  note sig_conn = fresh_sub_conn[OF ra_disj sig_id]
+  note sig_cb = fresh_sub_cb[OF ra_disj sig_id]
 
   \<comment> \<open>The reassociation tautology, substituted to the actual subformulas.\<close>
   have subL: "sub_formula ?sigma reassoc_lhs
@@ -2246,49 +2332,10 @@ proof -
 
   \<comment> \<open>A balance of three LS-bounded formulas is NN1-bounded; of three
       NN1-bounded formulas, NN-bounded.  Depth: SDB1 / SDB.\<close>
-  have balNN1: "len_formula (balance A B C) \<le> NN1"
-    if "len_formula A \<le> LS" "len_formula B \<le> LS" "len_formula C \<le> LS"
-    for A B C
-  proof -
-    have "len_formula (balance A B C)
-          \<le> cb * (len_formula A + len_formula B + len_formula C + 1)"
-      unfolding cbdef by (rule len_balance_le)
-    also have "\<dots> \<le> cb * (3 * LS + 1)"
-      using that by (intro mult_le_mono2) simp
-    finally show ?thesis unfolding NN1def .
-  qed
-  have balNN: "len_formula (balance A B C) \<le> NN"
-    if "len_formula A \<le> NN1" "len_formula B \<le> NN1" "len_formula C \<le> NN1"
-    for A B C
-  proof -
-    have "len_formula (balance A B C)
-          \<le> cb * (len_formula A + len_formula B + len_formula C + 1)"
-      unfolding cbdef by (rule len_balance_le)
-    also have "\<dots> \<le> cb * (3 * NN1 + 1)"
-      using that by (intro mult_le_mono2) simp
-    finally show ?thesis unfolding NNdef .
-  qed
-  have dbalSDB1: "depth_formula (balance A B C) \<le> SDB1"
-    if "depth_formula A \<le> DS" "depth_formula B \<le> DS" "depth_formula C \<le> DS"
-    for A B C
-  proof -
-    have "depth_formula (balance A B C)
-          \<le> dcb + (depth_formula A + depth_formula B + depth_formula C + 1)"
-      unfolding dcbdef by (rule depth_balance_le)
-    also have "\<dots> \<le> dcb + (3 * DS + 1)" using that by simp
-    finally show ?thesis unfolding SDB1def by simp
-  qed
-  have dbalSDB: "depth_formula (balance A B C) \<le> SDB"
-    if "depth_formula A \<le> SDB1" "depth_formula B \<le> SDB1"
-       "depth_formula C \<le> SDB1"
-    for A B C
-  proof -
-    have "depth_formula (balance A B C)
-          \<le> dcb + (depth_formula A + depth_formula B + depth_formula C + 1)"
-      unfolding dcbdef by (rule depth_balance_le)
-    also have "\<dots> \<le> dcb + (3 * SDB1 + 1)" using that by simp
-    finally show ?thesis unfolding SDBdef by simp
-  qed
+  note balNN1 = balance_len_below[OF cbdef NN1def]
+  note balNN = balance_len_below_step[OF cbdef NNdef]
+  note dbalSDB1 = balance_depth_below[OF dcbdef SDB1def]
+  note dbalSDB = balance_depth_below_step[OF dcbdef SDBdef]
 
   have LS1: "1 \<le> LS" unfolding LSdef using len_formula_positive[of ?XT] by simp
 
@@ -2518,25 +2565,8 @@ proof -
   note chain = iff_trans_bnd[OF inner step3 dpB lpB ppB]
 
   \<comment> \<open>The glue size sums to at most rebal_glue_coeff * (LS + 1).\<close>
-  have NN1_lin: "NN1 \<le> 3 * cb * (LS + 1)"
-  proof -
-    have "NN1 = cb * (3 * LS + 1)" unfolding NN1def by simp
-    also have "\<dots> \<le> cb * (3 * (LS + 1))" by (intro mult_le_mono2) simp
-    also have "\<dots> = 3 * cb * (LS + 1)" by (simp add: algebra_simps)
-    finally show ?thesis .
-  qed
-  have NN1_1: "1 \<le> NN1" unfolding NN1def using cb1 by simp
-  have NN_lin: "NN \<le> 12 * (cb * cb) * (LS + 1)"
-  proof -
-    have "NN = cb * (3 * NN1 + 1)" unfolding NNdef by simp
-    also have "\<dots> \<le> cb * (4 * NN1)" using NN1_1 by (intro mult_le_mono2) simp
-    also have "\<dots> = 4 * cb * NN1" by (simp add: algebra_simps)
-    also have "\<dots> \<le> 4 * cb * (3 * cb * (LS + 1))"
-      using NN1_lin by (rule mult_le_mono2)
-    also have "\<dots> = 12 * (cb * cb) * (LS + 1)" by (simp add: algebra_simps)
-    finally show ?thesis .
-  qed
-  have cbsq: "cb \<le> cb * cb" using mult_le_mono2[OF cb1, of cb] by simp
+  note NN1_lin = NN1_linear[OF NN1def]
+  note NN_lin = NN_linear[OF cb1 NN1def NNdef]
   have cgc: "(3 * refl_step_len + 72 * balance_cong_step_len
               + 5 * case_one_step_len + 4 * sym_step_len + 6 * trans_step_len)
              * (12 * (cb * cb)) \<le> rebal_glue_coeff"
@@ -2840,22 +2870,8 @@ proof -
   qed
   have sig_id: "\<forall>v. v \<notin> set reassoc_atoms \<longrightarrow> ?sigma v = Atom v"
     using sig_off by blast
-  have sig_conn: "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
-                       \<Longrightarrow> ?sigma w = Atom w"
-  proof -
-    fix w assume "w \<in> var_set_form conn_iff"
-    hence "w \<in> avoid_atoms" unfolding avoid_atoms_def by blast
-    hence "w \<notin> set reassoc_atoms" using ra_disj by blast
-    thus "?sigma w = Atom w" by (rule sig_off)
-  qed
-  have sig_cb: "\<And>v. v \<in> var_set_form custom_balancing \<Longrightarrow> v \<noteq> ''x''
-                     \<Longrightarrow> v \<noteq> ''y'' \<Longrightarrow> v \<noteq> ''z'' \<Longrightarrow> ?sigma v = Atom v"
-  proof -
-    fix v assume "v \<in> var_set_form custom_balancing"
-    hence "v \<in> avoid_atoms" unfolding avoid_atoms_def by blast
-    hence "v \<notin> set reassoc_atoms" using ra_disj by blast
-    thus "?sigma v = Atom v" by (rule sig_off)
-  qed
+  note sig_conn = fresh_sub_conn[OF ra_disj sig_id]
+  note sig_cb = fresh_sub_cb[OF ra_disj sig_id]
 
   \<comment> \<open>The reassociation tautology, substituted to the actual subformulas.\<close>
   have subR: "sub_formula ?sigma reassoc_rhs
@@ -2968,49 +2984,10 @@ proof -
     by (simp add: add.commute trans_le_add2 mult.commute)
   have LS_NN: "LS \<le> NN" using LS_NN1 NN1_NN by simp
 
-  have balNN1: "len_formula (balance A B C) \<le> NN1"
-    if "len_formula A \<le> LS" "len_formula B \<le> LS" "len_formula C \<le> LS"
-    for A B C
-  proof -
-    have "len_formula (balance A B C)
-          \<le> cb * (len_formula A + len_formula B + len_formula C + 1)"
-      unfolding cbdef by (rule len_balance_le)
-    also have "\<dots> \<le> cb * (3 * LS + 1)"
-      using that by (intro mult_le_mono2) simp
-    finally show ?thesis unfolding NN1def .
-  qed
-  have balNN: "len_formula (balance A B C) \<le> NN"
-    if "len_formula A \<le> NN1" "len_formula B \<le> NN1" "len_formula C \<le> NN1"
-    for A B C
-  proof -
-    have "len_formula (balance A B C)
-          \<le> cb * (len_formula A + len_formula B + len_formula C + 1)"
-      unfolding cbdef by (rule len_balance_le)
-    also have "\<dots> \<le> cb * (3 * NN1 + 1)"
-      using that by (intro mult_le_mono2) simp
-    finally show ?thesis unfolding NNdef .
-  qed
-  have dbalSDB1: "depth_formula (balance A B C) \<le> SDB1"
-    if "depth_formula A \<le> DS" "depth_formula B \<le> DS" "depth_formula C \<le> DS"
-    for A B C
-  proof -
-    have "depth_formula (balance A B C)
-          \<le> dcb + (depth_formula A + depth_formula B + depth_formula C + 1)"
-      unfolding dcbdef by (rule depth_balance_le)
-    also have "\<dots> \<le> dcb + (3 * DS + 1)" using that by simp
-    finally show ?thesis unfolding SDB1def by simp
-  qed
-  have dbalSDB: "depth_formula (balance A B C) \<le> SDB"
-    if "depth_formula A \<le> SDB1" "depth_formula B \<le> SDB1"
-       "depth_formula C \<le> SDB1"
-    for A B C
-  proof -
-    have "depth_formula (balance A B C)
-          \<le> dcb + (depth_formula A + depth_formula B + depth_formula C + 1)"
-      unfolding dcbdef by (rule depth_balance_le)
-    also have "\<dots> \<le> dcb + (3 * SDB1 + 1)" using that by simp
-    finally show ?thesis unfolding SDBdef by simp
-  qed
+  note balNN1 = balance_len_below[OF cbdef NN1def]
+  note balNN = balance_len_below_step[OF cbdef NNdef]
+  note dbalSDB1 = balance_depth_below[OF dcbdef SDB1def]
+  note dbalSDB = balance_depth_below_step[OF dcbdef SDBdef]
   have LS1: "1 \<le> LS" unfolding LSdef using len_formula_positive[of ?QT] by simp
   have SDB1_SDB: "SDB1 \<le> SDB" unfolding SDBdef by simp
   have DS_SDB1: "DS \<le> SDB1" unfolding SDB1def by simp
@@ -3239,24 +3216,8 @@ proof -
   note chain = iff_trans_bnd[OF inner step3 dpBC lpBC ppBC]
 
   \<comment> \<open>The glue size sums to at most rebal_glue_coeff * (LS + 1).\<close>
-  have NN1_lin: "NN1 \<le> 3 * cb * (LS + 1)"
-  proof -
-    have "NN1 = cb * (3 * LS + 1)" unfolding NN1def by simp
-    also have "\<dots> \<le> cb * (3 * (LS + 1))" by (intro mult_le_mono2) simp
-    also have "\<dots> = 3 * cb * (LS + 1)" by (simp add: algebra_simps)
-    finally show ?thesis .
-  qed
-  have NN1_1: "1 \<le> NN1" unfolding NN1def using cb1 by simp
-  have NN_lin: "NN \<le> 12 * (cb * cb) * (LS + 1)"
-  proof -
-    have "NN = cb * (3 * NN1 + 1)" unfolding NNdef by simp
-    also have "\<dots> \<le> cb * (4 * NN1)" using NN1_1 by (intro mult_le_mono2) simp
-    also have "\<dots> = 4 * cb * NN1" by (simp add: algebra_simps)
-    also have "\<dots> \<le> 4 * cb * (3 * cb * (LS + 1))"
-      using NN1_lin by (rule mult_le_mono2)
-    also have "\<dots> = 12 * (cb * cb) * (LS + 1)" by (simp add: algebra_simps)
-    finally show ?thesis .
-  qed
+  note NN1_lin = NN1_linear[OF NN1def]
+  note NN_lin = NN_linear[OF cb1 NN1def NNdef]
   have cgc: "(3 * refl_step_len + 72 * balance_cong_step_len
               + 5 * case_one_step_len + 4 * sym_step_len + 6 * trans_step_len)
              * (12 * (cb * cb)) \<le> rebal_glue_coeff"
@@ -3700,22 +3661,8 @@ proof -
   qed
   have sig_id: "\<forall>v. v \<notin> set cong_atoms \<longrightarrow> ?sigma v = Atom v"
     using sig_off by blast
-  have sig_conn: "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
-                       \<Longrightarrow> ?sigma w = Atom w"
-  proof -
-    fix w assume "w \<in> var_set_form conn_iff"
-    hence "w \<in> avoid_atoms" unfolding avoid_atoms_def by blast
-    hence "w \<notin> set cong_atoms" using ca_disj by blast
-    thus "?sigma w = Atom w" by (rule sig_off)
-  qed
-  have sig_cb: "\<And>v. v \<in> var_set_form custom_balancing \<Longrightarrow> v \<noteq> ''x''
-                     \<Longrightarrow> v \<noteq> ''y'' \<Longrightarrow> v \<noteq> ''z'' \<Longrightarrow> ?sigma v = Atom v"
-  proof -
-    fix v assume "v \<in> var_set_form custom_balancing"
-    hence "v \<in> avoid_atoms" unfolding avoid_atoms_def by blast
-    hence "v \<notin> set cong_atoms" using ca_disj by blast
-    thus "?sigma v = Atom v" by (rule sig_off)
-  qed
+  note sig_conn = fresh_sub_conn[OF ca_disj sig_id]
+  note sig_cb = fresh_sub_cb[OF ca_disj sig_id]
 
   \<comment> \<open>The selector-commutation tautology, substituted to the subformulas.\<close>
   have subL: "sub_formula ?sigma case_three_lhs
@@ -3858,49 +3805,10 @@ proof -
     by (simp add: add.commute trans_le_add2 mult.commute)
   have LS_NN: "LS \<le> NN" using LS_NN1 NN1_NN by simp
 
-  have balNN1: "len_formula (balance A B C) \<le> NN1"
-    if "len_formula A \<le> LS" "len_formula B \<le> LS" "len_formula C \<le> LS"
-    for A B C
-  proof -
-    have "len_formula (balance A B C)
-          \<le> cb * (len_formula A + len_formula B + len_formula C + 1)"
-      unfolding cbdef by (rule len_balance_le)
-    also have "\<dots> \<le> cb * (3 * LS + 1)"
-      using that by (intro mult_le_mono2) simp
-    finally show ?thesis unfolding NN1def .
-  qed
-  have balNN: "len_formula (balance A B C) \<le> NN"
-    if "len_formula A \<le> NN1" "len_formula B \<le> NN1" "len_formula C \<le> NN1"
-    for A B C
-  proof -
-    have "len_formula (balance A B C)
-          \<le> cb * (len_formula A + len_formula B + len_formula C + 1)"
-      unfolding cbdef by (rule len_balance_le)
-    also have "\<dots> \<le> cb * (3 * NN1 + 1)"
-      using that by (intro mult_le_mono2) simp
-    finally show ?thesis unfolding NNdef .
-  qed
-  have dbalSDB1: "depth_formula (balance A B C) \<le> SDB1"
-    if "depth_formula A \<le> DS" "depth_formula B \<le> DS" "depth_formula C \<le> DS"
-    for A B C
-  proof -
-    have "depth_formula (balance A B C)
-          \<le> dcb + (depth_formula A + depth_formula B + depth_formula C + 1)"
-      unfolding dcbdef by (rule depth_balance_le)
-    also have "\<dots> \<le> dcb + (3 * DS + 1)" using that by simp
-    finally show ?thesis unfolding SDB1def by simp
-  qed
-  have dbalSDB: "depth_formula (balance A B C) \<le> SDB"
-    if "depth_formula A \<le> SDB1" "depth_formula B \<le> SDB1"
-       "depth_formula C \<le> SDB1"
-    for A B C
-  proof -
-    have "depth_formula (balance A B C)
-          \<le> dcb + (depth_formula A + depth_formula B + depth_formula C + 1)"
-      unfolding dcbdef by (rule depth_balance_le)
-    also have "\<dots> \<le> dcb + (3 * SDB1 + 1)" using that by simp
-    finally show ?thesis unfolding SDBdef by simp
-  qed
+  note balNN1 = balance_len_below[OF cbdef NN1def]
+  note balNN = balance_len_below_step[OF cbdef NNdef]
+  note dbalSDB1 = balance_depth_below[OF dcbdef SDB1def]
+  note dbalSDB = balance_depth_below_step[OF dcbdef SDBdef]
   have LS1: "1 \<le> LS" unfolding LSdef using len_formula_positive[of ?QT] by simp
   have SDB1_SDB: "SDB1 \<le> SDB" unfolding SDBdef by simp
   have DS_SDB1: "DS \<le> SDB1" unfolding SDB1def by simp
@@ -4178,24 +4086,8 @@ proof -
   note chain = iff_trans_bnd[OF inner step3 dpBC lpBC ppBC]
 
   \<comment> \<open>The glue size sums to at most rebal_glue_coeff3 * (LS + 1).\<close>
-  have NN1_lin: "NN1 \<le> 3 * cb * (LS + 1)"
-  proof -
-    have "NN1 = cb * (3 * LS + 1)" unfolding NN1def by simp
-    also have "\<dots> \<le> cb * (3 * (LS + 1))" by (intro mult_le_mono2) simp
-    also have "\<dots> = 3 * cb * (LS + 1)" by (simp add: algebra_simps)
-    finally show ?thesis .
-  qed
-  have NN1_1: "1 \<le> NN1" unfolding NN1def using cb1 by simp
-  have NN_lin: "NN \<le> 12 * (cb * cb) * (LS + 1)"
-  proof -
-    have "NN = cb * (3 * NN1 + 1)" unfolding NNdef by simp
-    also have "\<dots> \<le> cb * (4 * NN1)" using NN1_1 by (intro mult_le_mono2) simp
-    also have "\<dots> = 4 * cb * NN1" by (simp add: algebra_simps)
-    also have "\<dots> \<le> 4 * cb * (3 * cb * (LS + 1))"
-      using NN1_lin by (rule mult_le_mono2)
-    also have "\<dots> = 12 * (cb * cb) * (LS + 1)" by (simp add: algebra_simps)
-    finally show ?thesis .
-  qed
+  note NN1_lin = NN1_linear[OF NN1def]
+  note NN_lin = NN_linear[OF cb1 NN1def NNdef]
   have cgc: "(2 * refl_step_len + 72 * balance_cong_step_len
               + 6 * case_three_step_len + 4 * sym_step_len + 6 * trans_step_len)
              * (12 * (cb * cb)) \<le> rebal_glue_coeff3"
@@ -5099,22 +4991,8 @@ proof -
   qed
   have finVS: "finite (set ?atoms)" by simp
   have sig_id: "\<forall>v. v \<notin> set ?atoms \<longrightarrow> ?sub v = Atom v" using sub_off by blast
-  have sig_conn: "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
-                       \<Longrightarrow> ?sub w = Atom w"
-  proof -
-    fix w assume "w \<in> var_set_form conn_iff"
-    hence "w \<in> avoid_atoms" unfolding avoid_atoms_def by blast
-    hence "w \<notin> set ?atoms" using adisj by blast
-    thus "?sub w = Atom w" by (rule sub_off)
-  qed
-  have sig_cb: "\<And>v. v \<in> var_set_form custom_balancing \<Longrightarrow> v \<noteq> ''x''
-                     \<Longrightarrow> v \<noteq> ''y'' \<Longrightarrow> v \<noteq> ''z'' \<Longrightarrow> ?sub v = Atom v"
-  proof -
-    fix v assume "v \<in> var_set_form custom_balancing"
-    hence "v \<in> avoid_atoms" unfolding avoid_atoms_def by blast
-    hence "v \<notin> set ?atoms" using adisj by blast
-    thus "?sub v = Atom v" by (rule sub_off)
-  qed
+  note sig_conn = fresh_sub_conn[OF adisj sig_id]
+  note sig_cb = fresh_sub_cb[OF adisj sig_id]
 
   note subst_pbi = provable_balanced_iff_subst[OF reassoc_conn_proof[of c i] finVS
                                                   sig_id sig_conn]
@@ -6237,6 +6115,47 @@ lemma rebal_tb_spec:
   shows "len_formula (spira_trans f) \<le> poly rebal_tb (len_formula f)"
   using someI_ex[OF trans_b] assms unfolding rebal_tb_def by blast
 
+\<comment> \<open>Leaf bounds shared by every recursive case of the main induction: the Spira
+    transform of any subformula of size \<le> N has size \<le> poly rebal_tb N, and
+    (given Spira's depth theorem tc_spec) depth \<le> max tc 1 * log 2 (N+1).\<close>
+lemma spira_trans_len_le_tb:
+  assumes "formula_well_formed (alphabet F) L" and "len_formula L \<le> N"
+  shows "len_formula (spira_trans L) \<le> poly rebal_tb N"
+proof -
+  have "len_formula (spira_trans L) \<le> poly rebal_tb (len_formula L)"
+    by (rule rebal_tb_spec[OF assms(1)])
+  also have "\<dots> \<le> poly rebal_tb N" by (rule poly_nat_mono[OF assms(2)])
+  finally show ?thesis .
+qed
+
+lemma spira_trans_dep_le:
+  assumes tc_spec: "\<forall>f. formula_well_formed (alphabet F) f
+                       \<longrightarrow> real (depth_formula (spira_trans f))
+                           \<le> tc * log 2 (real (len_formula f) + 1)"
+      and wfL: "formula_well_formed (alphabet F) L"
+      and lLN: "len_formula L \<le> N"
+    shows "real (depth_formula (spira_trans L)) \<le> max tc 1 * log 2 (real N + 1)"
+proof -
+  have l_pos: "(0::real) \<le> log 2 (real (len_formula L) + 1)"
+  proof -
+    have "(1::real) \<le> real (len_formula L) + 1"
+      using len_formula_positive[of L] by simp
+    hence "log 2 1 \<le> log 2 (real (len_formula L) + 1)" by (intro log_mono) auto
+    thus ?thesis by simp
+  qed
+  have logLN: "log 2 (real (len_formula L) + 1) \<le> log 2 (real N + 1)"
+    using lLN by (intro log_mono) auto
+  have mtc: "(0::real) \<le> max tc 1" by (simp add: le_max_iff_disj)
+  have "real (depth_formula (spira_trans L))
+      \<le> tc * log 2 (real (len_formula L) + 1)"
+    using tc_spec wfL by blast
+  also have "\<dots> \<le> max tc 1 * log 2 (real (len_formula L) + 1)"
+    using l_pos by (intro mult_right_mono) auto
+  also have "\<dots> \<le> max tc 1 * log 2 (real N + 1)"
+    using logLN mtc by (intro mult_left_mono)
+  finally show ?thesis .
+qed
+
 definition rebal_deg :: nat where
   "rebal_deg = max (10 * (2 * rebal_kk + 1)) (degree rebal_tb)"
 
@@ -6324,11 +6243,15 @@ proof (rule ccontr)
   with ge show False by simp
 qed
 
-lemma spiras_sel_ratio:
+\<comment> \<open>The two spira-node estimates share one selection predicate: the ratio
+    bound (the node is not too big) and the lower bound (the node is big enough
+    that |p| - |q| is itself contracted) are the two arithmetic conjuncts of the
+    same SOME-witness.  Prove them together and re-export the two names.\<close>
+lemma spiras_sel_pred:
   assumes wf: "formula_well_formed (alphabet F) p"
       and ge: "len_formula p \<ge> spira_threshold"
-    shows "(rebal_kk + 1) * len_formula (spiras_sel p)
-           \<le> rebal_kk * len_formula p"
+    shows "(rebal_kk + 1) * len_formula (spiras_sel p) \<le> rebal_kk * len_formula p
+           \<and> len_formula p \<le> (rebal_kk + 1) * len_formula (spiras_sel p) + rebal_kk"
 proof -
   let ?k = "Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
   have p2: "len_formula p \<ge> 2" using ge unfolding spira_threshold_def by simp
@@ -6344,8 +6267,6 @@ proof -
     have "spiras_sel p = (SOME q. ?P q)"
       unfolding spiras_sel_def using True by (simp add: Let_def)
     hence "?P (spiras_sel p)" using someI_ex[OF ex] by simp
-    hence "(?k + 1) * len_formula (spiras_sel p) \<le> ?k * len_formula p"
-      by simp
     thus ?thesis using kk_eq by simp
   next
     case False
@@ -6364,58 +6285,12 @@ proof -
     have "spiras_sel p = (SOME q. ?P q)"
       unfolding spiras_sel_def using False by (simp add: Let_def)
     hence "?P (spiras_sel p)" using someI_ex[OF ex] by simp
-    hence "3 * len_formula (spiras_sel p) \<le> 2 * len_formula p" by simp
     thus ?thesis using kk_eq by simp
   qed
 qed
 
-\<comment> \<open>The spira lower bound: the spira node is large enough that |p| - |q| is
-    itself contracted.  Same selection predicate as spiras_sel_ratio, other
-    conjunct.\<close>
-lemma spiras_sel_lower:
-  assumes wf: "formula_well_formed (alphabet F) p"
-      and ge: "len_formula p \<ge> spira_threshold"
-    shows "len_formula p
-           \<le> (rebal_kk + 1) * len_formula (spiras_sel p) + rebal_kk"
-proof -
-  let ?k = "Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
-  have p2: "len_formula p \<ge> 2" using ge unfolding spira_threshold_def by simp
-  show ?thesis
-  proof (cases "?k > 1")
-    case True
-    hence kk_eq: "rebal_kk = ?k" unfolding rebal_kk_def by simp
-    let ?P = "\<lambda>q. is_subformula q p
-              \<and> (?k + 1) * len_formula q + ?k \<ge> len_formula p
-              \<and> (?k + 1) * len_formula q \<le> ?k * len_formula p"
-    have ex: "\<exists>q. ?P q"
-      using spiras_selection_gen[OF wf p2 refl True] by blast
-    have "spiras_sel p = (SOME q. ?P q)"
-      unfolding spiras_sel_def using True by (simp add: Let_def)
-    hence "?P (spiras_sel p)" using someI_ex[OF ex] by simp
-    hence "(?k + 1) * len_formula (spiras_sel p) + ?k \<ge> len_formula p"
-      by simp
-    thus ?thesis using kk_eq by simp
-  next
-    case False
-    have k1: "?k = 1"
-    proof -
-      have "?k \<ge> 1" using max_arity_ge_1_when_wf[OF wf p2] by simp
-      moreover have "?k \<le> 1" using False by simp
-      ultimately show ?thesis by simp
-    qed
-    have kk_eq: "rebal_kk = 2" using k1 unfolding rebal_kk_def by simp
-    let ?P = "\<lambda>q. is_subformula q p
-              \<and> 3 * len_formula q \<ge> len_formula p
-              \<and> 3 * len_formula q \<le> 2 * len_formula p"
-    have ex: "\<exists>q. ?P q"
-      using spiras_selection_one[OF wf p2 k1] by blast
-    have "spiras_sel p = (SOME q. ?P q)"
-      unfolding spiras_sel_def using False by (simp add: Let_def)
-    hence "?P (spiras_sel p)" using someI_ex[OF ex] by simp
-    hence "3 * len_formula (spiras_sel p) \<ge> len_formula p" by simp
-    thus ?thesis using kk_eq by simp
-  qed
-qed
+lemmas spiras_sel_ratio = spiras_sel_pred[THEN conjunct1]
+lemmas spiras_sel_lower = spiras_sel_pred[THEN conjunct2]
 
 \<comment> \<open>The below-threshold (Shannon) bound, fixed globally as a flat constant
     (length pos \<le> spira_threshold there) so rebal_glue_K can dominate it.\<close>
@@ -6597,6 +6472,16 @@ proof -
     by (rule len_formula_positive)
   show ?thesis unfolding rebal_m_def using r1 r2 by linarith
 qed
+
+\<comment> \<open>Fit rebal_m below a bound by discharging the two max-branches: the subterm
+    size and the host-minus-subterm size.  Replaces the per-site rebal_m_def
+    max-split unfolding in the main induction's measure-fitting steps.\<close>
+lemma rebal_m_fit:
+  assumes "subterm_at A pos = R"
+      and "len_formula R \<le> bnd"
+      and "len_formula A - len_formula R + 1 \<le> bnd"
+    shows "rebal_m A pos \<le> bnd"
+  using assms unfolding rebal_m_def by simp
 
 \<comment> \<open>Every base-case constant K \<le> rebal_base_K, multiplied by poly rebal_tb n,
     sits below rebal_L n m.  This discharges the reflexivity / pos = [] / Shannon
@@ -6870,9 +6755,7 @@ proof -
              \<and> lines \<le> rebal_L (len_formula P) (rebal_m P pos)
              \<and> sz \<le> rebal_L (len_formula P) (rebal_m P pos)
              \<and> real dep \<le> c * log 2 (real (len_formula P) + 1))"
-    proof (induction "len_formula P * (len_formula P + 1)
-                      + (len_formula P - len_formula (subterm_at P pos))"
-           arbitrary: P pos rule: less_induct)
+    proof (induction "rebal_measure P pos" arbitrary: P pos rule: less_induct)
     case less
     have wfP: "formula_well_formed (alphabet F) P" using less.prems by simp
     have vpP: "valid_position P pos" using less.prems by simp
@@ -7036,8 +6919,7 @@ proof -
             using valid_position_fix_at_prefix[OF vpP[unfolded pos_eq]] pos_eq by simp
           have vpF: "valid_position (fix_at pos False P) (spiras_sel_position P)"
             using valid_position_fix_at_prefix[OF vpP[unfolded pos_eq]] pos_eq by simp
-          note meas = case_one_measure[OF wfP geST pos_eq s_ne vpP,
-                                       unfolded rebal_measure_def]
+          note meas = case_one_measure[OF wfP geST pos_eq s_ne vpP]
           obtain lQ szQ depQ where IH_Q:
               "provable_balanced_iff (spira_trans (subterm_at P (spiras_sel_position P)))
                  (rebalancing (subterm_at P (spiras_sel_position P)) s) lQ szQ depQ"
@@ -7159,61 +7041,28 @@ proof -
             using Q_eq P_minus_spira_le_cn[OF wfP geST] by simp
           have m_fix_T_le_cn: "rebal_m (fix_at pos True P) (spiras_sel_position P)
                              \<le> ?cn"
-          proof -
-            have m_eq: "rebal_m (fix_at pos True P) (spiras_sel_position P)
-                      = max (len_formula (fix_at s True ?Q))
-                            (len_formula (fix_at pos True P)
-                             - len_formula (fix_at s True ?Q) + 1)"
-              using sub_fix_eq_T unfolding rebal_m_def by simp
-            have c1: "len_formula (fix_at s True ?Q) \<le> ?cn"
+          proof (rule rebal_m_fit[OF sub_fix_eq_T])
+            show "len_formula (fix_at s True ?Q) \<le> ?cn"
               using fix_sQ_len_T R_pos R_le_Q Q_le_cn by linarith
-            have c2_eq: "len_formula (fix_at pos True P)
-                       - len_formula (fix_at s True ?Q) + 1
-                       = len_formula P - len_formula ?Q + 1"
-              using fix_at_len_T fix_sQ_len_T R_le_Q R_le_P by linarith
-            show ?thesis using m_eq c1 c2_eq c2_le_cn by simp
+            show "len_formula (fix_at pos True P)
+                  - len_formula (fix_at s True ?Q) + 1 \<le> ?cn"
+              using fix_at_len_T fix_sQ_len_T R_le_Q R_le_P c2_le_cn by linarith
           qed
           have m_fix_F_le_cn: "rebal_m (fix_at pos False P) (spiras_sel_position P)
                              \<le> ?cn"
-          proof -
-            have m_eq: "rebal_m (fix_at pos False P) (spiras_sel_position P)
-                      = max (len_formula (fix_at s False ?Q))
-                            (len_formula (fix_at pos False P)
-                             - len_formula (fix_at s False ?Q) + 1)"
-              using sub_fix_eq_F unfolding rebal_m_def by simp
-            have c1: "len_formula (fix_at s False ?Q) \<le> ?cn"
+          proof (rule rebal_m_fit[OF sub_fix_eq_F])
+            show "len_formula (fix_at s False ?Q) \<le> ?cn"
               using fix_sQ_len_F R_pos R_le_Q Q_le_cn by linarith
-            have c2_eq: "len_formula (fix_at pos False P)
-                       - len_formula (fix_at s False ?Q) + 1
-                       = len_formula P - len_formula ?Q + 1"
-              using fix_at_len_F fix_sQ_len_F R_le_Q R_le_P by linarith
-            show ?thesis using m_eq c1 c2_eq c2_le_cn by simp
+            show "len_formula (fix_at pos False P)
+                  - len_formula (fix_at s False ?Q) + 1 \<le> ?cn"
+              using fix_at_len_F fix_sQ_len_F R_le_Q R_le_P c2_le_cn by linarith
           qed
           have lQ_le: "lQ \<le> rebal_L ?cn ?cn"
-          proof -
-            have "lQ \<le> rebal_L (len_formula ?Q) (rebal_m ?Q s)" by (rule IH_Q_l)
-            also have "\<dots> \<le> rebal_L ?cn ?cn"
-              by (rule rebal_L_mono[OF Q_le_cn mQ_le_cn])
-            finally show ?thesis .
-          qed
+            using IH_Q_l rebal_L_mono[OF Q_le_cn mQ_le_cn] by (rule order_trans)
           have lT_le: "lT \<le> rebal_L ?mP ?cn"
-          proof -
-            have "lT \<le> rebal_L (len_formula (fix_at pos True P))
-                               (rebal_m (fix_at pos True P) (spiras_sel_position P))"
-              by (rule IH_T_l)
-            also have "\<dots> \<le> rebal_L ?mP ?cn"
-              by (rule rebal_L_mono[OF fix_T_le_mP m_fix_T_le_cn])
-            finally show ?thesis .
-          qed
+            using IH_T_l rebal_L_mono[OF fix_T_le_mP m_fix_T_le_cn] by (rule order_trans)
           have lF_le: "lF \<le> rebal_L ?mP ?cn"
-          proof -
-            have "lF \<le> rebal_L (len_formula (fix_at pos False P))
-                               (rebal_m (fix_at pos False P) (spiras_sel_position P))"
-              by (rule IH_F_l)
-            also have "\<dots> \<le> rebal_L ?mP ?cn"
-              by (rule rebal_L_mono[OF fix_F_le_mP m_fix_F_le_cn])
-            finally show ?thesis .
-          qed
+            using IH_F_l rebal_L_mono[OF fix_F_le_mP m_fix_F_le_cn] by (rule order_trans)
           have glue_le: "case_one_glue_lines
                        \<le> rebal_glue_K * (len_formula P) ^ rebal_deg"
             by (rule rebal_glue_const_bound[OF _ lP1]) (simp add: rebal_base_K_def)
@@ -7236,17 +7085,6 @@ proof -
             also have "\<dots> \<le> rebal_L (len_formula P) ?mP" using step .
             finally show ?thesis .
           qed
-          have poly_tb_mono: "\<And>a b. a \<le> b \<Longrightarrow> poly rebal_tb a \<le> poly rebal_tb b"
-          proof -
-            fix a b :: nat assume h: "a \<le> b"
-            have "poly rebal_tb a
-                = (\<Sum>i\<le>degree rebal_tb. coeff rebal_tb i * a ^ i)"
-              by (rule poly_altdef)
-            also have "\<dots> \<le> (\<Sum>i\<le>degree rebal_tb. coeff rebal_tb i * b ^ i)"
-              by (intro sum_mono mult_le_mono2 power_mono) (auto simp: h)
-            also have "\<dots> = poly rebal_tb b" by (simp add: poly_altdef)
-            finally show "poly rebal_tb a \<le> poly rebal_tb b" .
-          qed
           have lQ_le_P: "len_formula ?Q \<le> len_formula P"
             using Q_eq spiras_sel_pred_when_wf[OF wfP ge2] by simp
           have lT_le_P: "len_formula (fix_at pos True P) \<le> len_formula P"
@@ -7257,43 +7095,30 @@ proof -
             using fix_at_len_le lQ_le_P by (rule order_trans)
           have lD: "len_formula (fix_at s False ?Q) \<le> len_formula P"
             using fix_at_len_le lQ_le_P by (rule order_trans)
-          have leaf_len: "\<And>L. formula_well_formed (alphabet F) L
-                           \<Longrightarrow> len_formula L \<le> len_formula P
-                           \<Longrightarrow> len_formula (spira_trans L)
-                             \<le> poly rebal_tb (len_formula P)"
-          proof -
-            fix L assume wfL: "formula_well_formed (alphabet F) L"
-                        and lLP: "len_formula L \<le> len_formula P"
-            have "len_formula (spira_trans L) \<le> poly rebal_tb (len_formula L)"
-              by (rule rebal_tb_spec[OF wfL])
-            also have "\<dots> \<le> poly rebal_tb (len_formula P)"
-              by (rule poly_tb_mono[OF lLP])
-            finally show "len_formula (spira_trans L) \<le> poly rebal_tb (len_formula P)" .
-          qed
           have leafA: "len_formula (spira_trans (fix_at (spiras_sel_position P) True P))
                      \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF wfP] fix_at_len_le])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfP] fix_at_len_le])
           have leafB: "len_formula (spira_trans (fix_at (spiras_sel_position P) False P))
                      \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF wfP] fix_at_len_le])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfP] fix_at_len_le])
           have leafC: "len_formula (spira_trans (fix_at s True ?Q))
                      \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF wfQ] lC])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfQ] lC])
           have leafD: "len_formula (spira_trans (fix_at s False ?Q))
                      \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF wfQ] lD])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfQ] lD])
           have leafE: "len_formula (spira_trans (subterm_at P pos))
                      \<le> poly rebal_tb (len_formula P)"
-            using leaf_len[OF subterm_at_wf[OF wfP vpP] R_le_P] .
+            using spira_trans_len_le_tb[OF subterm_at_wf[OF wfP vpP] R_le_P] .
           have leafF: "len_formula (spira_trans ?Q)
                      \<le> poly rebal_tb (len_formula P)"
-            using leaf_len[OF wfQ lQ_le_P] .
+            using spira_trans_len_le_tb[OF wfQ lQ_le_P] .
           have leafG: "len_formula (spira_trans (fix_at pos True P))
                      \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF wfP] lT_le_P])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfP] lT_le_P])
           have leafH: "len_formula (spira_trans (fix_at pos False P))
                      \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF wfP] lF_le_P])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfP] lF_le_P])
           have llsum_le: "?llsum \<le> 8 * poly rebal_tb (len_formula P)"
             using leafA leafB leafC leafD leafE leafF leafG leafH by simp
           have llsum_le10: "?llsum \<le> 10 * poly rebal_tb (len_formula P)"
@@ -7307,30 +7132,11 @@ proof -
                        \<le> rebal_L (len_formula P) ?mP"
             by (rule rebal_L_step[OF geT glue_sz])
           have szQ_le: "szQ \<le> rebal_L ?cn ?cn"
-          proof -
-            have "szQ \<le> rebal_L (len_formula ?Q) (rebal_m ?Q s)" by (rule IH_Q_s)
-            also have "\<dots> \<le> rebal_L ?cn ?cn"
-              by (rule rebal_L_mono[OF Q_le_cn mQ_le_cn])
-            finally show ?thesis .
-          qed
+            using IH_Q_s rebal_L_mono[OF Q_le_cn mQ_le_cn] by (rule order_trans)
           have szT_le: "szT \<le> rebal_L ?mP ?cn"
-          proof -
-            have "szT \<le> rebal_L (len_formula (fix_at pos True P))
-                               (rebal_m (fix_at pos True P) (spiras_sel_position P))"
-              by (rule IH_T_s)
-            also have "\<dots> \<le> rebal_L ?mP ?cn"
-              by (rule rebal_L_mono[OF fix_T_le_mP m_fix_T_le_cn])
-            finally show ?thesis .
-          qed
+            using IH_T_s rebal_L_mono[OF fix_T_le_mP m_fix_T_le_cn] by (rule order_trans)
           have szF_le: "szF \<le> rebal_L ?mP ?cn"
-          proof -
-            have "szF \<le> rebal_L (len_formula (fix_at pos False P))
-                               (rebal_m (fix_at pos False P) (spiras_sel_position P))"
-              by (rule IH_F_s)
-            also have "\<dots> \<le> rebal_L ?mP ?cn"
-              by (rule rebal_L_mono[OF fix_F_le_mP m_fix_F_le_cn])
-            finally show ?thesis .
-          qed
+            using IH_F_s rebal_L_mono[OF fix_F_le_mP m_fix_F_le_cn] by (rule order_trans)
           have sz_le: "sz \<le> rebal_L (len_formula P) ?mP"
           proof -
             have "sz \<le> szQ + szT + szF + rebal_glue_coeff * (?llsum + 1)"
@@ -7383,29 +7189,6 @@ proof -
               finally show ?thesis .
             qed
             have max_tc_nn: "(0::real) \<le> max tc 1" by simp
-            have leaf_dep: "\<And>L. formula_well_formed (alphabet F) L
-                              \<Longrightarrow> len_formula L \<le> len_formula P
-                              \<Longrightarrow> real (depth_formula (spira_trans L)) \<le> max tc 1 * ?L"
-            proof -
-              fix L assume wfL: "formula_well_formed (alphabet F) L"
-                          and lLP: "len_formula L \<le> len_formula P"
-              have l_pos: "(0::real) \<le> log 2 (real (len_formula L) + 1)"
-              proof -
-                have "(1::real) \<le> real (len_formula L) + 1"
-                  using len_formula_positive[of L] by simp
-                hence "log 2 1 \<le> log 2 (real (len_formula L) + 1)"
-                  by (intro log_mono) auto
-                thus ?thesis by simp
-              qed
-              have "real (depth_formula (spira_trans L))
-                  \<le> tc * log 2 (real (len_formula L) + 1)"
-                using tc_spec wfL by blast
-              also have "\<dots> \<le> max tc 1 * log 2 (real (len_formula L) + 1)"
-                using l_pos by (intro mult_right_mono) auto
-              also have "\<dots> \<le> max tc 1 * ?L"
-                using log_le[OF lLP] max_tc_nn by (intro mult_left_mono)
-              finally show "real (depth_formula (spira_trans L)) \<le> max tc 1 * ?L" .
-            qed
             have lC: "len_formula (fix_at s True ?Q) \<le> len_formula P"
             proof -
               have "len_formula (fix_at s True ?Q) \<le> len_formula ?Q"
@@ -7423,28 +7206,28 @@ proof -
             have bA: "real (depth_formula (spira_trans
                        (fix_at (spiras_sel_position P) True P)))
                     \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF wfP] fix_at_len_le])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfP] fix_at_len_le])
             have bB: "real (depth_formula (spira_trans
                        (fix_at (spiras_sel_position P) False P)))
                     \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF wfP] fix_at_len_le])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfP] fix_at_len_le])
             have bC: "real (depth_formula (spira_trans (fix_at s True ?Q)))
                     \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF wfQ] lC])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfQ] lC])
             have bD: "real (depth_formula (spira_trans (fix_at s False ?Q)))
                     \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF wfQ] lD])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfQ] lD])
             have bE: "real (depth_formula (spira_trans (subterm_at P pos)))
                     \<le> max tc 1 * ?L"
-              using leaf_dep[OF subterm_at_wf[OF wfP vpP] R_le_P] .
+              using spira_trans_dep_le[OF tc_spec subterm_at_wf[OF wfP vpP] R_le_P] .
             have bF: "real (depth_formula (spira_trans ?Q)) \<le> max tc 1 * ?L"
-              using leaf_dep[OF wfQ lQ_le_P] .
+              using spira_trans_dep_le[OF tc_spec wfQ lQ_le_P] .
             have bG: "real (depth_formula (spira_trans (fix_at pos True P)))
                     \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF wfP] lT_le_P])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfP] lT_le_P])
             have bH: "real (depth_formula (spira_trans (fix_at pos False P)))
                     \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF wfP] lF_le_P])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfP] lF_le_P])
             have sum_le: "real ?dlsum \<le> 8 * (max tc 1 * ?L)"
               using bA bB bC bD bE bF bG bH by simp
             have glue_le: "real (rebal_dep_coeff * (?dlsum + 1)) \<le> c * ?L"
@@ -7532,8 +7315,7 @@ proof -
                         \<and> valid_position (subterm_at P pos) s"
               using vpQ2 by (simp only: valid_position_append)
             note vp_Qb = valid_position_fix_at_prefix[OF vpQ2, folded pos_eq2]
-            note meas = case_two_measure[OF wfP geST pos_ne vpP,
-                                         unfolded rebal_measure_def]
+            note meas = case_two_measure[OF wfP geST pos_ne vpP]
             obtain lR szR depR where IH_R:
                 "provable_balanced_iff (spira_trans (subterm_at P pos))
                    (rebalancing (subterm_at P pos) s) lR szR depR"
@@ -7697,12 +7479,8 @@ proof -
             qed
             have m_fixQ_T_le_cn:
               "rebal_m (fix_at (spiras_sel_position P) True P) pos \<le> ?cn"
-            proof -
-              have m_eq: "rebal_m (fix_at (spiras_sel_position P) True P) pos
-                        = max (len_formula (fix_at s True ?R))
-                              (len_formula (fix_at (spiras_sel_position P) True P)
-                               - len_formula (fix_at s True ?R) + 1)"
-                using sub_fix_eq_T2 unfolding rebal_m_def by simp
+            proof (rule rebal_m_fit[OF sub_fix_eq_T2])
+              show "len_formula (fix_at s True ?R) \<le> ?cn" by (rule fixR_T_le_cn)
               have c2_eq: "len_formula (fix_at (spiras_sel_position P) True P)
                          - len_formula (fix_at s True ?R) + 1
                          = len_formula P - len_formula ?R + 1"
@@ -7716,16 +7494,14 @@ proof -
                   using Q_eq P_minus_spira_le_cn[OF wfP geST] by simp
                 finally show ?thesis .
               qed
-              show ?thesis using m_eq fixR_T_le_cn c2_eq c2_le by simp
+              show "len_formula (fix_at (spiras_sel_position P) True P)
+                    - len_formula (fix_at s True ?R) + 1 \<le> ?cn"
+                using c2_eq c2_le by linarith
             qed
             have m_fixQ_F_le_cn:
               "rebal_m (fix_at (spiras_sel_position P) False P) pos \<le> ?cn"
-            proof -
-              have m_eq: "rebal_m (fix_at (spiras_sel_position P) False P) pos
-                        = max (len_formula (fix_at s False ?R))
-                              (len_formula (fix_at (spiras_sel_position P) False P)
-                               - len_formula (fix_at s False ?R) + 1)"
-                using sub_fix_eq_F2 unfolding rebal_m_def by simp
+            proof (rule rebal_m_fit[OF sub_fix_eq_F2])
+              show "len_formula (fix_at s False ?R) \<le> ?cn" by (rule fixR_F_le_cn)
               have c2_eq: "len_formula (fix_at (spiras_sel_position P) False P)
                          - len_formula (fix_at s False ?R) + 1
                          = len_formula P - len_formula ?R + 1"
@@ -7739,17 +7515,17 @@ proof -
                   using Q_eq P_minus_spira_le_cn[OF wfP geST] by simp
                 finally show ?thesis .
               qed
-              show ?thesis using m_eq fixR_F_le_cn c2_eq c2_le by simp
+              show "len_formula (fix_at (spiras_sel_position P) False P)
+                    - len_formula (fix_at s False ?R) + 1 \<le> ?cn"
+                using c2_eq c2_le by linarith
             qed
             \<comment> \<open>IH_R fits ?mP slot.\<close>
             have R_le_mP: "len_formula ?R \<le> ?mP"
               unfolding rebal_m_def by simp
             have mR_le_cn: "rebal_m ?R s \<le> ?cn"
-            proof -
-              have m_eq: "rebal_m ?R s = max (len_formula ?Q)
-                          (len_formula ?R - len_formula ?Q + 1)"
-                using sub_RQ unfolding rebal_m_def by simp
-              have c2_le: "len_formula ?R - len_formula ?Q + 1 \<le> ?cn"
+            proof (rule rebal_m_fit[OF sub_RQ])
+              show "len_formula ?Q \<le> ?cn" by (rule Q_le_cn)
+              show "len_formula ?R - len_formula ?Q + 1 \<le> ?cn"
               proof -
                 have "len_formula ?R - len_formula ?Q + 1
                     \<le> len_formula P - len_formula ?Q + 1"
@@ -7758,34 +7534,14 @@ proof -
                   using Q_eq P_minus_spira_le_cn[OF wfP geST] by simp
                 finally show ?thesis .
               qed
-              show ?thesis using m_eq Q_le_cn c2_le by simp
             qed
             \<comment> \<open>IH fittings.\<close>
             have lR_le: "lR \<le> rebal_L ?mP ?cn"
-            proof -
-              have "lR \<le> rebal_L (len_formula ?R) (rebal_m ?R s)" by (rule IH_R_l)
-              also have "\<dots> \<le> rebal_L ?mP ?cn"
-                by (rule rebal_L_mono[OF R_le_mP mR_le_cn])
-              finally show ?thesis .
-            qed
+              using IH_R_l rebal_L_mono[OF R_le_mP mR_le_cn] by (rule order_trans)
             have lT_le: "lT \<le> rebal_L ?cn ?cn"
-            proof -
-              have "lT \<le> rebal_L (len_formula (fix_at (spiras_sel_position P) True P))
-                                 (rebal_m (fix_at (spiras_sel_position P) True P) pos)"
-                by (rule IH_T_l)
-              also have "\<dots> \<le> rebal_L ?cn ?cn"
-                by (rule rebal_L_mono[OF fixQ_T_le_cn m_fixQ_T_le_cn])
-              finally show ?thesis .
-            qed
+              using IH_T_l rebal_L_mono[OF fixQ_T_le_cn m_fixQ_T_le_cn] by (rule order_trans)
             have lF_le: "lF \<le> rebal_L ?cn ?cn"
-            proof -
-              have "lF \<le> rebal_L (len_formula (fix_at (spiras_sel_position P) False P))
-                                 (rebal_m (fix_at (spiras_sel_position P) False P) pos)"
-                by (rule IH_F_l)
-              also have "\<dots> \<le> rebal_L ?cn ?cn"
-                by (rule rebal_L_mono[OF fixQ_F_le_cn m_fixQ_F_le_cn])
-              finally show ?thesis .
-            qed
+              using IH_F_l rebal_L_mono[OF fixQ_F_le_cn m_fixQ_F_le_cn] by (rule order_trans)
             have glue_le: "case_two_glue_lines
                          \<le> rebal_glue_K * (len_formula P) ^ rebal_deg"
               by (rule rebal_glue_const_bound[OF _ lP1])
@@ -7813,31 +7569,6 @@ proof -
               using subterm_at_wf[OF wfP vpq] .
             have wfR: "formula_well_formed (alphabet F) ?R"
               using subterm_at_wf[OF wfP vpP] .
-            have poly_tb_mono: "\<And>a b. a \<le> b \<Longrightarrow> poly rebal_tb a \<le> poly rebal_tb b"
-            proof -
-              fix a b :: nat assume h: "a \<le> b"
-              have "poly rebal_tb a
-                  = (\<Sum>i\<le>degree rebal_tb. coeff rebal_tb i * a ^ i)"
-                by (rule poly_altdef)
-              also have "\<dots> \<le> (\<Sum>i\<le>degree rebal_tb. coeff rebal_tb i * b ^ i)"
-                by (intro sum_mono mult_le_mono2 power_mono) (auto simp: h)
-              also have "\<dots> = poly rebal_tb b" by (simp add: poly_altdef)
-              finally show "poly rebal_tb a \<le> poly rebal_tb b" .
-            qed
-            have leaf_len: "\<And>L. formula_well_formed (alphabet F) L
-                             \<Longrightarrow> len_formula L \<le> len_formula P
-                             \<Longrightarrow> len_formula (spira_trans L)
-                               \<le> poly rebal_tb (len_formula P)"
-            proof -
-              fix L assume wfL: "formula_well_formed (alphabet F) L"
-                          and lLP: "len_formula L \<le> len_formula P"
-              have "len_formula (spira_trans L) \<le> poly rebal_tb (len_formula L)"
-                by (rule rebal_tb_spec[OF wfL])
-              also have "\<dots> \<le> poly rebal_tb (len_formula P)"
-                by (rule poly_tb_mono[OF lLP])
-              finally show "len_formula (spira_trans L)
-                          \<le> poly rebal_tb (len_formula P)" .
-            qed
             have fixQT_le_P: "len_formula (fix_at (spiras_sel_position P) True P)
                             \<le> len_formula P" by (rule fix_at_len_le)
             have fixQF_le_P: "len_formula (fix_at (spiras_sel_position P) False P)
@@ -7852,28 +7583,28 @@ proof -
               using fix_at_len_le R_le_P by (rule order_trans)
             have leafA2: "len_formula (spira_trans (fix_at (spiras_sel_position P) True P))
                        \<le> poly rebal_tb (len_formula P)"
-              by (rule leaf_len[OF fix_at_wf[OF wfP] fixQT_le_P])
+              by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfP] fixQT_le_P])
             have leafB2: "len_formula (spira_trans (fix_at (spiras_sel_position P) False P))
                        \<le> poly rebal_tb (len_formula P)"
-              by (rule leaf_len[OF fix_at_wf[OF wfP] fixQF_le_P])
+              by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfP] fixQF_le_P])
             have leafC2: "len_formula (spira_trans (fix_at pos True P))
                        \<le> poly rebal_tb (len_formula P)"
-              by (rule leaf_len[OF fix_at_wf[OF wfP] fixPT_le_P])
+              by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfP] fixPT_le_P])
             have leafD2: "len_formula (spira_trans (fix_at pos False P))
                        \<le> poly rebal_tb (len_formula P)"
-              by (rule leaf_len[OF fix_at_wf[OF wfP] fixPF_le_P])
+              by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfP] fixPF_le_P])
             have leafE2: "len_formula (spira_trans (fix_at s True ?R))
                        \<le> poly rebal_tb (len_formula P)"
-              by (rule leaf_len[OF fix_at_wf[OF wfR] fixRT_le_P])
+              by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfR] fixRT_le_P])
             have leafF2: "len_formula (spira_trans (fix_at s False ?R))
                        \<le> poly rebal_tb (len_formula P)"
-              by (rule leaf_len[OF fix_at_wf[OF wfR] fixRF_le_P])
+              by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfR] fixRF_le_P])
             have leafG2: "len_formula (spira_trans ?Q)
                        \<le> poly rebal_tb (len_formula P)"
-              by (rule leaf_len[OF wfQ2 Q_le_P])
+              by (rule spira_trans_len_le_tb[OF wfQ2 Q_le_P])
             have leafH2: "len_formula (spira_trans ?R)
                        \<le> poly rebal_tb (len_formula P)"
-              by (rule leaf_len[OF wfR R_le_P])
+              by (rule spira_trans_len_le_tb[OF wfR R_le_P])
             have llsum2_le: "?llsum2 \<le> 8 * poly rebal_tb (len_formula P)"
               using leafA2 leafB2 leafC2 leafD2 leafE2 leafF2 leafG2 leafH2 by simp
             have llsum2_le10: "?llsum2 \<le> 10 * poly rebal_tb (len_formula P)"
@@ -7887,30 +7618,11 @@ proof -
                           \<le> rebal_L (len_formula P) ?mP"
               by (rule rebal_L_step[OF geT glue_sz2])
             have szT_le: "szT \<le> rebal_L ?cn ?cn"
-            proof -
-              have "szT \<le> rebal_L (len_formula (fix_at (spiras_sel_position P) True P))
-                                 (rebal_m (fix_at (spiras_sel_position P) True P) pos)"
-                by (rule IH_T_s)
-              also have "\<dots> \<le> rebal_L ?cn ?cn"
-                by (rule rebal_L_mono[OF fixQ_T_le_cn m_fixQ_T_le_cn])
-              finally show ?thesis .
-            qed
+              using IH_T_s rebal_L_mono[OF fixQ_T_le_cn m_fixQ_T_le_cn] by (rule order_trans)
             have szF_le: "szF \<le> rebal_L ?cn ?cn"
-            proof -
-              have "szF \<le> rebal_L (len_formula (fix_at (spiras_sel_position P) False P))
-                                 (rebal_m (fix_at (spiras_sel_position P) False P) pos)"
-                by (rule IH_F_s)
-              also have "\<dots> \<le> rebal_L ?cn ?cn"
-                by (rule rebal_L_mono[OF fixQ_F_le_cn m_fixQ_F_le_cn])
-              finally show ?thesis .
-            qed
+              using IH_F_s rebal_L_mono[OF fixQ_F_le_cn m_fixQ_F_le_cn] by (rule order_trans)
             have szR_le: "szR \<le> rebal_L ?mP ?cn"
-            proof -
-              have "szR \<le> rebal_L (len_formula ?R) (rebal_m ?R s)" by (rule IH_R_s)
-              also have "\<dots> \<le> rebal_L ?mP ?cn"
-                by (rule rebal_L_mono[OF R_le_mP mR_le_cn])
-              finally show ?thesis .
-            qed
+              using IH_R_s rebal_L_mono[OF R_le_mP mR_le_cn] by (rule order_trans)
             have sz_le: "sz \<le> rebal_L (len_formula P) ?mP"
             proof -
               have "sz \<le> szT + szF + szR + rebal_glue_coeff * (?llsum2 + 1)"
@@ -7957,51 +7669,28 @@ proof -
                 finally show ?thesis .
               qed
               have max_tc_nn: "(0::real) \<le> max tc 1" by simp
-              have leaf_dep: "\<And>L. formula_well_formed (alphabet F) L
-                                \<Longrightarrow> len_formula L \<le> len_formula P
-                                \<Longrightarrow> real (depth_formula (spira_trans L)) \<le> max tc 1 * ?L"
-              proof -
-                fix L assume wfL: "formula_well_formed (alphabet F) L"
-                            and lLP: "len_formula L \<le> len_formula P"
-                have l_pos: "(0::real) \<le> log 2 (real (len_formula L) + 1)"
-                proof -
-                  have "(1::real) \<le> real (len_formula L) + 1"
-                    using len_formula_positive[of L] by simp
-                  hence "log 2 1 \<le> log 2 (real (len_formula L) + 1)"
-                    by (intro log_mono) auto
-                  thus ?thesis by simp
-                qed
-                have "real (depth_formula (spira_trans L))
-                    \<le> tc * log 2 (real (len_formula L) + 1)"
-                  using tc_spec wfL by blast
-                also have "\<dots> \<le> max tc 1 * log 2 (real (len_formula L) + 1)"
-                  using l_pos by (intro mult_right_mono) auto
-                also have "\<dots> \<le> max tc 1 * ?L"
-                  using log_le[OF lLP] max_tc_nn by (intro mult_left_mono)
-                finally show "real (depth_formula (spira_trans L)) \<le> max tc 1 * ?L" .
-              qed
               have bA2: "real (depth_formula (spira_trans
                           (fix_at (spiras_sel_position P) True P))) \<le> max tc 1 * ?L"
-                by (rule leaf_dep[OF fix_at_wf[OF wfP] fixQT_le_P])
+                by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfP] fixQT_le_P])
               have bB2: "real (depth_formula (spira_trans
                           (fix_at (spiras_sel_position P) False P))) \<le> max tc 1 * ?L"
-                by (rule leaf_dep[OF fix_at_wf[OF wfP] fixQF_le_P])
+                by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfP] fixQF_le_P])
               have bC2: "real (depth_formula (spira_trans (fix_at pos True P)))
                        \<le> max tc 1 * ?L"
-                by (rule leaf_dep[OF fix_at_wf[OF wfP] fixPT_le_P])
+                by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfP] fixPT_le_P])
               have bD2: "real (depth_formula (spira_trans (fix_at pos False P)))
                        \<le> max tc 1 * ?L"
-                by (rule leaf_dep[OF fix_at_wf[OF wfP] fixPF_le_P])
+                by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfP] fixPF_le_P])
               have bE2: "real (depth_formula (spira_trans (fix_at s True ?R)))
                        \<le> max tc 1 * ?L"
-                by (rule leaf_dep[OF fix_at_wf[OF wfR] fixRT_le_P])
+                by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfR] fixRT_le_P])
               have bF2: "real (depth_formula (spira_trans (fix_at s False ?R)))
                        \<le> max tc 1 * ?L"
-                by (rule leaf_dep[OF fix_at_wf[OF wfR] fixRF_le_P])
+                by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfR] fixRF_le_P])
               have bG2: "real (depth_formula (spira_trans ?Q)) \<le> max tc 1 * ?L"
-                by (rule leaf_dep[OF wfQ2 Q_le_P])
+                by (rule spira_trans_dep_le[OF tc_spec wfQ2 Q_le_P])
               have bH2: "real (depth_formula (spira_trans ?R)) \<le> max tc 1 * ?L"
-                by (rule leaf_dep[OF wfR R_le_P])
+                by (rule spira_trans_dep_le[OF tc_spec wfR R_le_P])
               have sum_le2: "real ?dlsum2 \<le> 8 * (max tc 1 * ?L)"
                 using bA2 bB2 bC2 bD2 bE2 bF2 bG2 bH2 by simp
               have glue_le2: "real (rebal_dep_coeff * (?dlsum2 + 1)) \<le> c * ?L"
@@ -8059,8 +7748,7 @@ proof -
             by (rule valid_position_fix_at_disjoint[OF dpq vpP])
           have vp_Rb: "\<And>b. valid_position (fix_at pos b P) (spiras_sel_position P)"
             by (rule valid_position_fix_at_disjoint[OF disj vpq])
-          note meas = case_three_measure[OF wfP geST disj vpP,
-                                         unfolded rebal_measure_def]
+          note meas = case_three_measure[OF wfP geST disj vpP]
           obtain lQT szQT depQT where IH_QT:
               "provable_balanced_iff
                  (spira_trans (fix_at (spiras_sel_position P) True P))
@@ -8249,21 +7937,16 @@ proof -
           \<comment> \<open>m bounds for IH_QT/QF second param.\<close>
           have m_fixQ_T_le_cn:
             "rebal_m (fix_at (spiras_sel_position P) True P) pos \<le> ?cn"
-          proof -
-            have m_eq: "rebal_m (fix_at (spiras_sel_position P) True P) pos
-                      = max (len_formula ?R)
-                            (len_formula (fix_at (spiras_sel_position P) True P)
-                             - len_formula ?R + 1)"
-              using sub_fixQ_T unfolding rebal_m_def by simp
-            have c1: "len_formula ?R \<le> ?cn"
+          proof (rule rebal_m_fit[OF sub_fixQ_T])
+            show "len_formula ?R \<le> ?cn"
             proof -
               have "len_formula ?R \<le> len_formula (fix_at (spiras_sel_position P) True P)"
                 by (rule R_le_fixQT)
               also have "\<dots> \<le> ?cn" by (rule fixQ_T_le_cn)
               finally show ?thesis .
             qed
-            have c2: "len_formula (fix_at (spiras_sel_position P) True P)
-                     - len_formula ?R + 1 \<le> ?cn"
+            show "len_formula (fix_at (spiras_sel_position P) True P)
+                  - len_formula ?R + 1 \<le> ?cn"
             proof -
               have "len_formula (fix_at (spiras_sel_position P) True P)
                   - len_formula ?R + 1
@@ -8272,25 +7955,19 @@ proof -
               also have "\<dots> \<le> ?cn" by (rule fixQ_T_le_cn)
               finally show ?thesis .
             qed
-            show ?thesis using m_eq c1 c2 by simp
           qed
           have m_fixQ_F_le_cn:
             "rebal_m (fix_at (spiras_sel_position P) False P) pos \<le> ?cn"
-          proof -
-            have m_eq: "rebal_m (fix_at (spiras_sel_position P) False P) pos
-                      = max (len_formula ?R)
-                            (len_formula (fix_at (spiras_sel_position P) False P)
-                             - len_formula ?R + 1)"
-              using sub_fixQ_F unfolding rebal_m_def by simp
-            have c1: "len_formula ?R \<le> ?cn"
+          proof (rule rebal_m_fit[OF sub_fixQ_F])
+            show "len_formula ?R \<le> ?cn"
             proof -
               have "len_formula ?R \<le> len_formula (fix_at (spiras_sel_position P) False P)"
                 by (rule R_le_fixQF)
               also have "\<dots> \<le> ?cn" by (rule fixQ_F_le_cn)
               finally show ?thesis .
             qed
-            have c2: "len_formula (fix_at (spiras_sel_position P) False P)
-                     - len_formula ?R + 1 \<le> ?cn"
+            show "len_formula (fix_at (spiras_sel_position P) False P)
+                  - len_formula ?R + 1 \<le> ?cn"
             proof -
               have "len_formula (fix_at (spiras_sel_position P) False P)
                   - len_formula ?R + 1
@@ -8299,20 +7976,15 @@ proof -
               also have "\<dots> \<le> ?cn" by (rule fixQ_F_le_cn)
               finally show ?thesis .
             qed
-            show ?thesis using m_eq c1 c2 by simp
           qed
           \<comment> \<open>m bounds for IH_RT/RF second param.\<close>
           have m_fixP_T_le_cn:
             "rebal_m (fix_at pos True P) (spiras_sel_position P) \<le> ?cn"
-          proof -
-            have m_eq: "rebal_m (fix_at pos True P) (spiras_sel_position P)
-                      = max (len_formula ?Q)
-                            (len_formula (fix_at pos True P)
-                             - len_formula ?Q + 1)"
-              using sub_fixP_T unfolding rebal_m_def by simp
+          proof (rule rebal_m_fit[OF sub_fixP_T])
+            show "len_formula ?Q \<le> ?cn" by (rule Q_le_cn)
             have Q_le_PR1: "len_formula ?Q \<le> len_formula P - len_formula ?R + 1"
               using Q_le_fixPT fixP_T_len by simp
-            have c2: "len_formula (fix_at pos True P) - len_formula ?Q + 1 \<le> ?cn"
+            show "len_formula (fix_at pos True P) - len_formula ?Q + 1 \<le> ?cn"
             proof -
               have "len_formula (fix_at pos True P) - len_formula ?Q + 1
                   = (len_formula P - len_formula ?R + 1) - len_formula ?Q + 1"
@@ -8323,19 +7995,14 @@ proof -
                 using Q_eq P_minus_spira_le_cn[OF wfP geST] by simp
               finally show ?thesis .
             qed
-            show ?thesis using m_eq Q_le_cn c2 by simp
           qed
           have m_fixP_F_le_cn:
             "rebal_m (fix_at pos False P) (spiras_sel_position P) \<le> ?cn"
-          proof -
-            have m_eq: "rebal_m (fix_at pos False P) (spiras_sel_position P)
-                      = max (len_formula ?Q)
-                            (len_formula (fix_at pos False P)
-                             - len_formula ?Q + 1)"
-              using sub_fixP_F unfolding rebal_m_def by simp
+          proof (rule rebal_m_fit[OF sub_fixP_F])
+            show "len_formula ?Q \<le> ?cn" by (rule Q_le_cn)
             have Q_le_PR1: "len_formula ?Q \<le> len_formula P - len_formula ?R + 1"
               using Q_le_fixPF fixP_F_len by simp
-            have c2: "len_formula (fix_at pos False P) - len_formula ?Q + 1 \<le> ?cn"
+            show "len_formula (fix_at pos False P) - len_formula ?Q + 1 \<le> ?cn"
             proof -
               have "len_formula (fix_at pos False P) - len_formula ?Q + 1
                   = (len_formula P - len_formula ?R + 1) - len_formula ?Q + 1"
@@ -8346,7 +8013,6 @@ proof -
                 using Q_eq P_minus_spira_le_cn[OF wfP geST] by simp
               finally show ?thesis .
             qed
-            show ?thesis using m_eq Q_le_cn c2 by simp
           qed
           \<comment> \<open>IH fittings.\<close>
           have lQT_le: "lQT \<le> rebal_L ?cn ?cn"
@@ -8385,31 +8051,6 @@ proof -
             using subterm_at_wf[OF wfP vpq] .
           have wfR3: "formula_well_formed (alphabet F) ?R"
             using subterm_at_wf[OF wfP vpP] .
-          have poly_tb_mono: "\<And>a b. a \<le> b \<Longrightarrow> poly rebal_tb a \<le> poly rebal_tb b"
-          proof -
-            fix a b :: nat assume h: "a \<le> b"
-            have "poly rebal_tb a
-                = (\<Sum>i\<le>degree rebal_tb. coeff rebal_tb i * a ^ i)"
-              by (rule poly_altdef)
-            also have "\<dots> \<le> (\<Sum>i\<le>degree rebal_tb. coeff rebal_tb i * b ^ i)"
-              by (intro sum_mono mult_le_mono2 power_mono) (auto simp: h)
-            also have "\<dots> = poly rebal_tb b" by (simp add: poly_altdef)
-            finally show "poly rebal_tb a \<le> poly rebal_tb b" .
-          qed
-          have leaf_len: "\<And>L. formula_well_formed (alphabet F) L
-                           \<Longrightarrow> len_formula L \<le> len_formula P
-                           \<Longrightarrow> len_formula (spira_trans L)
-                             \<le> poly rebal_tb (len_formula P)"
-          proof -
-            fix L assume wfL: "formula_well_formed (alphabet F) L"
-                        and lLP: "len_formula L \<le> len_formula P"
-            have "len_formula (spira_trans L) \<le> poly rebal_tb (len_formula L)"
-              by (rule rebal_tb_spec[OF wfL])
-            also have "\<dots> \<le> poly rebal_tb (len_formula P)"
-              by (rule poly_tb_mono[OF lLP])
-            finally show "len_formula (spira_trans L)
-                        \<le> poly rebal_tb (len_formula P)" .
-          qed
           have fixQT_le_P: "len_formula (fix_at (spiras_sel_position P) True P)
                           \<le> len_formula P" by (rule fix_at_len_le)
           have fixQF_le_P: "len_formula (fix_at (spiras_sel_position P) False P)
@@ -8437,39 +8078,39 @@ proof -
           have leafA3: "len_formula (spira_trans
               (fix_at (spiras_sel_position P) True P))
             \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF wfP] fixQT_le_P])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfP] fixQT_le_P])
           have leafB3: "len_formula (spira_trans
               (fix_at (spiras_sel_position P) False P))
             \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF wfP] fixQF_le_P])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfP] fixQF_le_P])
           have leafC3: "len_formula (spira_trans (fix_at pos True P))
             \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF wfP] fixPT_le_P])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfP] fixPT_le_P])
           have leafD3: "len_formula (spira_trans (fix_at pos False P))
             \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF wfP] fixPF_le_P])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF wfP] fixPF_le_P])
           have leafE3: "len_formula (spira_trans
               (fix_at (spiras_sel_position P) True (fix_at pos True P)))
             \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF fix_at_wf[OF wfP]] dfix_TT_le_P])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF fix_at_wf[OF wfP]] dfix_TT_le_P])
           have leafF3: "len_formula (spira_trans
               (fix_at (spiras_sel_position P) True (fix_at pos False P)))
             \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF fix_at_wf[OF wfP]] dfix_TF_le_P])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF fix_at_wf[OF wfP]] dfix_TF_le_P])
           have leafG3: "len_formula (spira_trans
               (fix_at (spiras_sel_position P) False (fix_at pos True P)))
             \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF fix_at_wf[OF wfP]] dfix_FT_le_P])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF fix_at_wf[OF wfP]] dfix_FT_le_P])
           have leafH3: "len_formula (spira_trans
               (fix_at (spiras_sel_position P) False (fix_at pos False P)))
             \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF fix_at_wf[OF fix_at_wf[OF wfP]] dfix_FF_le_P])
+            by (rule spira_trans_len_le_tb[OF fix_at_wf[OF fix_at_wf[OF wfP]] dfix_FF_le_P])
           have leafI3: "len_formula (spira_trans ?Q)
                      \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF wfQ3 Q_le_P])
+            by (rule spira_trans_len_le_tb[OF wfQ3 Q_le_P])
           have leafJ3: "len_formula (spira_trans ?R)
                      \<le> poly rebal_tb (len_formula P)"
-            by (rule leaf_len[OF wfR3 R_le_P])
+            by (rule spira_trans_len_le_tb[OF wfR3 R_le_P])
           have llsum3_le: "?llsum3 \<le> 10 * poly rebal_tb (len_formula P)"
             using leafA3 leafB3 leafC3 leafD3 leafE3 leafF3 leafG3 leafH3
                   leafI3 leafJ3 by simp
@@ -8546,61 +8187,38 @@ proof -
               finally show ?thesis .
             qed
             have max_tc_nn: "(0::real) \<le> max tc 1" by simp
-            have leaf_dep: "\<And>L. formula_well_formed (alphabet F) L
-                             \<Longrightarrow> len_formula L \<le> len_formula P
-                             \<Longrightarrow> real (depth_formula (spira_trans L)) \<le> max tc 1 * ?L"
-            proof -
-              fix L assume wfL: "formula_well_formed (alphabet F) L"
-                          and lLP: "len_formula L \<le> len_formula P"
-              have l_pos: "(0::real) \<le> log 2 (real (len_formula L) + 1)"
-              proof -
-                have "(1::real) \<le> real (len_formula L) + 1"
-                  using len_formula_positive[of L] by simp
-                hence "log 2 1 \<le> log 2 (real (len_formula L) + 1)"
-                  by (intro log_mono) auto
-                thus ?thesis by simp
-              qed
-              have "real (depth_formula (spira_trans L))
-                  \<le> tc * log 2 (real (len_formula L) + 1)"
-                using tc_spec wfL by blast
-              also have "\<dots> \<le> max tc 1 * log 2 (real (len_formula L) + 1)"
-                using l_pos by (intro mult_right_mono) auto
-              also have "\<dots> \<le> max tc 1 * ?L"
-                using log_le[OF lLP] max_tc_nn by (intro mult_left_mono)
-              finally show "real (depth_formula (spira_trans L)) \<le> max tc 1 * ?L" .
-            qed
             have bA3: "real (depth_formula (spira_trans
                         (fix_at (spiras_sel_position P) True P))) \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF wfP] fixQT_le_P])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfP] fixQT_le_P])
             have bB3: "real (depth_formula (spira_trans
                         (fix_at (spiras_sel_position P) False P))) \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF wfP] fixQF_le_P])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfP] fixQF_le_P])
             have bC3: "real (depth_formula (spira_trans (fix_at pos True P)))
                      \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF wfP] fixPT_le_P])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfP] fixPT_le_P])
             have bD3: "real (depth_formula (spira_trans (fix_at pos False P)))
                      \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF wfP] fixPF_le_P])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF wfP] fixPF_le_P])
             have bE3: "real (depth_formula (spira_trans
                 (fix_at (spiras_sel_position P) True (fix_at pos True P))))
               \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF fix_at_wf[OF wfP]] dfix_TT_le_P])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF fix_at_wf[OF wfP]] dfix_TT_le_P])
             have bF3: "real (depth_formula (spira_trans
                 (fix_at (spiras_sel_position P) True (fix_at pos False P))))
               \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF fix_at_wf[OF wfP]] dfix_TF_le_P])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF fix_at_wf[OF wfP]] dfix_TF_le_P])
             have bG3: "real (depth_formula (spira_trans
                 (fix_at (spiras_sel_position P) False (fix_at pos True P))))
               \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF fix_at_wf[OF wfP]] dfix_FT_le_P])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF fix_at_wf[OF wfP]] dfix_FT_le_P])
             have bH3: "real (depth_formula (spira_trans
                 (fix_at (spiras_sel_position P) False (fix_at pos False P))))
               \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF fix_at_wf[OF fix_at_wf[OF wfP]] dfix_FF_le_P])
+              by (rule spira_trans_dep_le[OF tc_spec fix_at_wf[OF fix_at_wf[OF wfP]] dfix_FF_le_P])
             have bI3: "real (depth_formula (spira_trans ?Q)) \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF wfQ3 Q_le_P])
+              by (rule spira_trans_dep_le[OF tc_spec wfQ3 Q_le_P])
             have bJ3: "real (depth_formula (spira_trans ?R)) \<le> max tc 1 * ?L"
-              by (rule leaf_dep[OF wfR3 R_le_P])
+              by (rule spira_trans_dep_le[OF tc_spec wfR3 R_le_P])
             have sum3_le: "real ?dlsum3 \<le> 10 * (max tc 1 * ?L)"
               using bA3 bB3 bC3 bD3 bE3 bF3 bG3 bH3 bI3 bJ3 by simp
             have glue_le3: "real (rebal_dep_coeff3 * (?dlsum3 + 1)) \<le> c * ?L"
