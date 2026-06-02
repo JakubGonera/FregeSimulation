@@ -1,4 +1,4 @@
-theory Rebalancing
+theory Section5
   imports Translation
 begin
 
@@ -21,7 +21,9 @@ text \<open>
 context frege_balancing
 begin
 
-subsection \<open>Lemma 5.1\<close>
+section \<open>Lemma 5.1: the rebalancing construction and polynomial simulation\<close>
+
+subsection \<open>The iff abstraction and the PBI predicate\<close>
 
 (*
   The iff layer. iff_form A B is the ambient-alphabet formula that asserts
@@ -200,6 +202,8 @@ proof -
 qed
 
 (* iff_refl: a balanced proof of A \<leftrightarrow> A, from the fixed identity z \<leftrightarrow> z. *)
+subsection \<open>Reflexivity and lifting tautologies to Frege proofs (Filmus 3.1)\<close>
+
 definition refl_atom :: string where
   "refl_atom = fresh_atoms 1 ! 0"
 
@@ -366,6 +370,8 @@ qed
   fs semantically entails th. The assumption-bearing generalisation of
   taut_proof, used to build the fixed transitivity / congruence proofs.
 *)
+subsection \<open>Transitivity of balanced equivalence\<close>
+
 definition entails_proof :: "'c formula set \<Rightarrow> 'c formula \<Rightarrow> 'c frege_proof" where
   "entails_proof fs th =
      (SOME pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th)"
@@ -755,6 +761,8 @@ qed
   single-hole iff_congruent does not apply; balance congruence is handled
   directly from the semantics. sub_formula_balance is the syntactic half.
 *)
+subsection \<open>Balance congruence (Filmus 3.2)\<close>
+
 lemma sub_formula_balance:
   assumes "\<And>v. v \<in> var_set_form custom_balancing \<Longrightarrow> v \<noteq> ''x'' \<Longrightarrow> v \<noteq> ''y''
                  \<Longrightarrow> v \<noteq> ''z'' \<Longrightarrow> sub v = Atom v"
@@ -1339,6 +1347,8 @@ qed
   hard cases of Lemma 5.1 open up uniformly; the below-threshold degeneracy
   is concentrated in one easy case instead.
 *)
+subsection \<open>Rebalancing: definition and basic facts\<close>
+
 definition rebalancing :: "'c formula \<Rightarrow> nat list \<Rightarrow> 'c formula" where
   "rebalancing p pos =
      balance (spira_trans (fix_at pos True p))
@@ -1444,6 +1454,8 @@ proof -
 qed
 
 (* iff_sym: symmetry, from the fixed identity (x \<leftrightarrow> y) \<turnstile> (y \<leftrightarrow> x). *)
+subsection \<open>Symmetry of balanced equivalence\<close>
+
 definition sym_atom_x :: string where "sym_atom_x = fresh_atoms 2 ! 0"
 definition sym_atom_y :: string where "sym_atom_y = fresh_atoms 2 ! 1"
 
@@ -1726,6 +1738,8 @@ qed
   2 share the reassociation identity (Case 2 is its mirror, via iff_sym);
   Case 3 is a six-leaf identity.
 *)
+subsection \<open>The case-one selector-reassociation identity\<close>
+
 definition reassoc_atoms :: "string list" where
   "reassoc_atoms = fresh_atoms 5"
 
@@ -1815,6 +1829,8 @@ lemma case_one:
   reassociation). Exposing it gives the recurrence lines = lQ + lT + lF + const,
   the additive shape poly_master_closure consumes.
 *)
+subsection \<open>Size and depth budgets for the combinators\<close>
+
 definition case_one_glue_lines :: nat where
   "case_one_glue_lines = 3 * refl_lines + 2 * sym_lines + 2 * balance_cong_lines
      + case_one_lines + 2 * trans_lines"
@@ -2080,6 +2096,215 @@ definition rebal_dep_coeff :: nat where
      + sym_step_depth + trans_step_depth + balance_cong_step_depth
      + case_one_step_depth + 1)"
 
+\<comment> \<open>The two glue-cost envelopes shared by the three case constructions.
+    glue_coeff_envelope is the size-coefficient core (a coefficient sum bounded
+    by 72*S fits the 4096-form glue constant); dep_coeff_envelope is the depth
+    core (a base depth K below DC, with the +9*DS slack, fits DC*(DS+1)). Each
+    construction keeps its case-specific bound on the coefficient sum / base
+    depth and the unfolding to rebal_glue_coeff(3) / rebal_dep_coeff(3), then
+    applies the envelope.\<close>
+lemma glue_coeff_envelope:
+  fixes C S cb :: nat
+  assumes "C \<le> 72 * S"
+  shows "C * (12 * (cb * cb)) \<le> 4096 * ((cb + 1) * (cb + 1)) * S"
+proof -
+  have c2: "cb * cb \<le> (cb + 1) * (cb + 1)" by (intro mult_le_mono) simp_all
+  have "C * (12 * (cb * cb)) \<le> (72 * S) * (12 * ((cb + 1) * (cb + 1)))"
+    by (intro mult_le_mono assms mult_le_mono2 c2)
+  also have "\<dots> = 864 * ((cb + 1) * (cb + 1)) * S" by (simp add: algebra_simps)
+  also have "\<dots> \<le> 4096 * ((cb + 1) * (cb + 1)) * S" by (intro mult_le_mono1) simp
+  finally show ?thesis .
+qed
+
+lemma dep_coeff_envelope:
+  fixes DBX K DS DC :: nat
+  assumes dbx: "DBX = K + 9 * DS" and aK: "K \<le> DC" and rdc9: "9 \<le> DC"
+  shows "DBX \<le> DC * (DS + 1)"
+proof -
+  have "9 * DS \<le> DC * DS" using rdc9 by (rule mult_le_mono1)
+  hence "DBX \<le> DC + DC * DS" using dbx aK by linarith
+  thus ?thesis by (simp add: algebra_simps)
+qed
+
+\<comment> \<open>The selector-reassociation step shared by Cases 1 and 2.  Both instantiate
+    the fixed identity reassoc_lhs \<leftrightarrow> reassoc_rhs at the same five generic atoms
+    with their own five leaf formulas; the substitution and its size/depth budgets
+    are identical, so they are factored here once over A0..A4.\<close>
+subsection \<open>The shared selector-reassociation substitution\<close>
+
+definition reassoc_sigma ::
+  "'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula
+   \<Rightarrow> string \<Rightarrow> 'c formula" where
+  "reassoc_sigma A0 A1 A2 A3 A4 =
+     (\<lambda>v. case map_of (zip reassoc_atoms [A0, A1, A2, A3, A4]) v of
+            None \<Rightarrow> Atom v | Some f \<Rightarrow> f)"
+
+lemma reassoc_sigma_val:
+  assumes "k < 5"
+  shows "reassoc_sigma A0 A1 A2 A3 A4 (reassoc_atoms ! k) = [A0, A1, A2, A3, A4] ! k"
+proof -
+  have dist: "distinct reassoc_atoms" using reassoc_atoms_spec by simp
+  have lveq: "length reassoc_atoms = length [A0, A1, A2, A3, A4]"
+    using reassoc_atoms_spec by simp
+  have "map_of (zip reassoc_atoms [A0, A1, A2, A3, A4]) (reassoc_atoms ! k)
+        = Some ([A0, A1, A2, A3, A4] ! k)"
+    using map_of_zip_nth_lookup[OF dist lveq] assms reassoc_atoms_spec by simp
+  thus ?thesis unfolding reassoc_sigma_def by simp
+qed
+
+lemma reassoc_sigma_off:
+  assumes "v \<notin> set reassoc_atoms"
+  shows "reassoc_sigma A0 A1 A2 A3 A4 v = Atom v"
+proof -
+  have "map_of (zip reassoc_atoms [A0, A1, A2, A3, A4]) v = None"
+    using assms by (rule map_of_zip_None_lookup)
+  thus ?thesis unfolding reassoc_sigma_def by simp
+qed
+
+lemma reassoc_sigma_len_sub_le:
+  assumes "len_formula A0 \<le> B" and "len_formula A1 \<le> B" and "len_formula A2 \<le> B"
+      and "len_formula A3 \<le> B" and "len_formula A4 \<le> B" and "1 \<le> B"
+    shows "len_sub (set reassoc_atoms) (reassoc_sigma A0 A1 A2 A3 A4) \<le> 5 * B"
+proof -
+  let ?sub = "reassoc_sigma A0 A1 A2 A3 A4"
+  have dist: "distinct reassoc_atoms" using reassoc_atoms_spec by simp
+  have len5: "length reassoc_atoms = 5" using reassoc_atoms_spec by simp
+  have card5: "card (set reassoc_atoms) = 5" using distinct_card[OF dist] len5 by simp
+  have bnd: "len_formula (?sub v) \<le> B" if "v \<in> set reassoc_atoms" for v
+  proof -
+    from that obtain k where k5: "k < 5" and vk: "reassoc_atoms ! k = v"
+      using len5 by (auto simp: in_set_conv_nth)
+    have e: "?sub v = [A0, A1, A2, A3, A4] ! k"
+      unfolding vk[symmetric] by (rule reassoc_sigma_val[OF k5])
+    consider "k = 0" | "k = 1" | "k = 2" | "k = 3" | "k = 4" using k5 by linarith
+    thus ?thesis using e assms by cases simp_all
+  qed
+  have "(\<Sum>v\<in>set reassoc_atoms. len_formula (?sub v)) \<le> (\<Sum>v\<in>set reassoc_atoms. B)"
+    by (rule sum_mono) (rule bnd)
+  also have "\<dots> = 5 * B" using card5 by simp
+  finally show ?thesis unfolding len_sub_def using assms(6) by simp
+qed
+
+lemma reassoc_sigma_depth_sub_le:
+  assumes "depth_formula A0 \<le> B" and "depth_formula A1 \<le> B" and "depth_formula A2 \<le> B"
+      and "depth_formula A3 \<le> B" and "depth_formula A4 \<le> B" and "1 \<le> B"
+    shows "depth_sub (set reassoc_atoms) (reassoc_sigma A0 A1 A2 A3 A4) \<le> B"
+proof -
+  let ?sub = "reassoc_sigma A0 A1 A2 A3 A4"
+  have len5: "length reassoc_atoms = 5" using reassoc_atoms_spec by simp
+  have bnd: "depth_formula (?sub v) \<le> B" if "v \<in> set reassoc_atoms" for v
+  proof -
+    from that obtain k where k5: "k < 5" and vk: "reassoc_atoms ! k = v"
+      using len5 by (auto simp: in_set_conv_nth)
+    have e: "?sub v = [A0, A1, A2, A3, A4] ! k"
+      unfolding vk[symmetric] by (rule reassoc_sigma_val[OF k5])
+    consider "k = 0" | "k = 1" | "k = 2" | "k = 3" | "k = 4" using k5 by linarith
+    thus ?thesis using e assms by cases simp_all
+  qed
+  show ?thesis unfolding depth_sub_def
+  proof (rule Max.boundedI)
+    show "finite (insert 1 ((\<lambda>v. depth_formula (?sub v)) ` set reassoc_atoms))" by simp
+    show "insert 1 ((\<lambda>v. depth_formula (?sub v)) ` set reassoc_atoms) \<noteq> {}" by simp
+    fix e assume "e \<in> insert 1 ((\<lambda>v. depth_formula (?sub v)) ` set reassoc_atoms)"
+    thus "e \<le> B" using bnd assms(6) by auto
+  qed
+qed
+
+lemma reassoc_subst_step:
+  "provable_balanced_iff
+     (balance A1 A0 (balance A3 A2 A4))
+     (balance (balance A1 A0 A3) (balance A1 A0 A2) A4)
+     case_one_lines
+     (case_one_step_len * len_sub (set reassoc_atoms) (reassoc_sigma A0 A1 A2 A3 A4))
+     (case_one_step_depth
+        + depth_sub (set reassoc_atoms) (reassoc_sigma A0 A1 A2 A3 A4))"
+proof -
+  let ?sub = "reassoc_sigma A0 A1 A2 A3 A4"
+  have finite_set: "finite (set reassoc_atoms)" by simp
+  have ra_disj: "set reassoc_atoms \<inter> avoid_atoms = {}" using reassoc_atoms_spec by simp
+  have sig_id: "\<forall>v. v \<notin> set reassoc_atoms \<longrightarrow> ?sub v = Atom v"
+    using reassoc_sigma_off by blast
+  note sig_conn = fresh_sub_conn[OF ra_disj sig_id]
+  note sig_cb = fresh_sub_cb[OF ra_disj sig_id]
+  have sv0: "?sub (reassoc_atoms ! 0) = A0" using reassoc_sigma_val[of 0] by simp
+  have sv1: "?sub (reassoc_atoms ! 1) = A1" using reassoc_sigma_val[of 1] by simp
+  have sv2: "?sub (reassoc_atoms ! 2) = A2" using reassoc_sigma_val[of 2] by simp
+  have sv3: "?sub (reassoc_atoms ! 3) = A3" using reassoc_sigma_val[of 3] by simp
+  have sv4: "?sub (reassoc_atoms ! 4) = A4" using reassoc_sigma_val[of 4] by simp
+  have subL: "sub_formula ?sub reassoc_lhs = balance A1 A0 (balance A3 A2 A4)"
+  proof -
+    have inner: "sub_formula ?sub
+                   (balance (Atom (reassoc_atoms ! 3)) (Atom (reassoc_atoms ! 2))
+                            (Atom (reassoc_atoms ! 4)))
+               = balance A3 A2 A4"
+    proof -
+      have "sub_formula ?sub
+              (balance (Atom (reassoc_atoms ! 3)) (Atom (reassoc_atoms ! 2))
+                       (Atom (reassoc_atoms ! 4)))
+          = balance (sub_formula ?sub (Atom (reassoc_atoms ! 3)))
+                    (sub_formula ?sub (Atom (reassoc_atoms ! 2)))
+                    (sub_formula ?sub (Atom (reassoc_atoms ! 4)))"
+        by (rule sub_formula_balance[OF sig_cb])
+      thus ?thesis by (simp only: sub_formula.simps sv3 sv2 sv4)
+    qed
+    have "sub_formula ?sub reassoc_lhs
+        = balance (sub_formula ?sub (Atom (reassoc_atoms ! 1)))
+                  (sub_formula ?sub (Atom (reassoc_atoms ! 0)))
+                  (sub_formula ?sub
+                     (balance (Atom (reassoc_atoms ! 3)) (Atom (reassoc_atoms ! 2))
+                              (Atom (reassoc_atoms ! 4))))"
+      unfolding reassoc_lhs_def by (rule sub_formula_balance[OF sig_cb])
+    thus ?thesis by (simp only: sub_formula.simps sv1 sv0 inner)
+  qed
+  have subR: "sub_formula ?sub reassoc_rhs
+            = balance (balance A1 A0 A3) (balance A1 A0 A2) A4"
+  proof -
+    have inL: "sub_formula ?sub
+                 (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
+                          (Atom (reassoc_atoms ! 3)))
+             = balance A1 A0 A3"
+    proof -
+      have "sub_formula ?sub
+              (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
+                       (Atom (reassoc_atoms ! 3)))
+          = balance (sub_formula ?sub (Atom (reassoc_atoms ! 1)))
+                    (sub_formula ?sub (Atom (reassoc_atoms ! 0)))
+                    (sub_formula ?sub (Atom (reassoc_atoms ! 3)))"
+        by (rule sub_formula_balance[OF sig_cb])
+      thus ?thesis by (simp only: sub_formula.simps sv1 sv0 sv3)
+    qed
+    have inR: "sub_formula ?sub
+                 (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
+                          (Atom (reassoc_atoms ! 2)))
+             = balance A1 A0 A2"
+    proof -
+      have "sub_formula ?sub
+              (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
+                       (Atom (reassoc_atoms ! 2)))
+          = balance (sub_formula ?sub (Atom (reassoc_atoms ! 1)))
+                    (sub_formula ?sub (Atom (reassoc_atoms ! 0)))
+                    (sub_formula ?sub (Atom (reassoc_atoms ! 2)))"
+        by (rule sub_formula_balance[OF sig_cb])
+      thus ?thesis by (simp only: sub_formula.simps sv1 sv0 sv2)
+    qed
+    have "sub_formula ?sub reassoc_rhs
+        = balance (sub_formula ?sub
+                     (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
+                              (Atom (reassoc_atoms ! 3))))
+                  (sub_formula ?sub
+                     (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
+                              (Atom (reassoc_atoms ! 2))))
+                  (sub_formula ?sub (Atom (reassoc_atoms ! 4)))"
+      unfolding reassoc_rhs_def by (rule sub_formula_balance[OF sig_cb])
+    thus ?thesis by (simp only: sub_formula.simps inL inR sv4)
+  qed
+  show ?thesis
+    using provable_balanced_iff_subst[OF case_one finite_set sig_id sig_conn,
+                                      unfolded subL subR] .
+qed
+
+subsection \<open>The case-one construction\<close>
+
 lemma case_one_construction:
   assumes wfP: "formula_well_formed (alphabet F) P"
       and geP: "len_formula P \<ge> spira_threshold"
@@ -2130,9 +2355,7 @@ proof -
   let ?RT = "spira_trans (fix_at s True ?Q)"
   let ?RF = "spira_trans (fix_at s False ?Q)"
   let ?TR = "spira_trans (subterm_at P pos)"
-  let ?vals = "[?XF, ?XT, ?RF, ?RT, ?TR]"
-  let ?sigma = "\<lambda>v. case map_of (zip reassoc_atoms ?vals) v of
-                     None \<Rightarrow> Atom v | Some f \<Rightarrow> f"
+  let ?sigma = "reassoc_sigma ?XF ?XT ?RF ?RT ?TR"
 
   \<comment> \<open>The position splits as q (the spira node) followed by s.\<close>
   have split: "valid_position P ?q \<and> valid_position ?Q s"
@@ -2179,108 +2402,6 @@ proof -
     "provable_balanced_iff (spira_trans (fix_at pos False P))
         (balance ?XT ?XF ?RF) lF szF depF"
     by (simp only: F4F[symmetric])
-
-  \<comment> \<open>Fresh-atom facts for the five reassociation atoms.\<close>
-  have ra_len: "length reassoc_atoms = 5" using reassoc_atoms_spec by simp
-  have ra_dist: "distinct reassoc_atoms" using reassoc_atoms_spec by simp
-  have ra_disj: "set reassoc_atoms \<inter> avoid_atoms = {}"
-    using reassoc_atoms_spec by simp
-  have lveq: "length reassoc_atoms = length ?vals" using ra_len by simp
-
-  have sig_val: "\<And>k::nat. k < 5 \<Longrightarrow> ?sigma (reassoc_atoms ! k) = ?vals ! k"
-  proof -
-    fix k :: nat assume "k < 5"
-    hence "map_of (zip reassoc_atoms ?vals) (reassoc_atoms ! k) = Some (?vals ! k)"
-      using map_of_zip_nth_lookup[OF ra_dist lveq] ra_len by simp
-    thus "?sigma (reassoc_atoms ! k) = ?vals ! k" by simp
-  qed
-  have sv0: "?sigma (reassoc_atoms ! 0) = ?XF" using sig_val[of 0] by simp
-  have sv1: "?sigma (reassoc_atoms ! 1) = ?XT" using sig_val[of 1] by simp
-  have sv2: "?sigma (reassoc_atoms ! 2) = ?RF" using sig_val[of 2] by simp
-  have sv3: "?sigma (reassoc_atoms ! 3) = ?RT" using sig_val[of 3] by simp
-  have sv4: "?sigma (reassoc_atoms ! 4) = ?TR" using sig_val[of 4] by simp
-
-  have sig_off: "\<And>v. v \<notin> set reassoc_atoms \<Longrightarrow> ?sigma v = Atom v"
-  proof -
-    fix v assume "v \<notin> set reassoc_atoms"
-    hence "map_of (zip reassoc_atoms ?vals) v = None"
-      by (rule map_of_zip_None_lookup)
-    thus "?sigma v = Atom v" by simp
-  qed
-  have sig_id: "\<forall>v. v \<notin> set reassoc_atoms \<longrightarrow> ?sigma v = Atom v"
-    using sig_off by blast
-  note sig_conn = fresh_sub_conn[OF ra_disj sig_id]
-  note sig_cb = fresh_sub_cb[OF ra_disj sig_id]
-
-  \<comment> \<open>The reassociation tautology, substituted to the actual subformulas.\<close>
-  have subL: "sub_formula ?sigma reassoc_lhs
-            = balance ?XT ?XF (balance ?RT ?RF ?TR)"
-  proof -
-    have inner: "sub_formula ?sigma
-                   (balance (Atom (reassoc_atoms ! 3)) (Atom (reassoc_atoms ! 2))
-                            (Atom (reassoc_atoms ! 4)))
-               = balance ?RT ?RF ?TR"
-    proof -
-      have "sub_formula ?sigma
-              (balance (Atom (reassoc_atoms ! 3)) (Atom (reassoc_atoms ! 2))
-                       (Atom (reassoc_atoms ! 4)))
-          = balance (sub_formula ?sigma (Atom (reassoc_atoms ! 3)))
-                    (sub_formula ?sigma (Atom (reassoc_atoms ! 2)))
-                    (sub_formula ?sigma (Atom (reassoc_atoms ! 4)))"
-        by (rule sub_formula_balance[OF sig_cb])
-      thus ?thesis by (simp only: sub_formula.simps sv3 sv2 sv4)
-    qed
-    have "sub_formula ?sigma reassoc_lhs
-        = balance (sub_formula ?sigma (Atom (reassoc_atoms ! 1)))
-                  (sub_formula ?sigma (Atom (reassoc_atoms ! 0)))
-                  (sub_formula ?sigma
-                     (balance (Atom (reassoc_atoms ! 3)) (Atom (reassoc_atoms ! 2))
-                              (Atom (reassoc_atoms ! 4))))"
-      unfolding reassoc_lhs_def by (rule sub_formula_balance[OF sig_cb])
-    thus ?thesis by (simp only: sub_formula.simps sv1 sv0 inner)
-  qed
-  have subR: "sub_formula ?sigma reassoc_rhs
-            = balance (balance ?XT ?XF ?RT) (balance ?XT ?XF ?RF) ?TR"
-  proof -
-    have inL: "sub_formula ?sigma
-                 (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
-                          (Atom (reassoc_atoms ! 3)))
-             = balance ?XT ?XF ?RT"
-    proof -
-      have "sub_formula ?sigma
-              (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
-                       (Atom (reassoc_atoms ! 3)))
-          = balance (sub_formula ?sigma (Atom (reassoc_atoms ! 1)))
-                    (sub_formula ?sigma (Atom (reassoc_atoms ! 0)))
-                    (sub_formula ?sigma (Atom (reassoc_atoms ! 3)))"
-        by (rule sub_formula_balance[OF sig_cb])
-      thus ?thesis by (simp only: sub_formula.simps sv1 sv0 sv3)
-    qed
-    have inR: "sub_formula ?sigma
-                 (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
-                          (Atom (reassoc_atoms ! 2)))
-             = balance ?XT ?XF ?RF"
-    proof -
-      have "sub_formula ?sigma
-              (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
-                       (Atom (reassoc_atoms ! 2)))
-          = balance (sub_formula ?sigma (Atom (reassoc_atoms ! 1)))
-                    (sub_formula ?sigma (Atom (reassoc_atoms ! 0)))
-                    (sub_formula ?sigma (Atom (reassoc_atoms ! 2)))"
-        by (rule sub_formula_balance[OF sig_cb])
-      thus ?thesis by (simp only: sub_formula.simps sv1 sv0 sv2)
-    qed
-    have "sub_formula ?sigma reassoc_rhs
-        = balance (sub_formula ?sigma
-                     (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
-                              (Atom (reassoc_atoms ! 3))))
-                  (sub_formula ?sigma
-                     (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
-                              (Atom (reassoc_atoms ! 2))))
-                  (sub_formula ?sigma (Atom (reassoc_atoms ! 4)))"
-      unfolding reassoc_rhs_def by (rule sub_formula_balance[OF sig_cb])
-    thus ?thesis by (simp only: sub_formula.simps inL inR sv4)
-  qed
 
   \<comment> \<open>Uniform size / depth budgets for the glued formulas. Every glued
       formula is a balance of spira_trans leaves, so its len / depth is a fixed
@@ -2373,51 +2494,13 @@ proof -
                                     (balance ?XT ?XF ?RF) ?TR) \<le> SDB"
     by (rule dbalSDB[OF pXTRT pXTRF le_trans[OF pTR DS_SDB1]])
 
-  \<comment> \<open>The substitution step: each reassoc atom maps to a spira_trans leaf.\<close>
-  have sigv_LS: "len_formula (?sigma v) \<le> LS" if "v \<in> set reassoc_atoms" for v
-  proof -
-    from that obtain k where k5: "k < 5" and vk: "reassoc_atoms ! k = v"
-      using ra_len by (auto simp: in_set_conv_nth)
-    have e: "?sigma v = ?vals ! k"
-      unfolding vk[symmetric] by (rule sig_val[OF k5])
-    consider "k = 0" | "k = 1" | "k = 2" | "k = 3" | "k = 4"
-      using k5 by linarith
-    thus ?thesis using e lXF lXT lRF lRT lTR by cases simp_all
-  qed
-  have sigv_DS: "depth_formula (?sigma v) \<le> DS" if "v \<in> set reassoc_atoms" for v
-  proof -
-    from that obtain k where k5: "k < 5" and vk: "reassoc_atoms ! k = v"
-      using ra_len by (auto simp: in_set_conv_nth)
-    have e: "?sigma v = ?vals ! k"
-      unfolding vk[symmetric] by (rule sig_val[OF k5])
-    consider "k = 0" | "k = 1" | "k = 2" | "k = 3" | "k = 4"
-      using k5 by linarith
-    thus ?thesis using e pXF pXT pRF pRT pTR by cases simp_all
-  qed
-  have card5: "card (set reassoc_atoms) = 5"
-    using distinct_card[OF ra_dist] ra_len by simp
-  have lsub: "len_sub (set reassoc_atoms) ?sigma \<le> 5 * LS"
-  proof -
-    have "(\<Sum>v\<in>set reassoc_atoms. len_formula (?sigma v))
-          \<le> (\<Sum>v\<in>set reassoc_atoms. LS)"
-      by (rule sum_mono) (rule sigv_LS)
-    also have "\<dots> = 5 * LS" using card5 by simp
-    finally have "(\<Sum>v\<in>set reassoc_atoms. len_formula (?sigma v)) \<le> 5 * LS" .
-    thus ?thesis unfolding len_sub_def using LS1 by simp
-  qed
+  \<comment> \<open>Substitution-step budgets via the shared reassoc_sigma helpers.\<close>
   have DS1: "1 \<le> DS"
     unfolding DSdef using depth_formula_ge_1[of ?XT] by linarith
+  have lsub: "len_sub (set reassoc_atoms) ?sigma \<le> 5 * LS"
+    by (rule reassoc_sigma_len_sub_le[OF lXF lXT lRF lRT lTR LS1])
   have dsub: "depth_sub (set reassoc_atoms) ?sigma \<le> DS"
-    unfolding depth_sub_def
-  proof (rule Max.boundedI)
-    show "finite (insert 1 ((\<lambda>v. depth_formula (?sigma v))
-                             ` set reassoc_atoms))" by simp
-    show "insert 1 ((\<lambda>v. depth_formula (?sigma v)) ` set reassoc_atoms)
-          \<noteq> {}" by simp
-    fix e assume "e \<in> insert 1 ((\<lambda>v. depth_formula (?sigma v))
-                                 ` set reassoc_atoms)"
-    thus "e \<le> DS" using sigv_DS DS1 by auto
-  qed
+    by (rule reassoc_sigma_depth_sub_le[OF pXF pXT pRF pRT pTR DS1])
 
   \<comment> \<open>NN / SDB bounds for every glued formula.\<close>
   have LS_NN: "LS \<le> NN" using LS_NN1 NN1_NN by simp
@@ -2528,8 +2611,7 @@ proof -
     unfolding DBXdef using dsub DS_SDB by linarith
   have dep2: "case_one_step_depth + depth_sub (set reassoc_atoms) ?sigma \<le> DB"
     by (rule le_trans[OF dep2X DBX_DB])
-  note step2 = provable_balanced_iff_subst[OF case_one finite_set sig_id sig_conn,
-                                           unfolded subL subR]
+  note step2 = reassoc_subst_step[of ?XT ?XF ?RT ?RF ?TR]
   note step2' = provable_balanced_iff_weaken[OF step2 order_refl sz2 dep2]
 
   \<comment> \<open>Composition by iff_trans_bnd.\<close>
@@ -2576,17 +2658,11 @@ proof -
     have c1: "3 * refl_step_len + 72 * balance_cong_step_len
               + 5 * case_one_step_len + 4 * sym_step_len + 6 * trans_step_len
               \<le> 72 * ?S" by simp
-    have c2: "cb * cb \<le> (cb + 1) * (cb + 1)"
-      by (intro mult_le_mono) simp_all
     have "(3 * refl_step_len + 72 * balance_cong_step_len
             + 5 * case_one_step_len + 4 * sym_step_len + 6 * trans_step_len)
           * (12 * (cb * cb))
-          \<le> (72 * ?S) * (12 * ((cb + 1) * (cb + 1)))"
-      by (intro mult_le_mono c1 mult_le_mono2 c2)
-    also have "\<dots> = 864 * ((cb + 1) * (cb + 1)) * ?S"
-      by (simp add: algebra_simps)
-    also have "\<dots> \<le> 4096 * ((cb + 1) * (cb + 1)) * ?S"
-      by (intro mult_le_mono1) simp
+          \<le> 4096 * ((cb + 1) * (cb + 1)) * ?S"
+      by (rule glue_coeff_envelope[OF c1])
     also have "\<dots> = rebal_glue_coeff"
       unfolding rebal_glue_coeff_def cbdef by (simp add: algebra_simps)
     finally show ?thesis .
@@ -2641,16 +2717,11 @@ proof -
         unfolding rebal_dep_coeff_def dcbdef by (simp add: algebra_simps)
       finally show ?thesis .
     qed
-    have b: "9 * DS \<le> rebal_dep_coeff * DS"
-      using rdc9 by (rule mult_le_mono1)
-    have "DBX = (refl_step_depth + sym_step_depth + trans_step_depth
+    have dbx: "DBX = (refl_step_depth + sym_step_depth + trans_step_depth
              + balance_cong_step_depth + case_one_step_depth + 4 * dcb + 4)
              + 9 * DS"
       unfolding DBXdef SDBdef SDB1def by simp
-    also have "\<dots> \<le> rebal_dep_coeff + rebal_dep_coeff * DS"
-      using a b by linarith
-    also have "\<dots> = rebal_dep_coeff * (DS + 1)" by (simp add: algebra_simps)
-    finally show ?thesis .
+    show ?thesis by (rule dep_coeff_envelope[OF dbx a rdc9])
   qed
   have DB_le: "DB \<le> max depQ (max depT (max depF (rebal_dep_coeff * (DS + 1))))"
     unfolding DBdef by (intro max.mono order_refl DBX_env)
@@ -2702,14 +2773,9 @@ proof -
             (lQ + lT + lF + case_one_glue_lines)
             (szQ + szT + szF + rebal_glue_coeff * (LS + 1))
             (max depQ (max depT (max depF (rebal_dep_coeff * (DS + 1)))))"
-      \<comment> \<open>chain carries three trivially-true side premises (the premises
-          of sig_conn's three-premise statement); simp discharges each.  The
-          line bound is an arithmetic identity; sz and dep are the structured
-          facts sz_le and chain_dep_le.\<close>
+      \<comment> \<open>The line bound is an arithmetic identity; sz and dep are the
+          structured facts sz_le and chain_dep_le.\<close>
       apply (rule provable_balanced_iff_weaken[OF chain])
-           apply simp
-          apply simp
-         apply simp
         apply (simp add: case_one_glue_lines_def)
        apply (rule sz_le)
       apply (rule chain_dep_le)
@@ -2747,6 +2813,8 @@ qed
          \<leftrightarrow> balance PRT PRF (balance RsT RsF (t Q))                  (case_one reversed)
          \<leftrightarrow> rebalancing P pos                                       (balance_cong, IH at R)
 *)
+subsection \<open>The case-two construction\<close>
+
 definition case_two_glue_lines :: nat where
   "case_two_glue_lines = 3 * refl_lines + 2 * sym_lines + 2 * balance_cong_lines
      + case_one_lines + 2 * trans_lines"
@@ -2799,9 +2867,7 @@ proof -
   let ?PRF = "spira_trans (fix_at pos False P)"
   let ?RsT = "spira_trans (fix_at s True ?R)"
   let ?RsF = "spira_trans (fix_at s False ?R)"
-  let ?vals = "[?PRF, ?PRT, ?RsF, ?RsT, spira_trans ?Q]"
-  let ?sigma = "\<lambda>v. case map_of (zip reassoc_atoms ?vals) v of
-                     None \<Rightarrow> Atom v | Some f \<Rightarrow> f"
+  let ?sigma = "reassoc_sigma ?PRF ?PRT ?RsF ?RsT (spira_trans ?Q)"
 
   \<comment> \<open>spira_trans P opens at the spira node Q.\<close>
   have F2: "spira_trans P = balance ?QT ?QF (spira_trans ?Q)"
@@ -2840,109 +2906,6 @@ proof -
     "provable_balanced_iff (spira_trans ?R)
         (balance ?RsT ?RsF (spira_trans ?Q)) lR szR depR"
     by (simp only: F_R[symmetric])
-
-  \<comment> \<open>Fresh-atom facts for the five reassociation atoms.\<close>
-  have ra_len: "length reassoc_atoms = 5" using reassoc_atoms_spec by simp
-  have ra_dist: "distinct reassoc_atoms" using reassoc_atoms_spec by simp
-  have ra_disj: "set reassoc_atoms \<inter> avoid_atoms = {}"
-    using reassoc_atoms_spec by simp
-  have lveq: "length reassoc_atoms = length ?vals" using ra_len by simp
-
-  have sig_val: "\<And>k::nat. k < 5 \<Longrightarrow> ?sigma (reassoc_atoms ! k) = ?vals ! k"
-  proof -
-    fix k :: nat assume "k < 5"
-    hence "map_of (zip reassoc_atoms ?vals) (reassoc_atoms ! k) = Some (?vals ! k)"
-      using map_of_zip_nth_lookup[OF ra_dist lveq] ra_len by simp
-    thus "?sigma (reassoc_atoms ! k) = ?vals ! k" by simp
-  qed
-  have sv0: "?sigma (reassoc_atoms ! 0) = ?PRF" using sig_val[of 0] by simp
-  have sv1: "?sigma (reassoc_atoms ! 1) = ?PRT" using sig_val[of 1] by simp
-  have sv2: "?sigma (reassoc_atoms ! 2) = ?RsF" using sig_val[of 2] by simp
-  have sv3: "?sigma (reassoc_atoms ! 3) = ?RsT" using sig_val[of 3] by simp
-  have sv4: "?sigma (reassoc_atoms ! 4) = spira_trans ?Q" using sig_val[of 4] by simp
-
-  have sig_off: "\<And>v. v \<notin> set reassoc_atoms \<Longrightarrow> ?sigma v = Atom v"
-  proof -
-    fix v assume "v \<notin> set reassoc_atoms"
-    hence "map_of (zip reassoc_atoms ?vals) v = None"
-      by (rule map_of_zip_None_lookup)
-    thus "?sigma v = Atom v" by simp
-  qed
-  have sig_id: "\<forall>v. v \<notin> set reassoc_atoms \<longrightarrow> ?sigma v = Atom v"
-    using sig_off by blast
-  note sig_conn = fresh_sub_conn[OF ra_disj sig_id]
-  note sig_cb = fresh_sub_cb[OF ra_disj sig_id]
-
-  \<comment> \<open>The reassociation tautology, substituted to the actual subformulas.\<close>
-  have subR: "sub_formula ?sigma reassoc_rhs
-            = balance (balance ?PRT ?PRF ?RsT) (balance ?PRT ?PRF ?RsF)
-                      (spira_trans ?Q)"
-  proof -
-    have inL: "sub_formula ?sigma
-                 (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
-                          (Atom (reassoc_atoms ! 3)))
-             = balance ?PRT ?PRF ?RsT"
-    proof -
-      have "sub_formula ?sigma
-              (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
-                       (Atom (reassoc_atoms ! 3)))
-          = balance (sub_formula ?sigma (Atom (reassoc_atoms ! 1)))
-                    (sub_formula ?sigma (Atom (reassoc_atoms ! 0)))
-                    (sub_formula ?sigma (Atom (reassoc_atoms ! 3)))"
-        by (rule sub_formula_balance[OF sig_cb])
-      thus ?thesis by (simp only: sub_formula.simps sv1 sv0 sv3)
-    qed
-    have inR: "sub_formula ?sigma
-                 (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
-                          (Atom (reassoc_atoms ! 2)))
-             = balance ?PRT ?PRF ?RsF"
-    proof -
-      have "sub_formula ?sigma
-              (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
-                       (Atom (reassoc_atoms ! 2)))
-          = balance (sub_formula ?sigma (Atom (reassoc_atoms ! 1)))
-                    (sub_formula ?sigma (Atom (reassoc_atoms ! 0)))
-                    (sub_formula ?sigma (Atom (reassoc_atoms ! 2)))"
-        by (rule sub_formula_balance[OF sig_cb])
-      thus ?thesis by (simp only: sub_formula.simps sv1 sv0 sv2)
-    qed
-    have "sub_formula ?sigma reassoc_rhs
-        = balance (sub_formula ?sigma
-                     (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
-                              (Atom (reassoc_atoms ! 3))))
-                  (sub_formula ?sigma
-                     (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
-                              (Atom (reassoc_atoms ! 2))))
-                  (sub_formula ?sigma (Atom (reassoc_atoms ! 4)))"
-      unfolding reassoc_rhs_def by (rule sub_formula_balance[OF sig_cb])
-    thus ?thesis by (simp only: sub_formula.simps inL inR sv4)
-  qed
-  have subL: "sub_formula ?sigma reassoc_lhs
-            = balance ?PRT ?PRF (balance ?RsT ?RsF (spira_trans ?Q))"
-  proof -
-    have inner: "sub_formula ?sigma
-                   (balance (Atom (reassoc_atoms ! 3)) (Atom (reassoc_atoms ! 2))
-                            (Atom (reassoc_atoms ! 4)))
-               = balance ?RsT ?RsF (spira_trans ?Q)"
-    proof -
-      have "sub_formula ?sigma
-              (balance (Atom (reassoc_atoms ! 3)) (Atom (reassoc_atoms ! 2))
-                       (Atom (reassoc_atoms ! 4)))
-          = balance (sub_formula ?sigma (Atom (reassoc_atoms ! 3)))
-                    (sub_formula ?sigma (Atom (reassoc_atoms ! 2)))
-                    (sub_formula ?sigma (Atom (reassoc_atoms ! 4)))"
-        by (rule sub_formula_balance[OF sig_cb])
-      thus ?thesis by (simp only: sub_formula.simps sv3 sv2 sv4)
-    qed
-    have "sub_formula ?sigma reassoc_lhs
-        = balance (sub_formula ?sigma (Atom (reassoc_atoms ! 1)))
-                  (sub_formula ?sigma (Atom (reassoc_atoms ! 0)))
-                  (sub_formula ?sigma
-                     (balance (Atom (reassoc_atoms ! 3)) (Atom (reassoc_atoms ! 2))
-                              (Atom (reassoc_atoms ! 4))))"
-      unfolding reassoc_lhs_def by (rule sub_formula_balance[OF sig_cb])
-    thus ?thesis by (simp only: sub_formula.simps sv1 sv0 inner)
-  qed
 
   \<comment> \<open>Uniform size / depth budgets for the glued formulas.\<close>
   define cb where cbdef: "cb = len_formula custom_balancing"
@@ -3041,51 +3004,13 @@ proof -
                    le_trans[OF pRsT DS_SDB] le_trans[OF pRsF DS_SDB]
                    le_trans[OF pQ' DS_SDB] le_trans[OF pR' DS_SDB]
 
-  \<comment> \<open>The substitution step: each reassoc atom maps to a spira_trans leaf.\<close>
-  have sigv_LS: "len_formula (?sigma v) \<le> LS" if "v \<in> set reassoc_atoms" for v
-  proof -
-    from that obtain k where k5: "k < 5" and vk: "reassoc_atoms ! k = v"
-      using ra_len by (auto simp: in_set_conv_nth)
-    have e: "?sigma v = ?vals ! k"
-      unfolding vk[symmetric] by (rule sig_val[OF k5])
-    consider "k = 0" | "k = 1" | "k = 2" | "k = 3" | "k = 4"
-      using k5 by linarith
-    thus ?thesis using e lPRF lPRT lRsF lRsT lQ' by cases simp_all
-  qed
-  have sigv_DS: "depth_formula (?sigma v) \<le> DS" if "v \<in> set reassoc_atoms" for v
-  proof -
-    from that obtain k where k5: "k < 5" and vk: "reassoc_atoms ! k = v"
-      using ra_len by (auto simp: in_set_conv_nth)
-    have e: "?sigma v = ?vals ! k"
-      unfolding vk[symmetric] by (rule sig_val[OF k5])
-    consider "k = 0" | "k = 1" | "k = 2" | "k = 3" | "k = 4"
-      using k5 by linarith
-    thus ?thesis using e pPRF pPRT pRsF pRsT pQ' by cases simp_all
-  qed
-  have card5: "card (set reassoc_atoms) = 5"
-    using distinct_card[OF ra_dist] ra_len by simp
-  have lsub: "len_sub (set reassoc_atoms) ?sigma \<le> 5 * LS"
-  proof -
-    have "(\<Sum>v\<in>set reassoc_atoms. len_formula (?sigma v))
-          \<le> (\<Sum>v\<in>set reassoc_atoms. LS)"
-      by (rule sum_mono) (rule sigv_LS)
-    also have "\<dots> = 5 * LS" using card5 by simp
-    finally have "(\<Sum>v\<in>set reassoc_atoms. len_formula (?sigma v)) \<le> 5 * LS" .
-    thus ?thesis unfolding len_sub_def using LS1 by simp
-  qed
+  \<comment> \<open>Substitution-step budgets via the shared reassoc_sigma helpers.\<close>
   have DS1: "1 \<le> DS"
     unfolding DSdef using depth_formula_ge_1[of ?QT] by linarith
+  have lsub: "len_sub (set reassoc_atoms) ?sigma \<le> 5 * LS"
+    by (rule reassoc_sigma_len_sub_le[OF lPRF lPRT lRsF lRsT lQ' LS1])
   have dsub: "depth_sub (set reassoc_atoms) ?sigma \<le> DS"
-    unfolding depth_sub_def
-  proof (rule Max.boundedI)
-    show "finite (insert 1 ((\<lambda>v. depth_formula (?sigma v))
-                             ` set reassoc_atoms))" by simp
-    show "insert 1 ((\<lambda>v. depth_formula (?sigma v)) ` set reassoc_atoms)
-          \<noteq> {}" by simp
-    fix e assume "e \<in> insert 1 ((\<lambda>v. depth_formula (?sigma v))
-                                 ` set reassoc_atoms)"
-    thus "e \<le> DS" using sigv_DS DS1 by auto
-  qed
+    by (rule reassoc_sigma_depth_sub_le[OF pPRF pPRT pRsF pRsT pQ' DS1])
 
   \<comment> \<open>Glue depths sit below DBX, hence below DB.\<close>
   have AXQ: "refl_step_depth + depth_formula (spira_trans ?Q) \<le> DBX"
@@ -3166,8 +3091,7 @@ proof -
     unfolding DBXdef using dsub DS_SDB by linarith
   have dep2: "case_one_step_depth + depth_sub (set reassoc_atoms) ?sigma \<le> DB"
     by (rule le_trans[OF dep2X DBX_DB])
-  note step2sub = provable_balanced_iff_subst[OF case_one finite_set sig_id
-                                                 sig_conn, unfolded subL subR]
+  note step2sub = reassoc_subst_step[of ?PRT ?PRF ?RsT ?RsF "spira_trans ?Q"]
   note step2sub' = provable_balanced_iff_weaken[OF step2sub order_refl sz2 dep2]
   have lp2: "len_formula (balance ?PRT ?PRF (balance ?RsT ?RsF (spira_trans ?Q)))
            + len_formula (balance (balance ?PRT ?PRF ?RsT)
@@ -3227,17 +3151,11 @@ proof -
     have c1: "3 * refl_step_len + 72 * balance_cong_step_len
               + 5 * case_one_step_len + 4 * sym_step_len + 6 * trans_step_len
               \<le> 72 * ?S" by simp
-    have c2: "cb * cb \<le> (cb + 1) * (cb + 1)"
-      by (intro mult_le_mono) simp_all
     have "(3 * refl_step_len + 72 * balance_cong_step_len
             + 5 * case_one_step_len + 4 * sym_step_len + 6 * trans_step_len)
           * (12 * (cb * cb))
-          \<le> (72 * ?S) * (12 * ((cb + 1) * (cb + 1)))"
-      by (intro mult_le_mono c1 mult_le_mono2 c2)
-    also have "\<dots> = 864 * ((cb + 1) * (cb + 1)) * ?S"
-      by (simp add: algebra_simps)
-    also have "\<dots> \<le> 4096 * ((cb + 1) * (cb + 1)) * ?S"
-      by (intro mult_le_mono1) simp
+          \<le> 4096 * ((cb + 1) * (cb + 1)) * ?S"
+      by (rule glue_coeff_envelope[OF c1])
     also have "\<dots> = rebal_glue_coeff"
       unfolding rebal_glue_coeff_def cbdef by (simp add: algebra_simps)
     finally show ?thesis .
@@ -3325,16 +3243,11 @@ proof -
         unfolding rebal_dep_coeff_def dcbdef by (simp add: algebra_simps)
       finally show ?thesis .
     qed
-    have b: "9 * DS \<le> rebal_dep_coeff * DS"
-      using rdc9 by (rule mult_le_mono1)
-    have "DBX = (refl_step_depth + sym_step_depth + trans_step_depth
+    have dbx: "DBX = (refl_step_depth + sym_step_depth + trans_step_depth
              + balance_cong_step_depth + case_one_step_depth + 4 * dcb + 4)
              + 9 * DS"
       unfolding DBXdef SDBdef SDB1def by simp
-    also have "\<dots> \<le> rebal_dep_coeff + rebal_dep_coeff * DS"
-      using a b by linarith
-    also have "\<dots> = rebal_dep_coeff * (DS + 1)" by (simp add: algebra_simps)
-    finally show ?thesis .
+    show ?thesis by (rule dep_coeff_envelope[OF dbx a rdc9])
   qed
   have DB_le: "DB \<le> max depT (max depF (max depR (rebal_dep_coeff * (DS + 1))))"
     unfolding DBdef by (intro max.mono order_refl DBX_env)
@@ -3357,12 +3270,9 @@ proof -
             (lT + lF + lR + case_two_glue_lines)
             (szT + szF + szR + rebal_glue_coeff * (LS + 1))
             (max depT (max depF (max depR (rebal_dep_coeff * (DS + 1)))))"
-      \<comment> \<open>chain carries three trivially-true side premises (the premises
-          of sig_conn's three-premise statement); simp discharges each.\<close>
+      \<comment> \<open>The line bound is an arithmetic identity; sz and dep are the
+          structured facts sz_le and chain_dep_le.\<close>
       apply (rule provable_balanced_iff_weaken[OF chain])
-           apply simp
-          apply simp
-         apply simp
         apply (simp add: case_two_glue_lines_def)
        apply (rule sz_le)
       apply (rule chain_dep_le)
@@ -3385,6 +3295,8 @@ proof -
       unfolding DSdef by simp
   qed
 qed
+
+subsection \<open>The case-three identity and construction\<close>
 
 definition case_three_lhs :: "'c formula" where
   "case_three_lhs =
@@ -4097,17 +4009,11 @@ proof -
     have c1: "2 * refl_step_len + 72 * balance_cong_step_len
               + 6 * case_three_step_len + 4 * sym_step_len + 6 * trans_step_len
               \<le> 72 * ?S" by simp
-    have c2: "cb * cb \<le> (cb + 1) * (cb + 1)"
-      by (intro mult_le_mono) simp_all
     have "(2 * refl_step_len + 72 * balance_cong_step_len
             + 6 * case_three_step_len + 4 * sym_step_len + 6 * trans_step_len)
           * (12 * (cb * cb))
-          \<le> (72 * ?S) * (12 * ((cb + 1) * (cb + 1)))"
-      by (intro mult_le_mono c1 mult_le_mono2 c2)
-    also have "\<dots> = 864 * ((cb + 1) * (cb + 1)) * ?S"
-      by (simp add: algebra_simps)
-    also have "\<dots> \<le> 4096 * ((cb + 1) * (cb + 1)) * ?S"
-      by (intro mult_le_mono1) simp
+          \<le> 4096 * ((cb + 1) * (cb + 1)) * ?S"
+      by (rule glue_coeff_envelope[OF c1])
     also have "\<dots> = rebal_glue_coeff3"
       unfolding rebal_glue_coeff3_def cbdef by (simp add: algebra_simps)
     finally show ?thesis .
@@ -4193,16 +4099,11 @@ proof -
         unfolding rebal_dep_coeff3_def dcbdef by (simp add: algebra_simps)
       finally show ?thesis .
     qed
-    have b: "9 * DS \<le> rebal_dep_coeff3 * DS"
-      using rdc9 by (rule mult_le_mono1)
-    have "DBX = (refl_step_depth + sym_step_depth + trans_step_depth
+    have dbx: "DBX = (refl_step_depth + sym_step_depth + trans_step_depth
              + balance_cong_step_depth + case_three_step_depth + 4 * dcb + 4)
              + 9 * DS"
       unfolding DBXdef SDBdef SDB1def by simp
-    also have "\<dots> \<le> rebal_dep_coeff3 + rebal_dep_coeff3 * DS"
-      using a b by linarith
-    also have "\<dots> = rebal_dep_coeff3 * (DS + 1)" by (simp add: algebra_simps)
-    finally show ?thesis .
+    show ?thesis by (rule dep_coeff_envelope[OF dbx a rdc9])
   qed
   have DB_le: "DB \<le> max depQT (max depQF (max depRT (max depRF
                      (rebal_dep_coeff3 * (DS + 1)))))"
@@ -4273,6 +4174,8 @@ qed
   of the second component (rebal_measure_lt_of_len_lt) --- while an atom-R
   recursion keeps |P| fixed and decreases only the second.
 *)
+subsection \<open>The termination measure\<close>
+
 definition rebal_measure :: "'c formula \<Rightarrow> nat list \<Rightarrow> nat" where
   "rebal_measure P pos =
      len_formula P * (len_formula P + 1)
@@ -4487,6 +4390,8 @@ qed
   and t(P) \<leftrightarrow> rebalancing P [] is the fixed mux identity
   z \<leftrightarrow> balance true_const false_const z, substituted at z := spira_trans P.
 *)
+subsection \<open>The pos = [] degenerate case\<close>
+
 lemma rebalancing_at_root:
   "rebalancing P [] = balance true_const false_const (spira_trans P)"
 proof -
@@ -4609,6 +4514,8 @@ lemma case_pos_empty_construction:
   iff_congruent; this wrapper combines its proof with the premise proof,
   discharging the single assumption iff_form \<phi> \<psi>.
 *)
+subsection \<open>Connective (slot) congruence\<close>
+
 lemma plug_cong_exists:
   "\<exists> (congbnd :: nat poly) (congc :: nat).
      \<forall> \<phi> \<psi> \<chi> h l s d.
@@ -4823,6 +4730,8 @@ lemma plug_cong:
   whose two branches place p resp. q at slot i. A fixed (per c, i) tautology
   over fresh atoms; the construction below substitutes it to actual formulas.
 *)
+subsection \<open>Selector reassociation for a general connective\<close>
+
 definition reassoc_conn_atoms :: "'c \<Rightarrow> string list" where
   "reassoc_conn_atoms c = fresh_atoms (arity (alphabet F) c + 3)"
 
@@ -5223,6 +5132,8 @@ lemma reassoc_conn_step_depth_le:
   Below threshold spira_trans is the identity, so rebalancing collapses to a
   plain Shannon split: balance of the two fixings over the subterm.
 *)
+subsection \<open>Position and size lemmas for the Shannon construction\<close>
+
 lemma rebalancing_below_eq:
   assumes wf: "formula_well_formed (alphabet F) P"
       and small: "len_formula P < spira_threshold"
@@ -5623,6 +5534,8 @@ qed
   generous constant dominating the base case and every per-step glue; since a
   below-threshold formula is bounded, all the per-step costs collapse to it.
 *)
+subsection \<open>The below-threshold Shannon construction\<close>
+
 definition shannon_balmax :: nat where
   "shannon_balmax = len_formula custom_balancing * (3 * spira_threshold + 1)"
 
@@ -6049,6 +5962,8 @@ qed
   L n m = A*n^d + 2*A*m^d with d = 10*(2*kk+1) absorbs this because
   (2*kk+2)^d >= 11*(2*kk+1)^d, i.e. 10 cn^d < n^d.
 *)
+subsection \<open>The polynomial-bound machinery\<close>
+
 lemma pow_succ_lower:
   fixes x :: nat
   shows "x ^ Suc n + Suc n * x ^ n \<le> (x + 1) ^ Suc n"
@@ -6358,6 +6273,8 @@ lemma rebal_shc_spec:
 \<comment> \<open>rebal_base_K: the sum of every glue / base-case constant.  rebal_glue_K
     scales it by (10 * poly rebal_tb 1 + 1) so that, against n ^ rebal_deg, all of
     them sit below rebal_glue_K * n ^ rebal_deg (see rebal_L_dom).\<close>
+subsection \<open>The L(n,m) recurrence function and its bounds\<close>
+
 definition rebal_base_K :: nat where
   "rebal_base_K = case_one_glue_lines + case_two_glue_lines
                   + case_three_glue_lines + refl_lines + pos_empty_lines
@@ -6713,6 +6630,8 @@ proof -
     unfolding rebal_glue_K_def by (intro mult_le_mono1) simp
   finally show ?thesis .
 qed
+
+subsection \<open>The main induction (Lemma 5.1)\<close>
 
 lemma rebalancing_provable:
   shows "\<exists> (bnd :: nat poly) (c :: real).
@@ -8298,6 +8217,8 @@ qed
 
 
 (* theorem 1.1 *)
+subsection \<open>Proof balancing (final theorem)\<close>
+
 theorem proof_balancing:
   shows "\<exists> bound :: nat poly. \<exists> c :: real.
            \<forall> pr. valid_proof F pr \<and> assumptions pr = {} \<longrightarrow>
