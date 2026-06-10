@@ -1649,6 +1649,12 @@ proof -
             also have "\<dots> \<le> DDC + ?LGN" using crefl dZ by linarith
             finally show ?thesis by (simp add: add.commute)
           qed
+          have dA3w: "real (depth_formula (spira_trans (Conn c (?cb # qs[j := true_const]))))
+                      \<le> ?LGN + 2" using dA3 by simp
+          have dA4w: "real (depth_formula (spira_trans (Conn c (?cb # qs[j := false_const]))))
+                      \<le> ?LGN + 2" using dA4 by simp
+          have dZw: "real (depth_formula (spira_trans (qs ! j))) \<le> ?LGN + 2"
+            using dZ by simp
           have dmax6: "real (max (depth_formula (spira_trans (Conn c (?cb # qs[j := true_const]))))
                   (max (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const])))
                   (max (depth_formula (spira_trans (Conn c (?cb # qs[j := false_const]))))
@@ -1656,7 +1662,7 @@ proof -
                   (max (depth_formula (spira_trans (qs ! j)))
                        (depth_formula (spira_trans (qs ! j))))))))
                 \<le> ?LGN + 2"
-            using dA3 dB1 dA4 dB2 dZ by (simp add: of_nat_max)
+            by (rule real_of_nat_max_le dA3w dB1 dA4w dB2 dZw)+
           have DL5: "real (balance_cong_step_depth
                   + max (depth_formula (spira_trans (Conn c (?cb # qs[j := true_const]))))
                   (max (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const])))
@@ -1677,7 +1683,7 @@ proof -
                   (max (depth_formula (spira_trans (Conn c (?cb # qs[j := false_const]))))
                   (max (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const])))
                   (max (depth_formula (spira_trans (qs ! j)))
-                       (depth_formula (spira_trans (qs ! j))))))))" by simp
+                       (depth_formula (spira_trans (qs ! j))))))))" by (rule of_nat_add)
             also have "\<dots> \<le> ?LGN + DDC" using dmax6 cbcsd2 by linarith
             finally show ?thesis .
           qed
@@ -2939,9 +2945,9 @@ proof -
                      (max (depth_formula (spira_trans (Conn conn (false_const # rest))))
                        (max (depth_formula (Conn (conn_fix conn 0 False) (map spira_trans rest)))
                          (max (depth_formula (spira_trans Q1)) (depth_formula (spira_trans Q1)))))))"
-          by simp
+          by (rule of_nat_add)
         also have "\<dots> \<le> (real balance_cong_step_depth + 1) + tcm * log 2 (real ?N + 1)"
-          using m6 by simp
+          using m6 by linarith
         finally show "real (balance_cong_step_depth + max (depth_formula (spira_trans (Conn conn (true_const # rest))))
                    (max (depth_formula (Conn (conn_fix conn 0 True) (map spira_trans rest)))
                      (max (depth_formula (spira_trans (Conn conn (false_const # rest))))
@@ -3076,15 +3082,1810 @@ proof -
   show ?thesis using main by blast
 qed
 
-(* Lemma 6.4 *)
+subsection \<open>Structural commutation: Lemma 6.4 (transform_commutes_form)\<close>
+
+subsubsection \<open>A depth-tight connective congruence\<close>
+
+definition conn_cong_atoms where
+  "conn_cong_atoms c = fresh_atoms (2 * arity (alphabet F) c)"
+
+lemma conn_cong_atoms_spec:
+  "length (conn_cong_atoms c) = 2 * arity (alphabet F) c
+   \<and> distinct (conn_cong_atoms c)
+   \<and> set (conn_cong_atoms c) \<inter> avoid_atoms = {}"
+  unfolding conn_cong_atoms_def
+  using fresh_atoms_spec[of "2 * arity (alphabet F) c"] by simp
+
+definition conn_cong_lhs where
+  "conn_cong_lhs c =
+     Conn c (map Atom (take (arity (alphabet F) c) (conn_cong_atoms c)))"
+
+definition conn_cong_rhs where
+  "conn_cong_rhs c =
+     Conn c (map Atom (drop (arity (alphabet F) c) (conn_cong_atoms c)))"
+
+definition conn_cong_asms where
+  "conn_cong_asms c =
+     (\<lambda>i. iff_form (Atom (conn_cong_atoms c ! i))
+                   (Atom (conn_cong_atoms c ! (arity (alphabet F) c + i))))
+       ` {..< arity (alphabet F) c}"
+
+definition conn_cong_base_proof where
+  "conn_cong_base_proof c =
+     entails_proof (conn_cong_asms c) (iff_form (conn_cong_lhs c) (conn_cong_rhs c))"
+
+lemma conn_cong_taut:
+  "\<forall>val. (\<forall>f \<in> conn_cong_asms c. eval (alphabet F) val f)
+         \<longrightarrow> eval (alphabet F) val (iff_form (conn_cong_lhs c) (conn_cong_rhs c))"
+proof (intro allI impI)
+  fix val
+  let ?k = "arity (alphabet F) c"
+  let ?as = "take ?k (conn_cong_atoms c)"
+  let ?bs = "drop ?k (conn_cong_atoms c)"
+  have lenat: "length (conn_cong_atoms c) = 2 * ?k" using conn_cong_atoms_spec by simp
+  have lena: "length ?as = ?k" using lenat by simp
+  have lenb: "length ?bs = ?k" using lenat by simp
+  assume hyp: "\<forall>f \<in> conn_cong_asms c. eval (alphabet F) val f"
+  have eqi: "\<And>i. i < ?k \<Longrightarrow> val (?as ! i) = val (?bs ! i)"
+  proof -
+    fix i assume i: "i < ?k"
+    have asi: "?as ! i = conn_cong_atoms c ! i" using i lena by (simp add: nth_take)
+    have bsi: "?bs ! i = conn_cong_atoms c ! (?k + i)" using i lenb by simp
+    have "iff_form (Atom (conn_cong_atoms c ! i)) (Atom (conn_cong_atoms c ! (?k + i)))
+          \<in> conn_cong_asms c"
+      unfolding conn_cong_asms_def using i by blast
+    hence "eval (alphabet F) val
+             (iff_form (Atom (conn_cong_atoms c ! i)) (Atom (conn_cong_atoms c ! (?k + i))))"
+      using hyp by blast
+    hence "val (conn_cong_atoms c ! i) = val (conn_cong_atoms c ! (?k + i))"
+      by (simp add: iff_form_eval)
+    thus "val (?as ! i) = val (?bs ! i)" using asi bsi by simp
+  qed
+  have mapeq: "map val ?as = map val ?bs"
+  proof (rule nth_equalityI)
+    show "length (map val ?as) = length (map val ?bs)" using lena lenb by simp
+  next
+    fix i assume "i < length (map val ?as)"
+    hence "i < ?k" using lena by simp
+    thus "map val ?as ! i = map val ?bs ! i" using eqi lena lenb by simp
+  qed
+  have "eval (alphabet F) val (conn_cong_lhs c)
+        = conn_evals (alphabet F) c (map val ?as)"
+    unfolding conn_cong_lhs_def by (simp add: comp_def)
+  also have "\<dots> = conn_evals (alphabet F) c (map val ?bs)" using mapeq by simp
+  also have "\<dots> = eval (alphabet F) val (conn_cong_rhs c)"
+    unfolding conn_cong_rhs_def by (simp add: comp_def)
+  finally show "eval (alphabet F) val (iff_form (conn_cong_lhs c) (conn_cong_rhs c))"
+    by (simp add: iff_form_eval)
+qed
+
+lemma conn_cong_base_proof_spec:
+  "valid_proof F (conn_cong_base_proof c)
+   \<and> assumptions (conn_cong_base_proof c) = conn_cong_asms c
+   \<and> thesis (conn_cong_base_proof c) = iff_form (conn_cong_lhs c) (conn_cong_rhs c)"
+  unfolding conn_cong_base_proof_def
+  using entails_proof_spec[OF conn_cong_taut] .
+
+definition conn_cong_lines where
+  "conn_cong_lines c = length (steps (conn_cong_base_proof c))"
+definition conn_cong_step_len where
+  "conn_cong_step_len c =
+     Max (insert 1 (len_formula ` set (steps (conn_cong_base_proof c))))"
+definition conn_cong_step_depth where
+  "conn_cong_step_depth c =
+     Max (insert 1 (depth_formula ` set (steps (conn_cong_base_proof c))))"
+
+definition conn_cong_max_lines where
+  "conn_cong_max_lines = Max (insert 0 (conn_cong_lines ` UNIV))"
+definition conn_cong_max_step_len where
+  "conn_cong_max_step_len = Max (insert 0 (conn_cong_step_len ` UNIV))"
+definition conn_cong_max_step_depth where
+  "conn_cong_max_step_depth = Max (insert 0 (conn_cong_step_depth ` UNIV))"
+
+lemma conn_cong_max_ge:
+  "conn_cong_lines c \<le> conn_cong_max_lines
+   \<and> conn_cong_step_len c \<le> conn_cong_max_step_len
+   \<and> conn_cong_step_depth c \<le> conn_cong_max_step_depth"
+proof -
+  have fs: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+  have f1: "finite (insert 0 (conn_cong_lines ` UNIV))"
+    using frege_system.finite_alphabet[OF fs] by simp
+  have f2: "finite (insert 0 (conn_cong_step_len ` UNIV))"
+    using frege_system.finite_alphabet[OF fs] by simp
+  have f3: "finite (insert 0 (conn_cong_step_depth ` UNIV))"
+    using frege_system.finite_alphabet[OF fs] by simp
+  have "conn_cong_lines c \<le> conn_cong_max_lines"
+    unfolding conn_cong_max_lines_def by (rule Max_ge[OF f1]) simp
+  moreover have "conn_cong_step_len c \<le> conn_cong_max_step_len"
+    unfolding conn_cong_max_step_len_def by (rule Max_ge[OF f2]) simp
+  moreover have "conn_cong_step_depth c \<le> conn_cong_max_step_depth"
+    unfolding conn_cong_max_step_depth_def by (rule Max_ge[OF f3]) simp
+  ultimately show ?thesis by blast
+qed
+
+lemma combine_fold_spec:
+  assumes vbase: "valid_proof F base"
+  shows "(\<forall>p \<in> set ps. valid_proof F p \<and> assumptions p = {}) \<longrightarrow>
+         (valid_proof F (foldr combine_proofs ps base)
+          \<and> assumptions (foldr combine_proofs ps base)
+              = assumptions base - (\<Union>p \<in> set ps. set (steps p))
+          \<and> thesis (foldr combine_proofs ps base) = thesis base
+          \<and> steps (foldr combine_proofs ps base) = concat (map steps ps) @ steps base)"
+proof (induction ps)
+  case Nil
+  show ?case using vbase by simp
+next
+  case (Cons p ps)
+  show ?case
+  proof (intro impI)
+    assume hyps: "\<forall>q \<in> set (p # ps). valid_proof F q \<and> assumptions q = {}"
+    have fs: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+    have vp: "valid_proof F p" and ap: "assumptions p = {}" using hyps by auto
+    have cp_th: "\<And>X. thesis (combine_proofs p X) = thesis X" by simp
+    have cp_st: "\<And>X. steps (combine_proofs p X) = steps p @ steps X" by simp
+    have cp_as: "\<And>X. assumptions (combine_proofs p X)
+                       = assumptions p \<union> (assumptions X - set (steps p))" by simp
+    have inner: "valid_proof F (foldr combine_proofs ps base)
+          \<and> assumptions (foldr combine_proofs ps base)
+              = assumptions base - (\<Union>q \<in> set ps. set (steps q))
+          \<and> thesis (foldr combine_proofs ps base) = thesis base
+          \<and> steps (foldr combine_proofs ps base) = concat (map steps ps) @ steps base"
+      using Cons.IH hyps by (auto simp del: combine_proofs.simps)
+    have vin: "valid_proof F (foldr combine_proofs ps base)" using inner by blast
+    have fcons: "foldr combine_proofs (p # ps) base
+                 = combine_proofs p (foldr combine_proofs ps base)"
+      by (simp del: combine_proofs.simps)
+    show "valid_proof F (foldr combine_proofs (p # ps) base)
+          \<and> assumptions (foldr combine_proofs (p # ps) base)
+              = assumptions base - (\<Union>q \<in> set (p # ps). set (steps q))
+          \<and> thesis (foldr combine_proofs (p # ps) base) = thesis base
+          \<and> steps (foldr combine_proofs (p # ps) base)
+              = concat (map steps (p # ps)) @ steps base"
+      unfolding fcons
+    proof (intro conjI)
+      show "valid_proof F (combine_proofs p (foldr combine_proofs ps base))"
+        using frege_system.combining_valid_proofs[OF fs] vp vin by blast
+    next
+      show "assumptions (combine_proofs p (foldr combine_proofs ps base))
+            = assumptions base - (\<Union>q \<in> set (p # ps). set (steps q))"
+        using cp_as ap inner by (auto simp del: combine_proofs.simps)
+    next
+      show "thesis (combine_proofs p (foldr combine_proofs ps base)) = thesis base"
+        using cp_th inner by (simp del: combine_proofs.simps)
+    next
+      show "steps (combine_proofs p (foldr combine_proofs ps base))
+            = concat (map steps (p # ps)) @ steps base"
+        using cp_st inner by (simp del: combine_proofs.simps)
+    qed
+  qed
+qed
+
+lemma conn_cong:
+  fixes Sc Dc :: nat and lf :: "nat \<Rightarrow> nat"
+  assumes len_eq: "length Bs = length As"
+      and ar: "length As = arity (alphabet F) c"
+      and prem: "\<And>i. i < length As \<Longrightarrow>
+                   \<exists>l s d. provable_balanced_iff (As ! i) (Bs ! i) l s d
+                            \<and> l \<le> lf i \<and> s \<le> Sc \<and> d \<le> Dc"
+    shows "\<exists>lines sz dep.
+             provable_balanced_iff (Conn c As) (Conn c Bs) lines sz dep
+           \<and> lines \<le> sum_list (map lf [0..< length As]) + conn_cong_max_lines
+           \<and> sz \<le> Sc + conn_cong_max_step_len
+                    * (2 * length As
+                       * (len_formula (Conn c As) + len_formula (Conn c Bs)) + 1)
+           \<and> dep \<le> max Dc (conn_cong_max_step_depth
+                    + max (depth_formula (Conn c As)) (depth_formula (Conn c Bs)))"
+proof -
+  have fs_F: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+  define kk where "kk = arity (alphabet F) c"
+  define atoms where "atoms = conn_cong_atoms c"
+  define vals where "vals = As @ Bs"
+  define csub where "csub = (\<lambda>v. case map_of (zip atoms vals) v of
+                                  None \<Rightarrow> Atom v | Some f \<Rightarrow> f)"
+  define LAB where "LAB = len_formula (Conn c As) + len_formula (Conn c Bs)"
+  define DAB where "DAB = max (depth_formula (Conn c As)) (depth_formula (Conn c Bs))"
+
+  have atlen: "length atoms = 2 * kk"
+    unfolding atoms_def kk_def using conn_cong_atoms_spec by simp
+  have atdist: "distinct atoms" unfolding atoms_def using conn_cong_atoms_spec by simp
+  have atdisj: "set atoms \<inter> avoid_atoms = {}"
+    unfolding atoms_def using conn_cong_atoms_spec by simp
+  have askk: "length As = kk" using ar kk_def by simp
+  have bskk: "length Bs = kk" using len_eq askk by simp
+  have vallen: "length vals = 2 * kk" unfolding vals_def using askk bskk by simp
+  have lveq: "length atoms = length vals" using atlen vallen by simp
+  have fin_at: "finite (set atoms)" by simp
+
+  have csub_nth: "\<And>j. j < 2 * kk \<Longrightarrow> csub (atoms ! j) = vals ! j"
+  proof -
+    fix j assume j: "j < 2 * kk"
+    have "map_of (zip atoms vals) (atoms ! j) = Some (vals ! j)"
+      using map_of_zip_nth_lookup[OF atdist lveq] atlen j by simp
+    thus "csub (atoms ! j) = vals ! j" unfolding csub_def by simp
+  qed
+  have sub_id: "\<forall>v. v \<notin> set atoms \<longrightarrow> csub v = Atom v"
+  proof (intro allI impI)
+    fix v assume "v \<notin> set atoms"
+    hence "map_of (zip atoms vals) v = None" by (rule map_of_zip_None_lookup)
+    thus "csub v = Atom v" unfolding csub_def by simp
+  qed
+  note csub_conn = fresh_sub_conn[OF atdisj sub_id]
+  have csub_in_vals: "\<And>v. v \<in> set atoms \<Longrightarrow> csub v \<in> set vals"
+  proof -
+    fix v assume "v \<in> set atoms"
+    hence "\<exists>w. map_of (zip atoms vals) v = Some w"
+      using map_of_zip_is_Some[OF lveq] by blast
+    then obtain w where w: "map_of (zip atoms vals) v = Some w" by blast
+    hence "(v, w) \<in> set (zip atoms vals)" by (rule map_of_SomeD)
+    hence "w \<in> set vals" by (rule set_zip_rightD)
+    thus "csub v \<in> set vals" using w unfolding csub_def by simp
+  qed
+  have val_in: "\<And>v. v \<in> set atoms \<Longrightarrow> csub v \<in> set As \<or> csub v \<in> set Bs"
+    using csub_in_vals unfolding vals_def by auto
+
+  \<comment> \<open>substitution size facts\<close>
+  have csub_len_le: "\<And>v. v \<in> set atoms \<Longrightarrow> len_formula (csub v) \<le> LAB"
+  proof -
+    fix v assume vin: "v \<in> set atoms"
+    have "csub v \<in> set As \<or> csub v \<in> set Bs" using val_in[OF vin] .
+    thus "len_formula (csub v) \<le> LAB"
+    proof (elim disjE)
+      assume "csub v \<in> set As"
+      hence "len_formula (csub v) \<le> sum_list (map len_formula As)"
+        by (auto intro: member_le_sum_list)
+      thus ?thesis unfolding LAB_def by simp
+    next
+      assume "csub v \<in> set Bs"
+      hence "len_formula (csub v) \<le> sum_list (map len_formula Bs)"
+        by (auto intro: member_le_sum_list)
+      thus ?thesis unfolding LAB_def by simp
+    qed
+  qed
+  have csub_dep_le: "\<And>v. v \<in> set atoms \<Longrightarrow> depth_formula (csub v) \<le> DAB"
+  proof -
+    fix v assume vin: "v \<in> set atoms"
+    have "csub v \<in> set As \<or> csub v \<in> set Bs" using val_in[OF vin] .
+    thus "depth_formula (csub v) \<le> DAB"
+    proof (elim disjE)
+      assume vAs: "csub v \<in> set As"
+      hence ne: "As \<noteq> []" by auto
+      have "depth_formula (csub v) \<le> Max (set (map depth_formula As))"
+        using vAs by (simp add: Max_ge)
+      also have "\<dots> \<le> depth_formula (Conn c As)"
+      proof -
+        have "depth_formula (Conn c As) = 1 + Max (set (map depth_formula As))"
+          using ne by simp
+        thus ?thesis by linarith
+      qed
+      also have "\<dots> \<le> DAB" unfolding DAB_def by simp
+      finally show ?thesis .
+    next
+      assume vBs: "csub v \<in> set Bs"
+      hence ne: "Bs \<noteq> []" by auto
+      have "depth_formula (csub v) \<le> Max (set (map depth_formula Bs))"
+        using vBs by (simp add: Max_ge)
+      also have "\<dots> \<le> depth_formula (Conn c Bs)"
+      proof -
+        have "depth_formula (Conn c Bs) = 1 + Max (set (map depth_formula Bs))"
+          using ne by simp
+        thus ?thesis by linarith
+      qed
+      also have "\<dots> \<le> DAB" unfolding DAB_def by simp
+      finally show ?thesis .
+    qed
+  qed
+  have len_sub_le: "len_sub (set atoms) csub \<le> 2 * kk * LAB + 1"
+  proof -
+    have "(\<Sum>v \<in> set atoms. len_formula (csub v))
+        = sum_list (map (\<lambda>v. len_formula (csub v)) atoms)"
+      by (simp add: sum_list_distinct_conv_sum_set[OF atdist])
+    also have "\<dots> \<le> sum_list (map (\<lambda>v. LAB) atoms)"
+      by (rule sum_list_mono[OF csub_len_le])
+    also have "\<dots> = length atoms * LAB" by (simp add: sum_list_triv)
+    also have "\<dots> = 2 * kk * LAB" using atlen by simp
+    finally have "(\<Sum>v \<in> set atoms. len_formula (csub v)) \<le> 2 * kk * LAB" .
+    thus ?thesis unfolding len_sub_def by (simp add: max_def)
+  qed
+  have dep_sub_le: "depth_sub (set atoms) csub \<le> DAB"
+    unfolding depth_sub_def
+  proof (rule Max.boundedI)
+    show "finite (insert 1 ((\<lambda>v. depth_formula (csub v)) ` set atoms))" by simp
+    show "insert 1 ((\<lambda>v. depth_formula (csub v)) ` set atoms) \<noteq> {}" by simp
+    fix e assume "e \<in> insert 1 ((\<lambda>v. depth_formula (csub v)) ` set atoms)"
+    thus "e \<le> DAB"
+    proof
+      assume "e = 1"
+      thus ?thesis unfolding DAB_def
+        using depth_formula_ge_1[of "Conn c As"]
+        by (simp add: le_max_iff_disj)
+    next
+      assume "e \<in> (\<lambda>v. depth_formula (csub v)) ` set atoms"
+      then obtain v where "v \<in> set atoms" "e = depth_formula (csub v)" by auto
+      thus ?thesis using csub_dep_le by simp
+    qed
+  qed
+
+  \<comment> \<open>the substituted base proof\<close>
+  define ci where "ci = sub_proof csub (conn_cong_base_proof c)"
+  have valid_ci: "valid_proof F ci"
+    unfolding ci_def
+    using frege_system.proof_substitution[OF fs_F] conn_cong_base_proof_spec by blast
+  have ci_steps: "steps ci = map (sub_formula csub) (steps (conn_cong_base_proof c))"
+    unfolding ci_def by simp
+  have ci_lines: "length (steps ci) = conn_cong_lines c"
+    using ci_steps by (simp add: conn_cong_lines_def)
+  have map_lhs: "map csub (take kk atoms) = As"
+  proof (rule nth_equalityI)
+    show "length (map csub (take kk atoms)) = length As" using atlen askk by simp
+  next
+    fix i assume "i < length (map csub (take kk atoms))"
+    hence i: "i < kk" using atlen by simp
+    have "map csub (take kk atoms) ! i = csub (atoms ! i)"
+      using i atlen by (simp add: nth_take)
+    also have "\<dots> = vals ! i" using csub_nth i by simp
+    also have "\<dots> = As ! i" using i askk unfolding vals_def by (simp add: nth_append)
+    finally show "map csub (take kk atoms) ! i = As ! i" .
+  qed
+  have map_rhs: "map csub (drop kk atoms) = Bs"
+  proof (rule nth_equalityI)
+    show "length (map csub (drop kk atoms)) = length Bs" using atlen bskk by simp
+  next
+    fix i assume "i < length (map csub (drop kk atoms))"
+    hence i: "i < kk" using atlen by simp
+    have "map csub (drop kk atoms) ! i = csub (atoms ! (kk + i))"
+      using i atlen by (simp add: nth_drop)
+    also have "\<dots> = vals ! (kk + i)" using csub_nth i by simp
+    also have "\<dots> = Bs ! i" using i askk bskk unfolding vals_def by (simp add: nth_append)
+    finally show "map csub (drop kk atoms) ! i = Bs ! i" .
+  qed
+  have sub_lhs: "sub_formula csub (conn_cong_lhs c) = Conn c As"
+    unfolding conn_cong_lhs_def atoms_def[symmetric] kk_def[symmetric]
+    by (simp only: sub_formula.simps list.map map_map comp_def
+                   sub_formula.simps(1) map_lhs)
+  have sub_rhs: "sub_formula csub (conn_cong_rhs c) = Conn c Bs"
+    unfolding conn_cong_rhs_def atoms_def[symmetric] kk_def[symmetric]
+    by (simp only: sub_formula.simps list.map map_map comp_def
+                   sub_formula.simps(1) map_rhs)
+  have ci_thesis: "thesis ci = iff_form (Conn c As) (Conn c Bs)"
+  proof -
+    have "thesis ci = sub_formula csub (iff_form (conn_cong_lhs c) (conn_cong_rhs c))"
+      unfolding ci_def using conn_cong_base_proof_spec by simp
+    also have "\<dots> = iff_form (sub_formula csub (conn_cong_lhs c))
+                              (sub_formula csub (conn_cong_rhs c))"
+      by (rule sub_formula_iff_form[OF csub_conn])
+    also have "\<dots> = iff_form (Conn c As) (Conn c Bs)" using sub_lhs sub_rhs by simp
+    finally show ?thesis .
+  qed
+  have ci_asm: "assumptions ci = (\<lambda>i. iff_form (As ! i) (Bs ! i)) ` {..< kk}"
+  proof -
+    have "assumptions ci = sub_formula csub ` (conn_cong_asms c)"
+      unfolding ci_def using conn_cong_base_proof_spec by simp
+    also have "\<dots> = (\<lambda>i. iff_form (As ! i) (Bs ! i)) ` {..< kk}"
+    proof -
+      have "\<And>i. i < kk \<Longrightarrow>
+              sub_formula csub (iff_form (Atom (atoms ! i)) (Atom (atoms ! (kk + i))))
+              = iff_form (As ! i) (Bs ! i)"
+      proof -
+        fix i assume i: "i < kk"
+        have "sub_formula csub (iff_form (Atom (atoms ! i)) (Atom (atoms ! (kk + i))))
+            = iff_form (sub_formula csub (Atom (atoms ! i)))
+                       (sub_formula csub (Atom (atoms ! (kk + i))))"
+          by (rule sub_formula_iff_form[OF csub_conn])
+        moreover have "csub (atoms ! i) = As ! i"
+          using csub_nth i askk unfolding vals_def by (simp add: nth_append)
+        moreover have "csub (atoms ! (kk + i)) = Bs ! i"
+          using csub_nth i askk bskk unfolding vals_def by (simp add: nth_append)
+        ultimately show "sub_formula csub (iff_form (Atom (atoms ! i)) (Atom (atoms ! (kk + i))))
+                         = iff_form (As ! i) (Bs ! i)" by simp
+      qed
+      thus ?thesis unfolding conn_cong_asms_def atoms_def[symmetric] kk_def[symmetric]
+        by (auto simp: image_image)
+    qed
+    finally show ?thesis .
+  qed
+
+  \<comment> \<open>step bounds for the substituted proof\<close>
+  have ci_len: "\<And>s. s \<in> set (steps ci)
+                 \<Longrightarrow> len_formula s \<le> conn_cong_max_step_len * (2 * kk * LAB + 1)"
+  proof -
+    fix s assume "s \<in> set (steps ci)"
+    then obtain s0 where s0: "s0 \<in> set (steps (conn_cong_base_proof c))"
+                     and s_eq: "s = sub_formula csub s0" using ci_steps by auto
+    have "len_formula s \<le> len_formula s0 * len_sub (set atoms) csub"
+      using s_eq sub_formula_bound[OF fin_at sub_id] by simp
+    also have "\<dots> \<le> len_formula s0 * (2 * kk * LAB + 1)"
+      using len_sub_le by (rule mult_le_mono2)
+    also have "\<dots> \<le> conn_cong_max_step_len * (2 * kk * LAB + 1)"
+    proof (rule mult_le_mono1)
+      have "len_formula s0 \<le> conn_cong_step_len c"
+        unfolding conn_cong_step_len_def using s0 by (simp add: Max_ge)
+      thus "len_formula s0 \<le> conn_cong_max_step_len"
+        using conn_cong_max_ge[of c] by linarith
+    qed
+    finally show "len_formula s \<le> conn_cong_max_step_len * (2 * kk * LAB + 1)" .
+  qed
+  have ci_dep: "\<And>s. s \<in> set (steps ci) \<Longrightarrow> depth_formula s \<le> conn_cong_max_step_depth + DAB"
+  proof -
+    fix s assume "s \<in> set (steps ci)"
+    then obtain s0 where s0: "s0 \<in> set (steps (conn_cong_base_proof c))"
+                     and s_eq: "s = sub_formula csub s0" using ci_steps by auto
+    have "depth_formula s \<le> depth_formula s0 + depth_sub (set atoms) csub"
+      using s_eq sub_formula_depth_bound[OF fin_at sub_id] by simp
+    also have "\<dots> \<le> conn_cong_step_depth c + DAB"
+    proof -
+      have "depth_formula s0 \<le> conn_cong_step_depth c"
+        unfolding conn_cong_step_depth_def using s0 by (simp add: Max_ge)
+      thus ?thesis using dep_sub_le by linarith
+    qed
+    also have "\<dots> \<le> conn_cong_max_step_depth + DAB"
+      using conn_cong_max_ge[of c] by linarith
+    finally show "depth_formula s \<le> conn_cong_max_step_depth + DAB" .
+  qed
+
+  \<comment> \<open>the input proofs and the cut\<close>
+  define ip where "ip = (\<lambda>i. SOME pr. valid_proof F pr \<and> assumptions pr = {}
+        \<and> frege_proof.thesis pr = iff_form (As ! i) (Bs ! i)
+        \<and> length (steps pr) \<le> lf i
+        \<and> (\<forall>s \<in> set (steps pr). len_formula s \<le> Sc)
+        \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> Dc))"
+  have ip_spec: "\<And>i. i < kk \<Longrightarrow>
+       valid_proof F (ip i) \<and> assumptions (ip i) = {}
+       \<and> frege_proof.thesis (ip i) = iff_form (As ! i) (Bs ! i)
+       \<and> length (steps (ip i)) \<le> lf i
+       \<and> (\<forall>s \<in> set (steps (ip i)). len_formula s \<le> Sc)
+       \<and> (\<forall>s \<in> set (steps (ip i)). depth_formula s \<le> Dc)"
+  proof -
+    fix i assume i: "i < kk"
+    hence "i < length As" using askk by simp
+    then obtain l s d where pbi: "provable_balanced_iff (As ! i) (Bs ! i) l s d"
+      and lLc: "l \<le> lf i" and sSc: "s \<le> Sc" and dDc: "d \<le> Dc" using prem by blast
+    from pbi obtain pr where pr: "valid_proof F pr" "assumptions pr = {}"
+        "frege_proof.thesis pr = iff_form (As ! i) (Bs ! i)" "length (steps pr) \<le> l"
+        "\<forall>s' \<in> set (steps pr). len_formula s' \<le> s"
+        "\<forall>s' \<in> set (steps pr). depth_formula s' \<le> d"
+      unfolding provable_balanced_iff_def by blast
+    have ex: "\<exists>pr. valid_proof F pr \<and> assumptions pr = {}
+          \<and> frege_proof.thesis pr = iff_form (As ! i) (Bs ! i)
+          \<and> length (steps pr) \<le> lf i
+          \<and> (\<forall>s \<in> set (steps pr). len_formula s \<le> Sc)
+          \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> Dc)"
+    proof (intro exI[where x = pr] conjI)
+      show "valid_proof F pr" by (rule pr(1))
+      show "assumptions pr = {}" by (rule pr(2))
+      show "frege_proof.thesis pr = iff_form (As ! i) (Bs ! i)" by (rule pr(3))
+      show "length (steps pr) \<le> lf i" using pr(4) lLc by linarith
+      show "\<forall>s \<in> set (steps pr). len_formula s \<le> Sc" using pr(5) sSc by force
+      show "\<forall>s \<in> set (steps pr). depth_formula s \<le> Dc" using pr(6) dDc by force
+    qed
+    show "valid_proof F (ip i) \<and> assumptions (ip i) = {}
+       \<and> frege_proof.thesis (ip i) = iff_form (As ! i) (Bs ! i)
+       \<and> length (steps (ip i)) \<le> lf i
+       \<and> (\<forall>s \<in> set (steps (ip i)). len_formula s \<le> Sc)
+       \<and> (\<forall>s \<in> set (steps (ip i)). depth_formula s \<le> Dc)"
+      unfolding ip_def by (rule someI_ex[OF ex])
+  qed
+  define ps where "ps = map ip [0..< kk]"
+  have ps_elem: "\<And>p. p \<in> set ps \<Longrightarrow> \<exists>i. i < kk \<and> p = ip i"
+  proof -
+    fix p assume "p \<in> set ps"
+    then obtain i where "i \<in> set [0..< kk]" "p = ip i" unfolding ps_def by auto
+    thus "\<exists>i. i < kk \<and> p = ip i" by auto
+  qed
+  have ps_valid: "\<forall>p \<in> set ps. valid_proof F p \<and> assumptions p = {}"
+  proof
+    fix p assume "p \<in> set ps"
+    then obtain i where "i < kk" "p = ip i" using ps_elem by blast
+    thus "valid_proof F p \<and> assumptions p = {}" using ip_spec by simp
+  qed
+  define cb where "cb = foldr combine_proofs ps ci"
+  have cb_spec: "valid_proof F cb
+       \<and> assumptions cb = assumptions ci - (\<Union>p \<in> set ps. set (steps p))
+       \<and> frege_proof.thesis cb = frege_proof.thesis ci
+       \<and> steps cb = concat (map steps ps) @ steps ci"
+    unfolding cb_def
+    by (rule mp[OF combine_fold_spec[OF valid_ci] ps_valid])
+  have thesis_in: "\<And>i. i < kk \<Longrightarrow>
+       iff_form (As ! i) (Bs ! i) \<in> (\<Union>p \<in> set ps. set (steps p))"
+  proof -
+    fix i assume i: "i < kk"
+    have ipin: "ip i \<in> set ps" using i by (simp add: ps_def)
+    have ne: "steps (ip i) \<noteq> []" using ip_spec[OF i] unfolding valid_proof_def by simp
+    have "frege_proof.thesis (ip i) = last (steps (ip i))"
+      using ip_spec[OF i] unfolding valid_proof_def by simp
+    hence "iff_form (As ! i) (Bs ! i) = last (steps (ip i))" using ip_spec[OF i] by simp
+    hence "iff_form (As ! i) (Bs ! i) \<in> set (steps (ip i))"
+      using ne by (simp add: last_in_set)
+    thus "iff_form (As ! i) (Bs ! i) \<in> (\<Union>p \<in> set ps. set (steps p))" using ipin by blast
+  qed
+  have sub_asm: "assumptions ci \<subseteq> (\<Union>p \<in> set ps. set (steps p))"
+  proof
+    fix x assume "x \<in> assumptions ci"
+    then obtain i where "i < kk" "x = iff_form (As ! i) (Bs ! i)"
+      using ci_asm by auto
+    thus "x \<in> (\<Union>p \<in> set ps. set (steps p))" using thesis_in by auto
+  qed
+  have cb_asm: "assumptions cb = {}"
+  proof -
+    have "assumptions cb = assumptions ci - (\<Union>p \<in> set ps. set (steps p))"
+      using cb_spec by simp
+    thus ?thesis using sub_asm by (simp add: Diff_eq_empty_iff)
+  qed
+  have cb_thesis: "frege_proof.thesis cb = iff_form (Conn c As) (Conn c Bs)"
+    using cb_spec ci_thesis by simp
+  have len_ps: "length ps = kk" unfolding ps_def by simp
+  have cb_lines: "length (steps cb) \<le> sum_list (map lf [0..< length As]) + conn_cong_max_lines"
+  proof -
+    have "length (steps cb) = length (concat (map steps ps)) + length (steps ci)"
+      using cb_spec by simp
+    also have "length (concat (map steps ps)) = sum_list (map (length \<circ> steps) ps)"
+      by (simp add: length_concat comp_def)
+    also have "sum_list (map (length \<circ> steps) ps)
+               = sum_list (map (\<lambda>i. length (steps (ip i))) [0..< kk])"
+      unfolding ps_def by (simp add: comp_def)
+    also have "\<dots> \<le> sum_list (map lf [0..< kk])"
+    proof (rule sum_list_mono)
+      fix i assume "i \<in> set [0..< kk]"
+      hence "i < kk" by simp
+      thus "length (steps (ip i)) \<le> lf i" using ip_spec by simp
+    qed
+    finally have lcb: "length (steps cb) \<le> sum_list (map lf [0..< kk]) + length (steps ci)"
+      by simp
+    have "length (steps ci) \<le> conn_cong_max_lines"
+      using ci_lines conn_cong_max_ge[of c] by simp
+    moreover have "sum_list (map lf [0..< kk]) = sum_list (map lf [0..< length As])"
+      using askk by simp
+    ultimately show ?thesis using lcb by linarith
+  qed
+  have cb_len: "\<forall>s \<in> set (steps cb). len_formula s
+                  \<le> Sc + conn_cong_max_step_len * (2 * kk * LAB + 1)"
+  proof
+    fix s assume "s \<in> set (steps cb)"
+    hence "s \<in> set (concat (map steps ps)) \<or> s \<in> set (steps ci)" using cb_spec by auto
+    thus "len_formula s \<le> Sc + conn_cong_max_step_len * (2 * kk * LAB + 1)"
+    proof
+      assume "s \<in> set (concat (map steps ps))"
+      then obtain p where pps: "p \<in> set ps" and sp: "s \<in> set (steps p)" by auto
+      obtain i where "i < kk" "p = ip i" using ps_elem[OF pps] by blast
+      hence "len_formula s \<le> Sc" using ip_spec sp by simp
+      thus ?thesis by linarith
+    next
+      assume "s \<in> set (steps ci)"
+      hence "len_formula s \<le> conn_cong_max_step_len * (2 * kk * LAB + 1)"
+        using ci_len by simp
+      thus ?thesis by linarith
+    qed
+  qed
+  have cb_dep: "\<forall>s \<in> set (steps cb). depth_formula s
+                  \<le> max Dc (conn_cong_max_step_depth + DAB)"
+  proof
+    fix s assume "s \<in> set (steps cb)"
+    hence "s \<in> set (concat (map steps ps)) \<or> s \<in> set (steps ci)" using cb_spec by auto
+    thus "depth_formula s \<le> max Dc (conn_cong_max_step_depth + DAB)"
+    proof
+      assume "s \<in> set (concat (map steps ps))"
+      then obtain p where pps: "p \<in> set ps" and sp: "s \<in> set (steps p)" by auto
+      obtain i where "i < kk" "p = ip i" using ps_elem[OF pps] by blast
+      hence "depth_formula s \<le> Dc" using ip_spec sp by simp
+      thus ?thesis by simp
+    next
+      assume "s \<in> set (steps ci)"
+      hence "depth_formula s \<le> conn_cong_max_step_depth + DAB" using ci_dep by simp
+      thus ?thesis by simp
+    qed
+  qed
+  have main: "provable_balanced_iff (Conn c As) (Conn c Bs)
+          (sum_list (map lf [0..< length As]) + conn_cong_max_lines)
+          (Sc + conn_cong_max_step_len * (2 * kk * LAB + 1))
+          (max Dc (conn_cong_max_step_depth + DAB))"
+    unfolding provable_balanced_iff_def
+  proof (intro exI[where x = cb] conjI)
+    show "valid_proof F cb" using cb_spec by simp
+    show "assumptions cb = {}" using cb_asm .
+    show "frege_proof.thesis cb = iff_form (Conn c As) (Conn c Bs)" using cb_thesis .
+    show "length (steps cb) \<le> sum_list (map lf [0..< length As]) + conn_cong_max_lines"
+      using cb_lines .
+    show "\<forall>s \<in> set (steps cb). len_formula s
+            \<le> Sc + conn_cong_max_step_len * (2 * kk * LAB + 1)" using cb_len .
+    show "\<forall>s \<in> set (steps cb). depth_formula s
+            \<le> max Dc (conn_cong_max_step_depth + DAB)" using cb_dep .
+  qed
+  show ?thesis
+    using main[unfolded askk[symmetric] LAB_def DAB_def] by blast
+qed
+
+subsubsection \<open>Size and depth bounds for substitution\<close>
+
+lemma occ_len_le:
+  assumes "v \<in> var_set_form g"
+  shows "len_formula (sub v) \<le> (\<Sum> w \<in> var_set_form g. len_formula (sub w))"
+proof -
+  have fin: "finite (var_set_form g)" by (rule var_set_form_finite)
+  have "(\<Sum> w \<in> var_set_form g. len_formula (sub w))
+        = len_formula (sub v) + (\<Sum> w \<in> var_set_form g - {v}. len_formula (sub w))"
+    using sum.remove[OF fin assms] .
+  thus ?thesis by simp
+qed
+
+lemma len_strans_cap:
+  assumes cap: "\<And>v. v \<in> var_set_form g \<Longrightarrow> len_formula (spira_trans (sub v)) \<le> MM"
+      and mm1: "1 \<le> MM"
+  shows "len_formula (sub_formula (\<lambda>v. spira_trans (sub v)) g) \<le> MM * len_formula g"
+  using cap
+proof (induction g)
+  case (Atom a)
+  have "a \<in> var_set_form (Atom a)" by simp
+  thus ?case using Atom.prems by simp
+next
+  case (Conn c gs)
+  have "len_formula (sub_formula (\<lambda>v. spira_trans (sub v)) (Conn c gs))
+        = 1 + (\<Sum>x \<leftarrow> gs. len_formula (sub_formula (\<lambda>v. spira_trans (sub v)) x))"
+    by (simp add: comp_def)
+  also have "\<dots> \<le> 1 + (\<Sum>x \<leftarrow> gs. MM * len_formula x)"
+  proof -
+    have "(\<Sum>x \<leftarrow> gs. len_formula (sub_formula (\<lambda>v. spira_trans (sub v)) x))
+          \<le> (\<Sum>x \<leftarrow> gs. MM * len_formula x)"
+    proof (rule sum_list_mono)
+      fix x assume x: "x \<in> set gs"
+      have "\<And>v. v \<in> var_set_form x \<Longrightarrow> len_formula (spira_trans (sub v)) \<le> MM"
+        using x Conn.prems by auto
+      thus "len_formula (sub_formula (\<lambda>v. spira_trans (sub v)) x) \<le> MM * len_formula x"
+        using Conn.IH x by blast
+    qed
+    thus ?thesis by simp
+  qed
+  also have "1 + (\<Sum>x \<leftarrow> gs. MM * len_formula x)
+             = 1 + MM * (\<Sum>x \<leftarrow> gs. len_formula x)"
+    by (simp add: sum_list_const_mult)
+  also have "\<dots> \<le> MM * (1 + (\<Sum>x \<leftarrow> gs. len_formula x))"
+    using mm1 by (simp add: distrib_left)
+  also have "\<dots> = MM * len_formula (Conn c gs)" by simp
+  finally show ?case .
+qed
+
+lemma depth_strans_le:
+  shows "\<exists>tcm::real. 1 \<le> tcm \<and> (\<forall>g sub. (\<forall>v. formula_well_formed (alphabet F) (sub v)) \<longrightarrow>
+           real (depth_formula (sub_formula (\<lambda>v. spira_trans (sub v)) g))
+           \<le> real (depth_formula g)
+              + tcm * log 2 (real (len_formula g
+                              + (\<Sum>w\<in>var_set_form g. len_formula (sub w))) + 1))"
+proof -
+  obtain tc :: real where tc:
+    "\<forall>f. formula_well_formed (alphabet F) f \<longrightarrow>
+       real (depth_formula (spira_trans f)) \<le> tc * log 2 (real (len_formula f) + 1)"
+    using trans_c by blast
+  define tcm where "tcm = max tc 1"
+  have tcm1: "1 \<le> tcm" unfolding tcm_def by simp
+  have "\<forall>g sub. (\<forall>v. formula_well_formed (alphabet F) (sub v)) \<longrightarrow>
+           real (depth_formula (sub_formula (\<lambda>v. spira_trans (sub v)) g))
+           \<le> real (depth_formula g)
+              + tcm * log 2 (real (len_formula g
+                              + (\<Sum>w\<in>var_set_form g. len_formula (sub w))) + 1)"
+  proof (intro allI impI)
+    fix g :: "'a formula" and sub :: "string \<Rightarrow> 'a formula"
+    assume wfsub: "\<forall>v. formula_well_formed (alphabet F) (sub v)"
+    define M :: nat where "M = len_formula g + (\<Sum>w\<in>var_set_form g. len_formula (sub w))"
+    have Mge: "1 \<le> M" unfolding M_def using len_formula_ge_1[of g] by simp
+    let ?sub2 = "\<lambda>v. if v \<in> var_set_form g then spira_trans (sub v) else Atom v"
+    have agree: "sub_formula (\<lambda>v. spira_trans (sub v)) g = sub_formula ?sub2 g"
+      by (rule sub_formula_agree) simp
+    have fin: "finite (var_set_form g)" by (rule var_set_form_finite)
+    have id_off: "\<forall>v. v \<notin> var_set_form g \<longrightarrow> ?sub2 v = Atom v" by simp
+    have db: "depth_formula (sub_formula ?sub2 g)
+              \<le> depth_formula g + depth_sub (var_set_form g) ?sub2"
+      by (rule sub_formula_depth_bound[OF fin id_off])
+    \<comment> \<open>bound the substitution depth by tcm * log2 (M+1)\<close>
+    have dsub_le: "real (depth_sub (var_set_form g) ?sub2) \<le> tcm * log 2 (real M + 1)"
+    proof -
+      have logge: "1 \<le> log 2 (real M + 1)"
+        using Mge by (simp add: le_log_iff)
+      have "depth_sub (var_set_form g) ?sub2
+            \<in> insert 1 ((\<lambda>v. depth_formula (?sub2 v)) ` var_set_form g)"
+        unfolding depth_sub_def by (rule Max_in) (use fin in auto)
+      then consider "depth_sub (var_set_form g) ?sub2 = 1"
+        | v where "v \<in> var_set_form g"
+                  "depth_sub (var_set_form g) ?sub2 = depth_formula (?sub2 v)" by auto
+      thus ?thesis
+      proof cases
+        case 1
+        have "real 1 \<le> 1 * log 2 (real M + 1)" using logge by simp
+        also have "\<dots> \<le> tcm * log 2 (real M + 1)"
+          using tcm1 logge by (simp add: mult_right_mono)
+        finally show ?thesis using 1 by simp
+      next
+        case (2 v)
+        have wfv: "formula_well_formed (alphabet F) (sub v)" using wfsub by simp
+        have "real (depth_formula (?sub2 v)) = real (depth_formula (spira_trans (sub v)))"
+          using 2 by simp
+        also have "\<dots> \<le> tc * log 2 (real (len_formula (sub v)) + 1)"
+          using tc wfv by simp
+        also have "\<dots> \<le> tcm * log 2 (real (len_formula (sub v)) + 1)"
+        proof (rule mult_right_mono)
+          show "tc \<le> tcm" unfolding tcm_def by simp
+          show "0 \<le> log 2 (real (len_formula (sub v)) + 1)"
+            using len_formula_ge_1[of "sub v"] by (simp add: le_log_iff)
+        qed
+        also have "\<dots> \<le> tcm * log 2 (real M + 1)"
+        proof (rule mult_left_mono)
+          have vin: "v \<in> var_set_form g" using 2 by simp
+          have "len_formula (sub v) \<le> (\<Sum>w\<in>var_set_form g. len_formula (sub w))"
+            by (rule occ_len_le[OF vin])
+          hence "len_formula (sub v) \<le> M" unfolding M_def by simp
+          thus "log 2 (real (len_formula (sub v)) + 1) \<le> log 2 (real M + 1)"
+            by simp
+          show "0 \<le> tcm" using tcm1 by simp
+        qed
+        finally show ?thesis using 2 by simp
+      qed
+    qed
+    have "real (depth_formula (sub_formula (\<lambda>v. spira_trans (sub v)) g))
+          = real (depth_formula (sub_formula ?sub2 g))" using agree by simp
+    also have "\<dots> \<le> real (depth_formula g + depth_sub (var_set_form g) ?sub2)"
+      using db by simp
+    also have "\<dots> = real (depth_formula g) + real (depth_sub (var_set_form g) ?sub2)"
+      by simp
+    also have "\<dots> \<le> real (depth_formula g) + tcm * log 2 (real M + 1)"
+      using dsub_le by simp
+    finally show "real (depth_formula (sub_formula (\<lambda>v. spira_trans (sub v)) g))
+                  \<le> real (depth_formula g)
+                     + tcm * log 2 (real (len_formula g
+                                     + (\<Sum>w\<in>var_set_form g. len_formula (sub w))) + 1)"
+      unfolding M_def .
+  qed
+  thus ?thesis using tcm1 by blast
+qed
+
+lemma len_sub_form_le:
+  shows "len_formula (sub_formula sub f)
+         \<le> len_formula f * (len_formula f + (\<Sum>v\<in>var_set_form f. len_formula (sub v)))"
+proof -
+  let ?sub2 = "\<lambda>v. if v \<in> var_set_form f then sub v else Atom v"
+  have agree: "sub_formula sub f = sub_formula ?sub2 f"
+    by (rule sub_formula_agree) simp
+  have fin: "finite (var_set_form f)" by (rule var_set_form_finite)
+  have id_off: "\<forall>v. v \<notin> var_set_form f \<longrightarrow> ?sub2 v = Atom v" by simp
+  have "len_formula (sub_formula ?sub2 f)
+        \<le> len_formula f * len_sub (var_set_form f) ?sub2"
+    by (rule sub_formula_bound[OF fin id_off])
+  also have "\<dots> \<le> len_formula f
+                  * (len_formula f + (\<Sum>v\<in>var_set_form f. len_formula (sub v)))"
+  proof (rule mult_le_mono2)
+    have eq: "(\<Sum>v\<in>var_set_form f. len_formula (?sub2 v))
+              = (\<Sum>v\<in>var_set_form f. len_formula (sub v))"
+      by (rule sum.cong) auto
+    have "len_sub (var_set_form f) ?sub2
+          = max 1 (\<Sum>v\<in>var_set_form f. len_formula (sub v))"
+      unfolding len_sub_def using eq by simp
+    thus "len_sub (var_set_form f) ?sub2
+          \<le> len_formula f + (\<Sum>v\<in>var_set_form f. len_formula (sub v))"
+      using len_formula_ge_1[of f] by simp
+  qed
+  finally show ?thesis using agree by simp
+qed
+
+lemma nat_le_floor:
+  assumes "real n \<le> x" shows "n \<le> nat \<lfloor>x\<rfloor>"
+proof -
+  have "int n \<le> \<lfloor>x\<rfloor>" using assms by (simp add: le_floor_iff)
+  from nat_mono[OF this] show ?thesis by simp
+qed
+
+subsubsection \<open>Lemma 6.4: the bounded structural commutation\<close>
+
+(* M = |P| + Sum |Qi| = len f + (sum v in var_set_form f. |sub v|), the input-size
+   measure.  Bounds: lines/size <= poly bnd M (= M^O(1)); depth <= depth f + c*log2(M+1)
+   (the +depth f is forced since thesis = last step makes dep >= depth (S' f) >= depth f). *)
 lemma transform_commutes_form:
   shows "\<exists> (bnd :: nat poly) (c :: real).
-           \<forall> f sub. (\<forall>f' \<in> range sub. formula_well_formed (alphabet F) f') \<longrightarrow>
-             (\<exists> lines sz dep.
-                provable_balanced_iff (spira_trans (sub_formula sub f)) (sub_formula (\<lambda> v. spira_trans (sub v)) f) lines sz dep
-              \<and> lines \<le> poly bnd (len_formula (sub_formula sub f))
-              \<and> sz \<le> poly bnd (len_formula (sub_formula sub f))
-              \<and> real dep \<le> c * log 2 (real (len_formula (sub_formula sub f)) + 1))"
-  sorry
+           \<forall> f sub. formula_well_formed (alphabet F) f
+                    \<and> (\<forall>f' \<in> range sub. formula_well_formed (alphabet F) f') \<longrightarrow>
+             (let M = len_formula f + (\<Sum> v \<in> var_set_form f. len_formula (sub v))
+              in (\<exists> lines sz dep.
+                    provable_balanced_iff (spira_trans (sub_formula sub f))
+                      (sub_formula (\<lambda> v. spira_trans (sub v)) f) lines sz dep
+                  \<and> lines \<le> poly bnd M
+                  \<and> sz \<le> poly bnd M
+                  \<and> real dep \<le> real (depth_formula f) + c * log 2 (real M + 1)))"
+proof -
+  obtain bnd62 c62 where tcc:
+    "\<forall>conn ps. (\<forall>p \<in> set ps. formula_well_formed (alphabet F) p)
+               \<and> length ps = arity (alphabet F) conn \<longrightarrow>
+       (\<exists>lines sz dep. provable_balanced_iff (spira_trans (Conn conn ps))
+            (Conn conn (map spira_trans ps)) lines sz dep
+          \<and> lines \<le> poly bnd62 (len_formula (Conn conn ps))
+          \<and> sz \<le> poly bnd62 (len_formula (Conn conn ps))
+          \<and> real dep \<le> c62 * log 2 (real (len_formula (Conn conn ps)) + 1))"
+    using transform_commutes_conn by blast
+  obtain tc :: real where tc:
+    "\<forall>f. formula_well_formed (alphabet F) f \<longrightarrow>
+       real (depth_formula (spira_trans f)) \<le> tc * log 2 (real (len_formula f) + 1)"
+    using trans_c by blast
+  obtain tcm :: real where tcm1: "1 \<le> tcm" and dstr:
+    "\<forall>g sub. (\<forall>v. formula_well_formed (alphabet F) (sub v)) \<longrightarrow>
+       real (depth_formula (sub_formula (\<lambda>v. spira_trans (sub v)) g))
+       \<le> real (depth_formula g)
+          + tcm * log 2 (real (len_formula g
+                          + (\<Sum>w\<in>var_set_form g. len_formula (sub w))) + 1)"
+    using depth_strans_le by blast
+  define MA where "MA = Max (arity (alphabet F) ` UNIV)"
+  define BIGC :: nat where
+    "BIGC = 2 * (conn_cong_max_step_len + conn_cong_max_lines + trans_step_len + trans_lines
+             + refl_step_len + refl_lines + 1) * (MA + 1) * (MA + 1)"
+  define PP :: "nat poly" where
+    "PP = pcompose bnd62 (monom 1 2)
+        + Polynomial.smult BIGC (pcompose rebal_tb (monom 1 2))
+        + Polynomial.smult BIGC (monom 1 1 * rebal_tb)
+        + [: BIGC :]"
+  define cc :: real where
+    "cc = real (conn_cong_max_step_depth + trans_step_depth + refl_step_depth + 1)
+          + 3 * \<bar>c62\<bar> + 4 * \<bar>tc\<bar> + 3 * tcm + 5"
+  have ppval: "\<And>M. poly PP M = poly bnd62 (M^2) + BIGC * poly rebal_tb (M^2)
+                     + BIGC * (M * poly rebal_tb M) + BIGC"
+  proof -
+    fix M :: nat
+    have t1: "poly (pcompose bnd62 (monom 1 2)) M = poly bnd62 (M^2)"
+      by (simp add: poly_pcompose poly_monom)
+    have t2: "poly (Polynomial.smult BIGC (pcompose rebal_tb (monom 1 2))) M
+              = BIGC * poly rebal_tb (M^2)"
+      by (simp add: poly_pcompose poly_monom)
+    have t3: "poly (Polynomial.smult BIGC (monom 1 1 * rebal_tb)) M
+              = BIGC * (M * poly rebal_tb M)"
+      by (simp add: poly_monom)
+    show "poly PP M = poly bnd62 (M^2) + BIGC * poly rebal_tb (M^2)
+                      + BIGC * (M * poly rebal_tb M) + BIGC"
+      unfolding PP_def by (simp only: poly_add t1 t2 t3 poly_pCons poly_0 mult_zero_right
+                                       add_0 add.assoc)
+  qed
+  have ppBIGC: "\<And>M. BIGC \<le> poly PP M" using ppval by simp
+  have ppRT: "\<And>M. 1 \<le> M \<Longrightarrow> BIGC * poly rebal_tb M \<le> poly PP M"
+  proof -
+    fix M :: nat assume "1 \<le> M"
+    have "BIGC * poly rebal_tb M \<le> BIGC * (M * poly rebal_tb M)"
+      using \<open>1 \<le> M\<close> by (simp add: mult_le_mono2)
+    also have "\<dots> \<le> poly PP M" using ppval[of M] by simp
+    finally show "BIGC * poly rebal_tb M \<le> poly PP M" .
+  qed
+  have bigS: "conn_cong_max_step_len + conn_cong_max_lines + trans_step_len + trans_lines
+              + refl_step_len + refl_lines + 1 \<le> BIGC"
+  proof -
+    let ?S = "conn_cong_max_step_len + conn_cong_max_lines + trans_step_len + trans_lines
+              + refl_step_len + refl_lines + 1"
+    have "?S * 1 \<le> ?S * (2 * ((MA + 1) * (MA + 1)))" by (rule mult_le_mono2) simp
+    thus ?thesis unfolding BIGC_def by (simp add: algebra_simps)
+  qed
+  have ppL: "\<And>M N C. N \<le> M * M \<Longrightarrow> C \<le> BIGC \<Longrightarrow> poly bnd62 N + C \<le> poly PP M"
+  proof -
+    fix M N C :: nat assume h1: "N \<le> M * M" and h2: "C \<le> BIGC"
+    have "poly bnd62 N \<le> poly bnd62 (M * M)" using h1 by (rule poly_nat_mono)
+    moreover have "poly PP M = poly bnd62 (M * M) + BIGC * poly rebal_tb (M * M)
+                               + BIGC * (M * poly rebal_tb M) + BIGC"
+      using ppval[of M] by (simp add: power2_eq_square)
+    ultimately show "poly bnd62 N + C \<le> poly PP M" using h2 by linarith
+  qed
+  have main: "\<And>f sub. formula_well_formed (alphabet F) f
+       \<Longrightarrow> (\<forall>v. formula_well_formed (alphabet F) (sub v))
+       \<Longrightarrow> (\<exists>lines sz dep.
+              provable_balanced_iff (spira_trans (sub_formula sub f))
+                (sub_formula (\<lambda>v. spira_trans (sub v)) f) lines sz dep
+            \<and> lines \<le> len_formula (sub_formula sub f)
+                * poly PP (len_formula f + (\<Sum>v\<in>var_set_form f. len_formula (sub v)))
+            \<and> sz \<le> len_formula (sub_formula sub f)
+                * poly PP (len_formula f + (\<Sum>v\<in>var_set_form f. len_formula (sub v)))
+            \<and> real dep \<le> real (depth_formula f)
+                + cc * log 2 (real (len_formula f
+                                + (\<Sum>v\<in>var_set_form f. len_formula (sub v))) + 1))"
+  proof -
+    fix f0 :: "'a formula" and sub :: "string \<Rightarrow> 'a formula"
+    have ind: "formula_well_formed (alphabet F) f0
+        \<longrightarrow> (\<forall>v. formula_well_formed (alphabet F) (sub v))
+        \<longrightarrow> (\<exists>lines sz dep.
+               provable_balanced_iff (spira_trans (sub_formula sub f0))
+                 (sub_formula (\<lambda>v. spira_trans (sub v)) f0) lines sz dep
+             \<and> lines \<le> len_formula (sub_formula sub f0)
+                 * poly PP (len_formula f0 + (\<Sum>v\<in>var_set_form f0. len_formula (sub v)))
+             \<and> sz \<le> len_formula (sub_formula sub f0)
+                 * poly PP (len_formula f0 + (\<Sum>v\<in>var_set_form f0. len_formula (sub v)))
+             \<and> real dep \<le> real (depth_formula f0)
+                 + cc * log 2 (real (len_formula f0
+                                 + (\<Sum>v\<in>var_set_form f0. len_formula (sub v))) + 1))"
+    proof (induction f0)
+      case (Atom a)
+      show ?case
+      proof (intro impI)
+        assume "formula_well_formed (alphabet F) (Atom a)"
+        assume wfs: "\<forall>v. formula_well_formed (alphabet F) (sub v)"
+        have wfsa: "formula_well_formed (alphabet F) (sub a)" using wfs by simp
+        define MM where "MM = len_formula (Atom a)
+                              + (\<Sum>v\<in>var_set_form (Atom a). len_formula (sub v))"
+        have Meq: "MM = 1 + len_formula (sub a)" unfolding MM_def by simp
+        have lensa: "1 \<le> len_formula (sub a)" by (rule len_formula_ge_1)
+        have Mge: "1 \<le> MM" using Meq by simp
+        have SS: "sub_formula sub (Atom a) = sub a" by simp
+        have SS': "sub_formula (\<lambda>v. spira_trans (sub v)) (Atom a) = spira_trans (sub a)" by simp
+        have refl: "provable_balanced_iff (spira_trans (sub a)) (spira_trans (sub a))
+                      refl_lines (refl_step_len * len_formula (spira_trans (sub a)))
+                      (refl_step_depth + depth_formula (spira_trans (sub a)))"
+          by (rule iff_refl)
+        \<comment> \<open>@{term BIGC} dominates the reflexivity constants\<close>
+        have reflB: "refl_lines \<le> BIGC \<and> refl_step_len \<le> BIGC" using bigS by linarith
+        \<comment> \<open>lines bound\<close>
+        have b1: "refl_lines \<le> len_formula (sub a) * poly PP MM"
+        proof -
+          have "refl_lines \<le> BIGC" using reflB by simp
+          also have "\<dots> \<le> poly PP MM" by (rule ppBIGC)
+          also have "\<dots> \<le> len_formula (sub a) * poly PP MM"
+            using mult_le_mono1[OF lensa] by simp
+          finally show ?thesis .
+        qed
+        \<comment> \<open>size bound\<close>
+        have ltsa: "len_formula (spira_trans (sub a)) \<le> poly rebal_tb (len_formula (sub a))"
+          by (rule spira_trans_len_le_tb[OF wfsa order_refl])
+        have b2: "refl_step_len * len_formula (spira_trans (sub a))
+                  \<le> len_formula (sub a) * poly PP MM"
+        proof -
+          have "refl_step_len * len_formula (spira_trans (sub a))
+                \<le> refl_step_len * poly rebal_tb (len_formula (sub a))"
+            using ltsa by (rule mult_le_mono2)
+          also have "\<dots> \<le> BIGC * poly rebal_tb MM"
+          proof (rule mult_le_mono)
+            show "refl_step_len \<le> BIGC" using reflB by simp
+            show "poly rebal_tb (len_formula (sub a)) \<le> poly rebal_tb MM"
+              using Meq by (simp add: poly_nat_mono)
+          qed
+          also have "\<dots> \<le> poly PP MM" using ppRT[OF Mge] .
+          also have "\<dots> \<le> len_formula (sub a) * poly PP MM"
+            using mult_le_mono1[OF lensa] by simp
+          finally show ?thesis .
+        qed
+        \<comment> \<open>depth bound\<close>
+        have b3: "real (refl_step_depth + depth_formula (spira_trans (sub a)))
+                  \<le> real (depth_formula (Atom a)) + cc * log 2 (real MM + 1)"
+        proof -
+          have logge: "1 \<le> log 2 (real MM + 1)" using Mge by (simp add: le_log_iff)
+          have dtsa: "real (depth_formula (spira_trans (sub a)))
+                      \<le> tc * log 2 (real (len_formula (sub a)) + 1)" using tc wfsa by simp
+          have logmono: "log 2 (real (len_formula (sub a)) + 1) \<le> log 2 (real MM + 1)"
+            using Meq by simp
+          have logsann: "0 \<le> log 2 (real (len_formula (sub a)) + 1)"
+            using len_formula_ge_1[of "sub a"] by (simp add: le_log_iff)
+          have dts: "real (depth_formula (spira_trans (sub a))) \<le> \<bar>tc\<bar> * log 2 (real MM + 1)"
+          proof -
+            have "tc * log 2 (real (len_formula (sub a)) + 1)
+                  \<le> \<bar>tc\<bar> * log 2 (real (len_formula (sub a)) + 1)"
+              using logsann by (simp add: mult_right_mono)
+            also have "\<dots> \<le> \<bar>tc\<bar> * log 2 (real MM + 1)"
+              using logmono by (simp add: mult_left_mono)
+            finally show ?thesis using dtsa by linarith
+          qed
+          have rsd_le: "real refl_step_depth \<le> cc - \<bar>tc\<bar>"
+          proof -
+            have dec: "real (conn_cong_max_step_depth + trans_step_depth + refl_step_depth + 1)
+                       = real conn_cong_max_step_depth + real trans_step_depth
+                         + real refl_step_depth + 1" by simp
+            have nn1: "(0::real) \<le> real conn_cong_max_step_depth" by simp
+            have nn2: "(0::real) \<le> real trans_step_depth" by simp
+            show ?thesis unfolding cc_def dec
+              using tcm1 abs_ge_zero[of c62] abs_ge_zero[of tc] nn1 nn2 by linarith
+          qed
+          have tc_le_cc: "\<bar>tc\<bar> \<le> cc"
+          proof -
+            have "0 \<le> real refl_step_depth" by simp
+            thus ?thesis using rsd_le by linarith
+          qed
+          have rsdb: "real refl_step_depth \<le> (cc - \<bar>tc\<bar>) * log 2 (real MM + 1)"
+          proof -
+            have "real refl_step_depth = real refl_step_depth * 1" by simp
+            also have "\<dots> \<le> (cc - \<bar>tc\<bar>) * log 2 (real MM + 1)"
+            proof (rule mult_mono)
+              show "real refl_step_depth \<le> cc - \<bar>tc\<bar>" by (rule rsd_le)
+              show "(1::real) \<le> log 2 (real MM + 1)" by (rule logge)
+              show "(0::real) \<le> cc - \<bar>tc\<bar>" using tc_le_cc by simp
+              show "(0::real) \<le> 1" by simp
+            qed
+            finally show ?thesis .
+          qed
+          have distrib: "(cc - \<bar>tc\<bar>) * log 2 (real MM + 1) + \<bar>tc\<bar> * log 2 (real MM + 1)
+                         = cc * log 2 (real MM + 1)" by (simp add: algebra_simps)
+          have "real (refl_step_depth + depth_formula (spira_trans (sub a)))
+                = real refl_step_depth + real (depth_formula (spira_trans (sub a)))" by simp
+          also have "\<dots> \<le> (cc - \<bar>tc\<bar>) * log 2 (real MM + 1) + \<bar>tc\<bar> * log 2 (real MM + 1)"
+            using rsdb dts by linarith
+          also have "\<dots> = cc * log 2 (real MM + 1)" using distrib .
+          finally show ?thesis by simp
+        qed
+        show "\<exists>lines sz dep.
+                provable_balanced_iff (spira_trans (sub_formula sub (Atom a)))
+                  (sub_formula (\<lambda>v. spira_trans (sub v)) (Atom a)) lines sz dep
+              \<and> lines \<le> len_formula (sub_formula sub (Atom a))
+                  * poly PP (len_formula (Atom a)
+                             + (\<Sum>v\<in>var_set_form (Atom a). len_formula (sub v)))
+              \<and> sz \<le> len_formula (sub_formula sub (Atom a))
+                  * poly PP (len_formula (Atom a)
+                             + (\<Sum>v\<in>var_set_form (Atom a). len_formula (sub v)))
+              \<and> real dep \<le> real (depth_formula (Atom a))
+                  + cc * log 2 (real (len_formula (Atom a)
+                                  + (\<Sum>v\<in>var_set_form (Atom a). len_formula (sub v))) + 1)"
+        proof (rule exI[of _ refl_lines],
+               rule exI[of _ "refl_step_len * len_formula (spira_trans (sub a))"],
+               rule exI[of _ "refl_step_depth + depth_formula (spira_trans (sub a))"], intro conjI)
+          show "provable_balanced_iff (spira_trans (sub_formula sub (Atom a)))
+                  (sub_formula (\<lambda>v. spira_trans (sub v)) (Atom a))
+                  refl_lines (refl_step_len * len_formula (spira_trans (sub a)))
+                  (refl_step_depth + depth_formula (spira_trans (sub a)))"
+            using refl unfolding SS SS' by simp
+          show "refl_lines \<le> len_formula (sub_formula sub (Atom a))
+                  * poly PP (len_formula (Atom a)
+                             + (\<Sum>v\<in>var_set_form (Atom a). len_formula (sub v)))"
+            using b1 unfolding SS MM_def by simp
+          show "refl_step_len * len_formula (spira_trans (sub a))
+                \<le> len_formula (sub_formula sub (Atom a))
+                  * poly PP (len_formula (Atom a)
+                             + (\<Sum>v\<in>var_set_form (Atom a). len_formula (sub v)))"
+            using b2 unfolding SS MM_def by simp
+          show "real (refl_step_depth + depth_formula (spira_trans (sub a)))
+                \<le> real (depth_formula (Atom a))
+                  + cc * log 2 (real (len_formula (Atom a)
+                                  + (\<Sum>v\<in>var_set_form (Atom a). len_formula (sub v))) + 1)"
+            using b3 unfolding MM_def by simp
+        qed
+      qed
+    next
+      case (Conn cc0 fs)
+      show ?case
+      proof (intro impI)
+        assume wfC: "formula_well_formed (alphabet F) (Conn cc0 fs)"
+        assume wfs: "\<forall>v. formula_well_formed (alphabet F) (sub v)"
+        have arEq: "length fs = arity (alphabet F) cc0" using wfC by simp
+        have wfsi: "\<And>x. x \<in> set fs \<Longrightarrow> formula_well_formed (alphabet F) x" using wfC by simp
+        have wfsv: "\<And>v. formula_well_formed (alphabet F) (sub v)" using wfs by simp
+        define MF where "MF = len_formula (Conn cc0 fs)
+                              + (\<Sum>v\<in>var_set_form (Conn cc0 fs). len_formula (sub v))"
+        let ?As = "map (\<lambda>x. spira_trans (sub_formula sub x)) fs"
+        let ?Bs = "map (sub_formula (\<lambda>v. spira_trans (sub v))) fs"
+        let ?MID = "Conn cc0 ?As"
+        let ?BB = "Conn cc0 ?Bs"
+        let ?A0 = "spira_trans (Conn cc0 (map (sub_formula sub) fs))"
+        let ?LS = "len_formula (sub_formula sub (Conn cc0 fs))"
+        let ?SUML = "sum_list (map (\<lambda>x. len_formula (sub_formula sub x)) fs)"
+        let ?lf = "\<lambda>i. len_formula (sub_formula sub (fs ! i)) * poly PP MF"
+        let ?Sc = "?SUML * poly PP MF"
+        let ?Dc = "nat \<lfloor>real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)\<rfloor>"
+        have ccnn: "0 \<le> cc" unfolding cc_def
+          using tcm1 abs_ge_zero[of c62] abs_ge_zero[of tc] by simp
+        have sumlmem: "\<And>x. x \<in> set fs \<Longrightarrow> len_formula (sub_formula sub x) \<le> ?SUML"
+          by (auto intro: member_le_sum_list)
+        \<comment> \<open>well-formedness of the substituted arguments\<close>
+        have wfps: "\<forall>p\<in>set (map (sub_formula sub) fs). formula_well_formed (alphabet F) p"
+        proof
+          fix p assume "p \<in> set (map (sub_formula sub) fs)"
+          then obtain x where x: "x \<in> set fs" "p = sub_formula sub x" by auto
+          show "formula_well_formed (alphabet F) p"
+            unfolding x(2) by (rule sub_formula_wf[OF wfsi[OF x(1)] wfsv])
+        qed
+        have lenps: "length (map (sub_formula sub) fs) = arity (alphabet F) cc0"
+          using arEq by simp
+        \<comment> \<open>pA: Lemma 6.2 pushes the transform through @{term cc0}\<close>
+        obtain lA sA dA where pA:
+            "provable_balanced_iff ?A0 ?MID lA sA dA"
+            "lA \<le> poly bnd62 ?LS" "sA \<le> poly bnd62 ?LS"
+            "real dA \<le> c62 * log 2 (real ?LS + 1)"
+        proof -
+          obtain lines sz dep where
+              e1: "provable_balanced_iff (spira_trans (Conn cc0 (map (sub_formula sub) fs)))
+                     (Conn cc0 (map spira_trans (map (sub_formula sub) fs))) lines sz dep"
+            and e2: "lines \<le> poly bnd62 (len_formula (Conn cc0 (map (sub_formula sub) fs)))"
+            and e3: "sz \<le> poly bnd62 (len_formula (Conn cc0 (map (sub_formula sub) fs)))"
+            and e4: "real dep
+                     \<le> c62 * log 2 (real (len_formula (Conn cc0 (map (sub_formula sub) fs))) + 1)"
+            using tcc wfps lenps by blast
+          have m1: "Conn cc0 (map spira_trans (map (sub_formula sub) fs)) = ?MID" by simp
+          have m2: "len_formula (Conn cc0 (map (sub_formula sub) fs)) = ?LS" by simp
+          show ?thesis
+            by (rule that[of lines sz dep])
+               (use e1 e2 e3 e4 in \<open>simp_all only: m1 m2\<close>)
+        qed
+        \<comment> \<open>prem: each argument commutes (induction hypothesis); bounds deferred\<close>
+        have prem: "\<And>i. i < length ?As \<Longrightarrow>
+            \<exists>l s d. provable_balanced_iff (?As ! i) (?Bs ! i) l s d
+                     \<and> l \<le> ?lf i \<and> s \<le> ?Sc \<and> d \<le> ?Dc"
+        proof -
+          fix i assume "i < length ?As"
+          hence iL: "i < length fs" by simp
+          have mem: "fs ! i \<in> set fs" using iL by simp
+          let ?Mi = "len_formula (fs ! i) + (\<Sum>v\<in>var_set_form (fs ! i). len_formula (sub v))"
+          obtain l s d where
+              ih1: "provable_balanced_iff (spira_trans (sub_formula sub (fs ! i)))
+                       (sub_formula (\<lambda>v. spira_trans (sub v)) (fs ! i)) l s d"
+            and ih2: "l \<le> len_formula (sub_formula sub (fs ! i)) * poly PP ?Mi"
+            and ih3: "s \<le> len_formula (sub_formula sub (fs ! i)) * poly PP ?Mi"
+            and ih4: "real d \<le> real (depth_formula (fs ! i)) + cc * log 2 (real ?Mi + 1)"
+            using Conn.IH[OF mem] wfsi[OF mem] wfs by blast
+          \<comment> \<open>@{term ?Mi} \<le> @{term MF}\<close>
+          have lenmem: "len_formula (fs ! i) \<in> set (map len_formula fs)" using mem by simp
+          have lenle: "len_formula (fs ! i) \<le> len_formula (Conn cc0 fs)"
+          proof -
+            have "len_formula (fs ! i) \<le> sum_list (map len_formula fs)"
+              using lenmem by (auto intro: member_le_sum_list)
+            thus ?thesis by simp
+          qed
+          have varsub: "var_set_form (fs ! i) \<subseteq> var_set_form (Conn cc0 fs)"
+            using mem by auto
+          have sumle: "(\<Sum>v\<in>var_set_form (fs ! i). len_formula (sub v))
+                       \<le> (\<Sum>v\<in>var_set_form (Conn cc0 fs). len_formula (sub v))"
+            by (rule sum_mono2[OF var_set_form_finite varsub]) simp
+          have MiMF: "?Mi \<le> MF" unfolding MF_def using lenle sumle by simp
+          have ppMi: "poly PP ?Mi \<le> poly PP MF" using MiMF by (rule poly_nat_mono)
+          have lenSUML: "len_formula (sub_formula sub (fs ! i)) \<le> ?SUML"
+            by (rule sumlmem[OF mem])
+          \<comment> \<open>depth of @{term "fs ! i"} \<le> depth of the whole formula\<close>
+          have dconn: "depth_formula (Conn cc0 fs) = 1 + Max (set (map depth_formula fs))"
+          proof -
+            have "0 < length fs" using iL by linarith
+            thus ?thesis by simp
+          qed
+          have depthle: "depth_formula (fs ! i) \<le> depth_formula (Conn cc0 fs)"
+          proof -
+            have "depth_formula (fs ! i) \<in> set (map depth_formula fs)" using mem by simp
+            hence "depth_formula (fs ! i) \<le> Max (set (map depth_formula fs))"
+              by (simp add: Max_ge)
+            thus ?thesis using dconn by simp
+          qed
+          \<comment> \<open>convert the bounds\<close>
+          have c1: "l \<le> ?lf i"
+          proof -
+            have "l \<le> len_formula (sub_formula sub (fs ! i)) * poly PP ?Mi" by (rule ih2)
+            also have "\<dots> \<le> len_formula (sub_formula sub (fs ! i)) * poly PP MF"
+              using ppMi by (rule mult_le_mono2)
+            finally show ?thesis .
+          qed
+          have c2: "s \<le> ?Sc"
+          proof -
+            have "s \<le> len_formula (sub_formula sub (fs ! i)) * poly PP ?Mi" by (rule ih3)
+            also have "\<dots> \<le> ?SUML * poly PP MF" by (rule mult_le_mono[OF lenSUML ppMi])
+            finally show ?thesis .
+          qed
+          have argReal: "real ?Mi + 1 \<le> real MF + 1"
+          proof -
+            have "real ?Mi \<le> real MF" by (rule of_nat_mono[OF MiMF])
+            thus ?thesis by simp
+          qed
+          have logle: "log 2 (real ?Mi + 1) \<le> log 2 (real MF + 1)"
+          proof (rule log_le_cancel_iff[THEN iffD2])
+            show "(1::real) < 2" by simp
+            show "0 < real ?Mi + 1" by (simp del: of_nat_add)
+            show "0 < real MF + 1" by simp
+            show "real ?Mi + 1 \<le> real MF + 1" by (rule argReal)
+          qed
+          have c3: "d \<le> ?Dc"
+          proof (rule nat_le_floor)
+            have step: "real d \<le> real (depth_formula (fs ! i)) + cc * log 2 (real ?Mi + 1)"
+              by (rule ih4)
+            have cle: "cc * log 2 (real ?Mi + 1) \<le> cc * log 2 (real MF + 1)"
+              using logle ccnn by (rule mult_left_mono)
+            have dle: "real (depth_formula (fs ! i)) \<le> real (depth_formula (Conn cc0 fs))"
+              using depthle by simp
+            from step cle dle
+            show "real d \<le> real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)"
+              by linarith
+          qed
+          have nthAs: "?As ! i = spira_trans (sub_formula sub (fs ! i))" using iL by simp
+          have nthBs: "?Bs ! i = sub_formula (\<lambda>v. spira_trans (sub v)) (fs ! i)" using iL by simp
+          show "\<exists>l s d. provable_balanced_iff (?As ! i) (?Bs ! i) l s d
+                         \<and> l \<le> ?lf i \<and> s \<le> ?Sc \<and> d \<le> ?Dc"
+            using ih1 c1 c2 c3 unfolding nthAs nthBs by blast
+        qed
+        have leneq: "length ?Bs = length ?As" by simp
+        have areq: "length ?As = arity (alphabet F) cc0" using arEq by simp
+        \<comment> \<open>pB: congruence over @{term cc0} from the argument commutations\<close>
+        obtain lB sB dB where
+            pBpbi: "provable_balanced_iff ?MID ?BB lB sB dB"
+          and pBl: "lB \<le> sum_list (map ?lf [0..< length ?As]) + conn_cong_max_lines"
+          and pBs: "sB \<le> ?Sc + conn_cong_max_step_len
+                          * (2 * length ?As * (len_formula ?MID + len_formula ?BB) + 1)"
+          and pBd: "dB \<le> max ?Dc (conn_cong_max_step_depth
+                          + max (depth_formula ?MID) (depth_formula ?BB))"
+          using conn_cong[OF leneq areq prem] by blast
+        \<comment> \<open>pC: transitivity glues pA and pB\<close>
+        note pC = iff_trans[OF pA(1) pBpbi]
+        \<comment> \<open>shared measure facts\<close>
+        have lenLS: "?LS = 1 + ?SUML" by (simp add: o_def)
+        have MFgeC: "len_formula (Conn cc0 fs) \<le> MF" by (simp add: MF_def)
+        have LSsq: "?LS \<le> MF * MF"
+        proof -
+          have a: "?LS \<le> len_formula (Conn cc0 fs) * MF"
+            using len_sub_form_le[of sub "Conn cc0 fs"] by (simp add: MF_def)
+          from a mult_le_mono1[OF MFgeC] show ?thesis by (rule le_trans)
+        qed
+        have sumlf: "sum_list (map ?lf [0..< length ?As]) = ?SUML * poly PP MF"
+        proof -
+          have mapeq: "map ?lf [0..< length ?As]
+                = map (\<lambda>x. len_formula (sub_formula sub x) * poly PP MF) fs"
+          proof (rule nth_equalityI)
+            show "length (map ?lf [0..< length ?As])
+                  = length (map (\<lambda>x. len_formula (sub_formula sub x) * poly PP MF) fs)" by simp
+            fix i assume "i < length (map ?lf [0..< length ?As])"
+            hence "i < length fs" by simp
+            thus "map ?lf [0..< length ?As] ! i
+                  = map (\<lambda>x. len_formula (sub_formula sub x) * poly PP MF) fs ! i" by simp
+          qed
+          show ?thesis unfolding mapeq by (simp add: sum_list_mult_const)
+        qed
+        \<comment> \<open>final envelope bounds\<close>
+        have B1: "lA + lB + trans_lines \<le> ?LS * poly PP MF"
+        proof -
+          have cml: "conn_cong_max_lines + trans_lines \<le> BIGC" using bigS by linarith
+          have "lA + lB + trans_lines
+                \<le> poly bnd62 ?LS + (?SUML * poly PP MF + conn_cong_max_lines) + trans_lines"
+            using pA(2) pBl unfolding sumlf by linarith
+          also have "\<dots> = ?SUML * poly PP MF
+                           + (poly bnd62 ?LS + (conn_cong_max_lines + trans_lines))" by simp
+          also have "\<dots> \<le> ?SUML * poly PP MF + poly PP MF"
+            using ppL[OF LSsq cml] by linarith
+          also have "\<dots> = (1 + ?SUML) * poly PP MF" by (simp add: algebra_simps)
+          also have "\<dots> = ?LS * poly PP MF" using lenLS by simp
+          finally show ?thesis .
+        qed
+        \<comment> \<open>length bounds for the size estimate\<close>
+        have fsF: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+        have finUNIV: "finite (UNIV :: 'a set)"
+          using frege_system.finite_alphabet[OF fsF] by simp
+        have arMA: "arity (alphabet F) cc0 \<le> MA"
+          unfolding MA_def by (rule Max_ge[OF finite_imageI[OF finUNIV]]) simp
+        have fsMA: "length fs \<le> MA" using arEq arMA by simp
+        have wfL: "formula_well_formed (alphabet F) (Conn cc0 (map (sub_formula sub) fs))"
+          using sub_formula_wf[OF wfC wfsv] by simp
+        have rebalge1: "1 \<le> poly rebal_tb MF"
+        proof -
+          have wfa: "formula_well_formed (alphabet F) (Atom undefined)" by simp
+          have la: "len_formula (Atom undefined) \<le> MF" by (simp add: MF_def)
+          have "len_formula (spira_trans (Atom undefined)) \<le> poly rebal_tb MF"
+            by (rule spira_trans_len_le_tb[OF wfa la])
+          thus ?thesis using len_formula_ge_1[of "spira_trans (Atom undefined)"] by linarith
+        qed
+        have lenA0: "len_formula ?A0 \<le> poly rebal_tb (MF * MF)"
+        proof -
+          have "len_formula ?A0
+                \<le> poly rebal_tb (len_formula (Conn cc0 (map (sub_formula sub) fs)))"
+            by (rule spira_trans_len_le_tb[OF wfL order_refl])
+          also have "\<dots> \<le> poly rebal_tb (MF * MF)"
+          proof (rule poly_nat_mono)
+            show "len_formula (Conn cc0 (map (sub_formula sub) fs)) \<le> MF * MF" using LSsq by simp
+          qed
+          finally show ?thesis .
+        qed
+        have childlen: "\<And>x. x \<in> set fs \<Longrightarrow> len_formula (sub_formula sub x) \<le> MF * MF"
+        proof -
+          fix x assume xs: "x \<in> set fs"
+          have "len_formula (sub_formula sub x) \<le> ?SUML" by (rule sumlmem[OF xs])
+          also have "?SUML \<le> MF * MF" using LSsq lenLS by simp
+          finally show "len_formula (sub_formula sub x) \<le> MF * MF" .
+        qed
+        have childtrans: "\<And>x. x \<in> set fs
+              \<Longrightarrow> len_formula (spira_trans (sub_formula sub x)) \<le> poly rebal_tb (MF * MF)"
+        proof -
+          fix x assume xs: "x \<in> set fs"
+          have wfx: "formula_well_formed (alphabet F) (sub_formula sub x)"
+            by (rule sub_formula_wf[OF wfsi[OF xs] wfsv])
+          show "len_formula (spira_trans (sub_formula sub x)) \<le> poly rebal_tb (MF * MF)"
+            by (rule spira_trans_len_le_tb[OF wfx childlen[OF xs]])
+        qed
+        have lenMID: "len_formula ?MID \<le> 1 + MA * poly rebal_tb (MF * MF)"
+        proof -
+          have "sum_list (map len_formula ?As)
+                = sum_list (map (\<lambda>x. len_formula (spira_trans (sub_formula sub x))) fs)"
+            by (simp add: o_def)
+          also have "\<dots> \<le> sum_list (map (\<lambda>_. poly rebal_tb (MF * MF)) fs)"
+            by (rule sum_list_mono) (simp add: childtrans)
+          also have "\<dots> = length fs * poly rebal_tb (MF * MF)" by (simp add: sum_list_triv)
+          also have "\<dots> \<le> MA * poly rebal_tb (MF * MF)" using fsMA by (rule mult_le_mono1)
+          finally have "sum_list (map len_formula ?As) \<le> MA * poly rebal_tb (MF * MF)" .
+          thus ?thesis by simp
+        qed
+        have lenBB: "len_formula ?BB \<le> MF * poly rebal_tb MF"
+        proof -
+          have capv: "\<And>v. v \<in> var_set_form (Conn cc0 fs)
+                \<Longrightarrow> len_formula (spira_trans (sub v)) \<le> poly rebal_tb MF"
+          proof -
+            fix v assume vin: "v \<in> var_set_form (Conn cc0 fs)"
+            have lv: "len_formula (sub v) \<le> MF"
+            proof -
+              have "len_formula (sub v)
+                    \<le> (\<Sum>w\<in>var_set_form (Conn cc0 fs). len_formula (sub w))"
+                using occ_len_le[OF vin] .
+              thus ?thesis by (simp add: MF_def)
+            qed
+            show "len_formula (spira_trans (sub v)) \<le> poly rebal_tb MF"
+              by (rule spira_trans_len_le_tb[OF wfsv lv])
+          qed
+          have "len_formula (sub_formula (\<lambda>v. spira_trans (sub v)) (Conn cc0 fs))
+                \<le> poly rebal_tb MF * len_formula (Conn cc0 fs)"
+            by (rule len_strans_cap[OF capv rebalge1])
+          also have "\<dots> \<le> poly rebal_tb MF * MF" using MFgeC by (rule mult_le_mono2)
+          also have "\<dots> = MF * poly rebal_tb MF" by (simp add: mult.commute)
+          finally show ?thesis by simp
+        qed
+        have B2: "sA + sB + trans_step_len * (len_formula ?A0 + len_formula ?MID + len_formula ?BB)
+                  \<le> ?LS * poly PP MF"
+        proof -
+          define R2 where "R2 = poly rebal_tb (MF * MF)"
+          define R1 where "R1 = MF * poly rebal_tb MF"
+          have a: "len_formula ?A0 \<le> R2" using lenA0 unfolding R2_def by simp
+          have m: "len_formula ?MID \<le> 1 + MA * R2" using lenMID unfolding R2_def by simp
+          have b: "len_formula ?BB \<le> R1" using lenBB unfolding R1_def by simp
+          have la2: "2 * length ?As \<le> 2 * MA" using fsMA by simp
+          have ppMF: "poly PP MF = poly bnd62 (MF * MF) + BIGC * R2 + BIGC * R1 + BIGC"
+            using ppval[of MF] unfolding R2_def R1_def by (simp add: power2_eq_square)
+          \<comment> \<open>nonlinear building blocks over @{term "(MA+1)*(MA+1)"}\<close>
+          have kSq: "MA * MA \<le> (MA + 1) * (MA + 1)" by (rule mult_le_mono) simp_all
+          have kMA: "MA \<le> (MA + 1) * (MA + 1)"
+            using mult_le_mono2[of 1 "MA + 1" "MA + 1"] by simp
+          have kp1: "MA + 1 \<le> (MA + 1) * (MA + 1)"
+            using mult_le_mono2[of 1 "MA + 1" "MA + 1"] by simp
+          have k2: "2 * MA + 1 \<le> 2 * ((MA + 1) * (MA + 1))" using kp1 by simp
+          have kp2: "MA + 1 \<le> 2 * ((MA + 1) * (MA + 1))" using kp1 by simp
+          have kone: "(1::nat) \<le> 2 * ((MA + 1) * (MA + 1))" by simp
+          have q2: "2 * MA * MA * conn_cong_max_step_len
+                    \<le> 2 * conn_cong_max_step_len * ((MA + 1) * (MA + 1))"
+            using mult_le_mono2[OF kSq, of "2 * conn_cong_max_step_len"] by (simp add: algebra_simps)
+          have qMAc: "2 * MA * conn_cong_max_step_len
+                      \<le> 2 * conn_cong_max_step_len * ((MA + 1) * (MA + 1))"
+            using mult_le_mono2[OF kMA, of "2 * conn_cong_max_step_len"] by (simp add: algebra_simps)
+          have qc0: "2 * MA * conn_cong_max_step_len + conn_cong_max_step_len
+                     \<le> 2 * conn_cong_max_step_len * ((MA + 1) * (MA + 1))"
+          proof -
+            have "2 * MA * conn_cong_max_step_len + conn_cong_max_step_len
+                  = conn_cong_max_step_len * (2 * MA + 1)" by (simp add: algebra_simps)
+            also have "\<dots> \<le> conn_cong_max_step_len * (2 * ((MA + 1) * (MA + 1)))"
+              using k2 by (rule mult_le_mono2)
+            also have "\<dots> = 2 * conn_cong_max_step_len * ((MA + 1) * (MA + 1))"
+              by (simp add: algebra_simps)
+            finally show ?thesis .
+          qed
+          have qt: "trans_step_len + trans_step_len * MA
+                    \<le> 2 * trans_step_len * ((MA + 1) * (MA + 1))"
+          proof -
+            have "trans_step_len + trans_step_len * MA = trans_step_len * (MA + 1)"
+              by (simp add: algebra_simps)
+            also have "\<dots> \<le> trans_step_len * (2 * ((MA + 1) * (MA + 1)))"
+              by (rule mult_le_mono2[OF kp2])
+            also have "\<dots> = 2 * trans_step_len * ((MA + 1) * (MA + 1))" by (simp add: algebra_simps)
+            finally show ?thesis .
+          qed
+          have qt1: "trans_step_len \<le> 2 * trans_step_len * ((MA + 1) * (MA + 1))"
+          proof -
+            have "trans_step_len = trans_step_len * 1" by simp
+            also have "\<dots> \<le> trans_step_len * (2 * ((MA + 1) * (MA + 1)))"
+              by (rule mult_le_mono2[OF kone])
+            also have "\<dots> = 2 * trans_step_len * ((MA + 1) * (MA + 1))" by (simp add: algebra_simps)
+            finally show ?thesis .
+          qed
+          have domUB: "2 * conn_cong_max_step_len * ((MA + 1) * (MA + 1))
+                       + 2 * trans_step_len * ((MA + 1) * (MA + 1)) \<le> BIGC"
+          proof -
+            have "2 * conn_cong_max_step_len * ((MA + 1) * (MA + 1))
+                  + 2 * trans_step_len * ((MA + 1) * (MA + 1))
+                  = 2 * (conn_cong_max_step_len + trans_step_len) * ((MA + 1) * (MA + 1))"
+              by (simp add: algebra_simps)
+            also have "\<dots> \<le> 2 * (conn_cong_max_step_len + conn_cong_max_lines + trans_step_len
+                                + trans_lines + refl_step_len + refl_lines + 1)
+                              * ((MA + 1) * (MA + 1))"
+              by (rule mult_le_mono1) simp
+            also have "\<dots> = BIGC" unfolding BIGC_def by (simp add: algebra_simps)
+            finally show ?thesis .
+          qed
+          \<comment> \<open>the three coefficient dominances\<close>
+          have dR2: "2 * MA * MA * conn_cong_max_step_len + trans_step_len + trans_step_len * MA \<le> BIGC"
+            using q2 qt domUB by linarith
+          have dR1: "2 * MA * conn_cong_max_step_len + trans_step_len \<le> BIGC"
+            using qMAc qt1 domUB by linarith
+          have dconst: "2 * MA * conn_cong_max_step_len + conn_cong_max_step_len + trans_step_len \<le> BIGC"
+            using qc0 qt1 domUB by linarith
+          \<comment> \<open>bound the per-level size overhead by @{term "poly PP MF"}\<close>
+          have P1: "2 * length ?As * (len_formula ?MID + len_formula ?BB)
+                    \<le> 2 * MA * (1 + MA * R2 + R1)"
+          proof -
+            have "2 * length ?As * (len_formula ?MID + len_formula ?BB)
+                  \<le> 2 * MA * (len_formula ?MID + len_formula ?BB)"
+              by (rule mult_le_mono1[OF la2])
+            also have "\<dots> \<le> 2 * MA * (1 + MA * R2 + R1)"
+              by (rule mult_le_mono2) (use m b in linarith)
+            finally show ?thesis .
+          qed
+          have step1: "conn_cong_max_step_len
+                         * (2 * length ?As * (len_formula ?MID + len_formula ?BB) + 1)
+                       + trans_step_len * (len_formula ?A0 + len_formula ?MID + len_formula ?BB)
+                       \<le> conn_cong_max_step_len * (2 * MA * (1 + MA * R2 + R1) + 1)
+                         + trans_step_len * (R2 + (1 + MA * R2) + R1)"
+          proof -
+            have t1: "conn_cong_max_step_len
+                        * (2 * length ?As * (len_formula ?MID + len_formula ?BB) + 1)
+                      \<le> conn_cong_max_step_len * (2 * MA * (1 + MA * R2 + R1) + 1)"
+              by (rule mult_le_mono2) (use P1 in linarith)
+            have t2: "trans_step_len * (len_formula ?A0 + len_formula ?MID + len_formula ?BB)
+                      \<le> trans_step_len * (R2 + (1 + MA * R2) + R1)"
+              by (rule mult_le_mono2) (use a m b in linarith)
+            from t1 t2 show ?thesis by linarith
+          qed
+          have ovEq: "conn_cong_max_step_len * (2 * MA * (1 + MA * R2 + R1) + 1)
+                      + trans_step_len * (R2 + (1 + MA * R2) + R1)
+                      = (2 * MA * MA * conn_cong_max_step_len + trans_step_len + trans_step_len * MA) * R2
+                        + (2 * MA * conn_cong_max_step_len + trans_step_len) * R1
+                        + (2 * MA * conn_cong_max_step_len + conn_cong_max_step_len + trans_step_len)"
+            by (simp add: algebra_simps)
+          have ovBIGC: "(2 * MA * MA * conn_cong_max_step_len + trans_step_len + trans_step_len * MA) * R2
+                        + (2 * MA * conn_cong_max_step_len + trans_step_len) * R1
+                        + (2 * MA * conn_cong_max_step_len + conn_cong_max_step_len + trans_step_len)
+                        \<le> BIGC * R2 + BIGC * R1 + BIGC"
+            using mult_le_mono1[OF dR2, of R2] mult_le_mono1[OF dR1, of R1] dconst by linarith
+          have ovPP: "poly bnd62 ?LS
+                       + (conn_cong_max_step_len
+                            * (2 * length ?As * (len_formula ?MID + len_formula ?BB) + 1)
+                          + trans_step_len * (len_formula ?A0 + len_formula ?MID + len_formula ?BB))
+                      \<le> poly PP MF"
+          proof -
+            have "conn_cong_max_step_len
+                    * (2 * length ?As * (len_formula ?MID + len_formula ?BB) + 1)
+                  + trans_step_len * (len_formula ?A0 + len_formula ?MID + len_formula ?BB)
+                  \<le> BIGC * R2 + BIGC * R1 + BIGC"
+              using step1 ovEq ovBIGC by linarith
+            moreover have "poly bnd62 ?LS \<le> poly bnd62 (MF * MF)"
+              using LSsq by (rule poly_nat_mono)
+            ultimately show ?thesis using ppMF by linarith
+          qed
+          \<comment> \<open>assemble\<close>
+          have ScVal: "?Sc = ?SUML * poly PP MF" by simp
+          have "sA + sB + trans_step_len * (len_formula ?A0 + len_formula ?MID + len_formula ?BB)
+                \<le> poly bnd62 ?LS
+                  + (?SUML * poly PP MF
+                     + conn_cong_max_step_len
+                         * (2 * length ?As * (len_formula ?MID + len_formula ?BB) + 1))
+                  + trans_step_len * (len_formula ?A0 + len_formula ?MID + len_formula ?BB)"
+            using pA(3) pBs ScVal by linarith
+          also have "\<dots> = ?SUML * poly PP MF
+                           + (poly bnd62 ?LS
+                              + (conn_cong_max_step_len
+                                   * (2 * length ?As * (len_formula ?MID + len_formula ?BB) + 1)
+                                 + trans_step_len
+                                     * (len_formula ?A0 + len_formula ?MID + len_formula ?BB)))"
+            by (simp add: algebra_simps)
+          also have "\<dots> \<le> ?SUML * poly PP MF + poly PP MF" using ovPP by linarith
+          also have "\<dots> = (1 + ?SUML) * poly PP MF" by (simp add: algebra_simps)
+          also have "\<dots> = ?LS * poly PP MF" using lenLS by simp
+          finally show ?thesis .
+        qed
+        have B3: "real (max dA (max dB (trans_step_depth
+                       + max (depth_formula ?A0) (max (depth_formula ?MID) (depth_formula ?BB)))))
+                  \<le> real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)"
+        proof -
+          have MFge1: "1 \<le> MF" by (simp add: MF_def)
+          have lgn1: "1 \<le> log 2 (real MF + 1)" using MFge1 by (simp add: le_log_iff)
+          have lgn0: "0 \<le> log 2 (real MF + 1)" using lgn1 by simp
+          have logmono2: "\<And>x y. 0 < x \<Longrightarrow> x \<le> y \<Longrightarrow> log 2 x \<le> log 2 y"
+          proof -
+            fix x y :: real assume xy: "0 < x" "x \<le> y"
+            have "0 < y" using xy by simp
+            thus "log 2 x \<le> log 2 y" using xy by (simp add: log_le_cancel_iff)
+          qed
+          have logge0: "\<And>N::nat. 0 \<le> log 2 (real N + 1)"
+          proof -
+            fix N :: nat
+            have "(1::real) \<le> real N + 1" by simp
+            thus "0 \<le> log 2 (real N + 1)" by (simp add: le_log_iff)
+          qed
+          have lsLGN: "log 2 (real ?LS + 1) \<le> 2 * log 2 (real MF + 1)"
+          proof -
+            have lsq: "real ?LS \<le> real MF * real MF"
+            proof -
+              have "real ?LS \<le> real (MF * MF)" using LSsq by (rule of_nat_mono)
+              thus ?thesis by (simp only: of_nat_mult)
+            qed
+            have exp: "(real MF + 1) * (real MF + 1) = real MF * real MF + 2 * real MF + 1"
+              by (simp add: algebra_simps)
+            have leq: "real ?LS + 1 \<le> (real MF + 1) * (real MF + 1)"
+              using lsq exp by simp
+            have "log 2 (real ?LS + 1) \<le> log 2 ((real MF + 1) * (real MF + 1))"
+              by (rule logmono2[OF _ leq]) simp
+            also have "\<dots> = log 2 (real MF + 1) + log 2 (real MF + 1)"
+              by (rule log_mult_pos) simp_all
+            also have "\<dots> = 2 * log 2 (real MF + 1)" by simp
+            finally show ?thesis .
+          qed
+          \<comment> \<open>shared "scale a real coefficient by the log envelope" step\<close>
+          have absLog: "\<And>(K::real) N. real N \<le> real ?LS
+                \<Longrightarrow> K * log 2 (real N + 1) \<le> \<bar>K\<bar> * (2 * log 2 (real MF + 1))"
+          proof -
+            fix K :: real and N :: nat assume Nle: "real N \<le> real ?LS"
+            have "K * log 2 (real N + 1) \<le> \<bar>K\<bar> * log 2 (real N + 1)"
+              by (rule mult_right_mono[OF abs_ge_self logge0])
+            also have "\<dots> \<le> \<bar>K\<bar> * (2 * log 2 (real MF + 1))"
+            proof (rule mult_left_mono)
+              have "log 2 (real N + 1) \<le> log 2 (real ?LS + 1)"
+                by (rule logmono2) (use Nle in simp)+
+              thus "log 2 (real N + 1) \<le> 2 * log 2 (real MF + 1)" using lsLGN by linarith
+              show "0 \<le> \<bar>K\<bar>" by simp
+            qed
+            finally show "K * log 2 (real N + 1) \<le> \<bar>K\<bar> * (2 * log 2 (real MF + 1))" .
+          qed
+          \<comment> \<open>per-node depth bounds (all O(log M) except @{term ?BB} which carries +depth)\<close>
+          have dA_b: "real dA \<le> \<bar>c62\<bar> * (2 * log 2 (real MF + 1))"
+          proof -
+            have "real dA \<le> c62 * log 2 (real ?LS + 1)" by (rule pA(4))
+            also have "\<dots> \<le> \<bar>c62\<bar> * (2 * log 2 (real MF + 1))" by (rule absLog) simp
+            finally show ?thesis .
+          qed
+          have A0_b: "real (depth_formula ?A0) \<le> \<bar>tc\<bar> * (2 * log 2 (real MF + 1))"
+          proof -
+            have "real (depth_formula ?A0)
+                  \<le> tc * log 2 (real (len_formula (Conn cc0 (map (sub_formula sub) fs))) + 1)"
+              using tc wfL by blast
+            also have "\<dots> = tc * log 2 (real ?LS + 1)" by (simp only: sub_formula.simps)
+            also have "\<dots> \<le> \<bar>tc\<bar> * (2 * log 2 (real MF + 1))" by (rule absLog) simp
+            finally show ?thesis .
+          qed
+          have MID_b: "real (depth_formula ?MID) \<le> 1 + \<bar>tc\<bar> * (2 * log 2 (real MF + 1))"
+          proof (cases "fs = []")
+            case True thus ?thesis by simp
+          next
+            case False
+            have dM: "depth_formula ?MID = 1 + Max (set (map depth_formula ?As))"
+              using False by simp
+            have ch: "\<And>d. d \<in> set (map depth_formula ?As)
+                      \<Longrightarrow> real d \<le> \<bar>tc\<bar> * (2 * log 2 (real MF + 1))"
+            proof -
+              fix d assume "d \<in> set (map depth_formula ?As)"
+              then obtain x where x: "x \<in> set fs"
+                  "d = depth_formula (spira_trans (sub_formula sub x))" by auto
+              have wfx: "formula_well_formed (alphabet F) (sub_formula sub x)"
+                by (rule sub_formula_wf[OF wfsi[OF x(1)] wfsv])
+              have lxLS: "len_formula (sub_formula sub x) \<le> ?LS"
+              proof -
+                have "len_formula (sub_formula sub x) \<le> ?SUML" by (rule sumlmem[OF x(1)])
+                thus ?thesis using lenLS by simp
+              qed
+              have "real d \<le> tc * log 2 (real (len_formula (sub_formula sub x)) + 1)"
+                unfolding x(2) using tc wfx by blast
+              also have "\<dots> \<le> \<bar>tc\<bar> * (2 * log 2 (real MF + 1))"
+                by (rule absLog[OF of_nat_mono[OF lxLS]])
+              finally show "real d \<le> \<bar>tc\<bar> * (2 * log 2 (real MF + 1))" .
+            qed
+            have "Max (set (map depth_formula ?As)) \<in> set (map depth_formula ?As)"
+              using False by (simp add: Max_in)
+            hence "real (Max (set (map depth_formula ?As)))
+                   \<le> \<bar>tc\<bar> * (2 * log 2 (real MF + 1))" using ch by blast
+            thus ?thesis using dM by simp
+          qed
+          have BB_b: "real (depth_formula ?BB)
+                      \<le> real (depth_formula (Conn cc0 fs)) + tcm * log 2 (real MF + 1)"
+          proof -
+            have eqBB: "?BB = sub_formula (\<lambda>v. spira_trans (sub v)) (Conn cc0 fs)"
+              by (simp only: sub_formula.simps)
+            have "real (depth_formula ?BB)
+                  \<le> real (depth_formula (Conn cc0 fs))
+                    + tcm * log 2 (real (len_formula (Conn cc0 fs)
+                          + (\<Sum>w\<in>var_set_form (Conn cc0 fs). len_formula (sub w))) + 1)"
+              unfolding eqBB using dstr wfs by blast
+            also have "\<dots> = real (depth_formula (Conn cc0 fs)) + tcm * log 2 (real MF + 1)"
+              by (simp only: MF_def[symmetric])
+            finally show ?thesis .
+          qed
+          have Dc_b: "real ?Dc \<le> real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)"
+          proof -
+            have nn: "0 \<le> real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)"
+              using lgn0 ccnn by simp
+            thus ?thesis by linarith
+          qed
+          \<comment> \<open>combine the depth max-tree against the target\<close>
+          have dcnn: "0 \<le> real (depth_formula (Conn cc0 fs))" by simp
+          have nnc: "(0::real) \<le> real conn_cong_max_step_depth"
+                    "(0::real) \<le> real trans_step_depth" by simp_all
+          have dec: "cc = real conn_cong_max_step_depth + real trans_step_depth
+                          + real refl_step_depth + 1 + 3 * \<bar>c62\<bar> + 4 * \<bar>tc\<bar> + 3 * tcm + 5"
+            unfolding cc_def by simp
+          have ccC: "2 * \<bar>c62\<bar> \<le> cc"
+            using dec tcm1 abs_ge_zero[of c62] abs_ge_zero[of tc] nnc by linarith
+          have ccT: "real trans_step_depth + 1 + 2 * \<bar>tc\<bar> + tcm \<le> cc"
+            using dec tcm1 abs_ge_zero[of c62] abs_ge_zero[of tc] nnc by linarith
+          have ccCm: "real conn_cong_max_step_depth + 1 + 2 * \<bar>tc\<bar> + tcm \<le> cc"
+            using dec tcm1 abs_ge_zero[of c62] abs_ge_zero[of tc] nnc by linarith
+          have ccLC: "2 * \<bar>c62\<bar> * log 2 (real MF + 1) \<le> cc * log 2 (real MF + 1)"
+            by (rule mult_right_mono[OF ccC lgn0])
+          have ccLT: "(real trans_step_depth + 1 + 2 * \<bar>tc\<bar> + tcm) * log 2 (real MF + 1)
+                      \<le> cc * log 2 (real MF + 1)"
+            by (rule mult_right_mono[OF ccT lgn0])
+          have ccLCm: "(real conn_cong_max_step_depth + 1 + 2 * \<bar>tc\<bar> + tcm) * log 2 (real MF + 1)
+                       \<le> cc * log 2 (real MF + 1)"
+            by (rule mult_right_mono[OF ccCm lgn0])
+          have dA2: "\<bar>tc\<bar> * (2 * log 2 (real MF + 1)) = 2 * \<bar>tc\<bar> * log 2 (real MF + 1)"
+            by (simp add: algebra_simps)
+          have dC2: "\<bar>c62\<bar> * (2 * log 2 (real MF + 1)) = 2 * \<bar>c62\<bar> * log 2 (real MF + 1)"
+            by (simp add: algebra_simps)
+          have dT: "(real trans_step_depth + 1 + 2 * \<bar>tc\<bar> + tcm) * log 2 (real MF + 1)
+                    = real trans_step_depth * log 2 (real MF + 1) + log 2 (real MF + 1)
+                      + 2 * \<bar>tc\<bar> * log 2 (real MF + 1) + tcm * log 2 (real MF + 1)"
+            by (simp add: algebra_simps)
+          have dCm: "(real conn_cong_max_step_depth + 1 + 2 * \<bar>tc\<bar> + tcm) * log 2 (real MF + 1)
+                     = real conn_cong_max_step_depth * log 2 (real MF + 1) + log 2 (real MF + 1)
+                       + 2 * \<bar>tc\<bar> * log 2 (real MF + 1) + tcm * log 2 (real MF + 1)"
+            by (simp add: algebra_simps)
+          have tsdL: "real trans_step_depth \<le> real trans_step_depth * log 2 (real MF + 1)"
+            using mult_left_mono[of 1 "log 2 (real MF + 1)" "real trans_step_depth"] lgn1 by simp
+          have cmL: "real conn_cong_max_step_depth
+                     \<le> real conn_cong_max_step_depth * log 2 (real MF + 1)"
+            using mult_left_mono[of 1 "log 2 (real MF + 1)" "real conn_cong_max_step_depth"] lgn1 by simp
+          have tcmL0: "0 \<le> tcm * log 2 (real MF + 1)" using tcm1 lgn0 by simp
+          have tcL0: "0 \<le> 2 * \<bar>tc\<bar> * log 2 (real MF + 1)" using lgn0 by simp
+          have iA0: "real (depth_formula ?A0)
+                     \<le> real (depth_formula (Conn cc0 fs))
+                        + 2 * \<bar>tc\<bar> * log 2 (real MF + 1) + tcm * log 2 (real MF + 1) + 1"
+            using A0_b dA2 tcmL0 dcnn by linarith
+          have iMID: "real (depth_formula ?MID)
+                      \<le> real (depth_formula (Conn cc0 fs))
+                         + 2 * \<bar>tc\<bar> * log 2 (real MF + 1) + tcm * log 2 (real MF + 1) + 1"
+            using MID_b dA2 tcmL0 dcnn by linarith
+          have iBB: "real (depth_formula ?BB)
+                     \<le> real (depth_formula (Conn cc0 fs))
+                        + 2 * \<bar>tc\<bar> * log 2 (real MF + 1) + tcm * log 2 (real MF + 1) + 1"
+            using BB_b tcL0 by linarith
+          have L_trans: "real trans_step_depth
+                         + max (real (depth_formula ?A0))
+                               (max (real (depth_formula ?MID)) (real (depth_formula ?BB)))
+                         \<le> real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)"
+          proof -
+            have inner: "max (real (depth_formula ?A0))
+                             (max (real (depth_formula ?MID)) (real (depth_formula ?BB)))
+                         \<le> real (depth_formula (Conn cc0 fs))
+                            + 2 * \<bar>tc\<bar> * log 2 (real MF + 1) + tcm * log 2 (real MF + 1) + 1"
+              using iA0 iMID iBB by simp
+            have "real trans_step_depth
+                  + (real (depth_formula (Conn cc0 fs))
+                     + 2 * \<bar>tc\<bar> * log 2 (real MF + 1) + tcm * log 2 (real MF + 1) + 1)
+                  \<le> real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)"
+              using ccLT dT tsdL lgn1 by linarith
+            thus ?thesis using inner by linarith
+          qed
+          have L_ccmsd: "real conn_cong_max_step_depth
+                         + max (real (depth_formula ?MID)) (real (depth_formula ?BB))
+                         \<le> real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)"
+          proof -
+            have inner: "max (real (depth_formula ?MID)) (real (depth_formula ?BB))
+                         \<le> real (depth_formula (Conn cc0 fs))
+                            + 2 * \<bar>tc\<bar> * log 2 (real MF + 1) + tcm * log 2 (real MF + 1) + 1"
+              using iMID iBB by simp
+            have "real conn_cong_max_step_depth
+                  + (real (depth_formula (Conn cc0 fs))
+                     + 2 * \<bar>tc\<bar> * log 2 (real MF + 1) + tcm * log 2 (real MF + 1) + 1)
+                  \<le> real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)"
+              using ccLCm dCm cmL lgn1 by linarith
+            thus ?thesis using inner by linarith
+          qed
+          have L_dA: "real dA \<le> real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)"
+            using dA_b dC2 ccLC dcnn by linarith
+          have dB_le: "real dB \<le> real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)"
+          proof -
+            have "real dB
+                  \<le> real (max ?Dc (conn_cong_max_step_depth
+                              + max (depth_formula ?MID) (depth_formula ?BB)))"
+              using pBd by simp
+            also have "\<dots> = max (real ?Dc) (real conn_cong_max_step_depth
+                              + max (real (depth_formula ?MID)) (real (depth_formula ?BB)))"
+              by (simp add: of_nat_max)
+            also have "\<dots> \<le> real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)"
+              using Dc_b L_ccmsd by simp
+            finally show ?thesis .
+          qed
+          have e: "real (max dA (max dB (trans_step_depth
+                       + max (depth_formula ?A0) (max (depth_formula ?MID) (depth_formula ?BB)))))
+                   = max (real dA) (max (real dB) (real trans_step_depth
+                       + max (real (depth_formula ?A0))
+                             (max (real (depth_formula ?MID)) (real (depth_formula ?BB)))))"
+            by (simp only: of_nat_max of_nat_add)
+          show ?thesis unfolding e by (intro max.boundedI L_dA dB_le L_trans)
+        qed
+        show "\<exists>lines sz dep.
+                provable_balanced_iff (spira_trans (sub_formula sub (Conn cc0 fs)))
+                  (sub_formula (\<lambda>v. spira_trans (sub v)) (Conn cc0 fs)) lines sz dep
+              \<and> lines \<le> len_formula (sub_formula sub (Conn cc0 fs))
+                  * poly PP (len_formula (Conn cc0 fs)
+                             + (\<Sum>v\<in>var_set_form (Conn cc0 fs). len_formula (sub v)))
+              \<and> sz \<le> len_formula (sub_formula sub (Conn cc0 fs))
+                  * poly PP (len_formula (Conn cc0 fs)
+                             + (\<Sum>v\<in>var_set_form (Conn cc0 fs). len_formula (sub v)))
+              \<and> real dep \<le> real (depth_formula (Conn cc0 fs))
+                  + cc * log 2 (real (len_formula (Conn cc0 fs)
+                                  + (\<Sum>v\<in>var_set_form (Conn cc0 fs). len_formula (sub v))) + 1)"
+        proof (rule exI[of _ "lA + lB + trans_lines"],
+               rule exI[of _ "sA + sB + trans_step_len
+                              * (len_formula ?A0 + len_formula ?MID + len_formula ?BB)"],
+               rule exI[of _ "max dA (max dB (trans_step_depth
+                              + max (depth_formula ?A0)
+                                    (max (depth_formula ?MID) (depth_formula ?BB))))"],
+               intro conjI)
+          show "provable_balanced_iff (spira_trans (sub_formula sub (Conn cc0 fs)))
+                  (sub_formula (\<lambda>v. spira_trans (sub v)) (Conn cc0 fs))
+                  (lA + lB + trans_lines)
+                  (sA + sB + trans_step_len * (len_formula ?A0 + len_formula ?MID + len_formula ?BB))
+                  (max dA (max dB (trans_step_depth
+                       + max (depth_formula ?A0) (max (depth_formula ?MID) (depth_formula ?BB)))))"
+            using pC by (simp only: sub_formula.simps)
+          show "lA + lB + trans_lines
+                \<le> len_formula (sub_formula sub (Conn cc0 fs))
+                  * poly PP (len_formula (Conn cc0 fs)
+                             + (\<Sum>v\<in>var_set_form (Conn cc0 fs). len_formula (sub v)))"
+            by (rule B1[unfolded MF_def])
+          show "sA + sB + trans_step_len * (len_formula ?A0 + len_formula ?MID + len_formula ?BB)
+                \<le> len_formula (sub_formula sub (Conn cc0 fs))
+                  * poly PP (len_formula (Conn cc0 fs)
+                             + (\<Sum>v\<in>var_set_form (Conn cc0 fs). len_formula (sub v)))"
+            by (rule B2[unfolded MF_def])
+          show "real (max dA (max dB (trans_step_depth
+                     + max (depth_formula ?A0) (max (depth_formula ?MID) (depth_formula ?BB)))))
+                \<le> real (depth_formula (Conn cc0 fs))
+                  + cc * log 2 (real (len_formula (Conn cc0 fs)
+                                  + (\<Sum>v\<in>var_set_form (Conn cc0 fs). len_formula (sub v))) + 1)"
+            by (rule B3[unfolded MF_def])
+        qed
+      qed
+    qed
+    thus "formula_well_formed (alphabet F) f0
+       \<Longrightarrow> (\<forall>v. formula_well_formed (alphabet F) (sub v))
+       \<Longrightarrow> (\<exists>lines sz dep.
+              provable_balanced_iff (spira_trans (sub_formula sub f0))
+                (sub_formula (\<lambda>v. spira_trans (sub v)) f0) lines sz dep
+            \<and> lines \<le> len_formula (sub_formula sub f0)
+                * poly PP (len_formula f0 + (\<Sum>v\<in>var_set_form f0. len_formula (sub v)))
+            \<and> sz \<le> len_formula (sub_formula sub f0)
+                * poly PP (len_formula f0 + (\<Sum>v\<in>var_set_form f0. len_formula (sub v)))
+            \<and> real dep \<le> real (depth_formula f0)
+                + cc * log 2 (real (len_formula f0
+                                + (\<Sum>v\<in>var_set_form f0. len_formula (sub v))) + 1))"
+      by blast
+  qed
+  show ?thesis
+  proof (intro exI[where x = "monom 1 2 * PP"] exI[where x = cc] allI impI)
+    fix f :: "'a formula" and sub :: "string \<Rightarrow> 'a formula"
+    assume A: "formula_well_formed (alphabet F) f
+               \<and> (\<forall>f'\<in>range sub. formula_well_formed (alphabet F) f')"
+    have wff: "formula_well_formed (alphabet F) f" using A by simp
+    have wfs: "\<forall>v. formula_well_formed (alphabet F) (sub v)" using A by blast
+    let ?M = "len_formula f + (\<Sum>v\<in>var_set_form f. len_formula (sub v))"
+    obtain lines sz dep where M:
+      "provable_balanced_iff (spira_trans (sub_formula sub f))
+         (sub_formula (\<lambda>v. spira_trans (sub v)) f) lines sz dep"
+      "lines \<le> len_formula (sub_formula sub f) * poly PP ?M"
+      "sz \<le> len_formula (sub_formula sub f) * poly PP ?M"
+      "real dep \<le> real (depth_formula f) + cc * log 2 (real ?M + 1)"
+      using main[OF wff wfs] by blast
+    have lensq: "len_formula (sub_formula sub f) \<le> ?M * ?M"
+    proof -
+      have "len_formula (sub_formula sub f) \<le> len_formula f * ?M"
+        by (rule len_sub_form_le)
+      also have "\<dots> \<le> ?M * ?M" by (rule mult_le_mono1) simp
+      finally show ?thesis .
+    qed
+    have monomval: "poly (monom (1::nat) 2) ?M = ?M * ?M"
+      by (simp add: poly_monom power2_eq_square)
+    have polyeq: "poly (monom 1 2 * PP) ?M = ?M * ?M * poly PP ?M"
+    proof -
+      have "poly (monom 1 2 * PP) ?M = poly (monom (1::nat) 2) ?M * poly PP ?M"
+        by (rule poly_mult)
+      from this[unfolded monomval] show ?thesis .
+    qed
+    have envl: "\<And>x. x \<le> len_formula (sub_formula sub f) * poly PP ?M
+                  \<Longrightarrow> x \<le> poly (monom 1 2 * PP) ?M"
+    proof -
+      fix x assume "x \<le> len_formula (sub_formula sub f) * poly PP ?M"
+      also have "len_formula (sub_formula sub f) * poly PP ?M \<le> (?M * ?M) * poly PP ?M"
+        using lensq by (rule mult_le_mono1)
+      also have "\<dots> = poly (monom 1 2 * PP) ?M" by (rule polyeq[symmetric])
+      finally show "x \<le> poly (monom 1 2 * PP) ?M" .
+    qed
+    show "let M = len_formula f + (\<Sum>v\<in>var_set_form f. len_formula (sub v))
+          in (\<exists>lines sz dep. provable_balanced_iff (spira_trans (sub_formula sub f))
+                (sub_formula (\<lambda>v. spira_trans (sub v)) f) lines sz dep
+              \<and> lines \<le> poly (monom 1 2 * PP) M \<and> sz \<le> poly (monom 1 2 * PP) M
+              \<and> real dep \<le> real (depth_formula f) + cc * log 2 (real M + 1))"
+      unfolding Let_def
+      using M(1) envl[OF M(2)] envl[OF M(3)] M(4) by blast
+  qed
+qed
 end
 end
