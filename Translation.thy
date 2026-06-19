@@ -3424,16 +3424,13 @@ proof -
   have fin_vs: "finite ?vs" by simp
   have unfold: "balance x y z = sub_formula ?sub custom_balancing"
     by (simp add: Let_def)
-  have "depth_formula (sub_formula ?sub custom_balancing)
+  have A: "depth_formula (sub_formula ?sub custom_balancing)
       \<le> depth_formula custom_balancing + depth_sub ?vs ?sub"
     by (rule sub_formula_depth_bound[OF fin_vs wf_sub])
-  moreover have "depth_sub ?vs ?sub
-               = Max (insert 1 ((\<lambda>v. depth_formula (?sub v)) ` ?vs))"
+  have B: "depth_sub ?vs ?sub
+         = Max (insert 1 {depth_formula x, depth_formula y, depth_formula z})"
     by (simp add: depth_sub_def)
-  moreover have "(\<lambda>v. depth_formula (?sub v)) ` ?vs
-               = {depth_formula x, depth_formula y, depth_formula z}"
-    by auto
-  ultimately show ?thesis using unfold by simp
+  show ?thesis unfolding unfold B[symmetric] by (rule A)
 qed
 
 lemma depth_le_len:

@@ -984,7 +984,9 @@ proof -
   proof -
     fix v assume "v \<in> set cong_atoms"
     hence "?csub v \<in> set ?vals" using csub_in_vals by blast
-    thus "depth_formula (?csub v) \<le> ?maxdep6" by auto
+    hence "?csub v = X \<or> ?csub v = X' \<or> ?csub v = Y \<or> ?csub v = Y'
+           \<or> ?csub v = Z \<or> ?csub v = Z'" by auto
+    thus "depth_formula (?csub v) \<le> ?maxdep6" by (elim disjE) simp_all
   qed
   have len_sub_le: "len_sub (set cong_atoms) ?csub \<le> 6 * ?sumlens"
   proof -
@@ -1315,7 +1317,7 @@ proof -
           using s0_in by simp
         hence "depth_formula s0 \<le> balance_cong_step_depth"
           unfolding balance_cong_step_depth_def using Max_ge[OF fin_bd] by blast
-        thus ?thesis by simp
+        thus ?thesis by (rule add_right_mono)
       qed
       also have "\<dots> \<le> ?dep_t" using ci_dep_le by linarith
       finally show ?thesis .
@@ -8174,12 +8176,11 @@ proof -
                                   (rebal_dep_coeff3 * (?dlsum3 + 1))))))
                        \<le> c * ?L"
               using ihQT_d ihQF_d ihRT_d ihRF_d glue_le3
-              by (simp add: of_nat_max)
+              by (simp only: of_nat_max max.bounded_iff)
             have "real dep \<le> real (max depQT (max depQF (max depRT (max depRF
                                          (rebal_dep_coeff3 * (?dlsum3 + 1))))))"
-              using conD3 by simp
-            also have "\<dots> \<le> c * ?L" by (rule all5)
-            finally show ?thesis .
+              using conD3 by (simp only: of_nat_le_iff)
+            from order_trans[OF this all5] show ?thesis .
           qed
           show ?thesis using pbi lines_le sz_le dep_le by blast
         qed
@@ -8215,23 +8216,5 @@ proof -
   qed
 qed
 
-
-(* theorem 1.1 *)
-subsection \<open>Proof balancing (final theorem)\<close>
-
-theorem proof_balancing:
-  shows "\<exists> bound :: nat poly. \<exists> c :: real.
-           \<forall> pr. valid_proof F pr \<and> assumptions pr = {} \<longrightarrow>
-             (\<exists> pr'. valid_proof F pr'
-                   \<and> assumptions pr' = {}
-                   \<and> thesis pr' = thesis pr
-                   \<and> len_proof pr' \<le> poly bound (len_proof pr)
-                   \<and> (\<forall> line \<in> set (steps pr').
-                        real (depth_formula line)
-                        \<le> real (depth_formula (thesis pr))
-                          + c * log 2 (real (len_formula line))))"
-  sorry
-
 end
-
 end

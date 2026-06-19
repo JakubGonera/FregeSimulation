@@ -505,6 +505,16 @@ qed
 definition formulas_equiv :: "'c1 formula \<Rightarrow> 'c1 alphabet \<Rightarrow> 'c2 formula \<Rightarrow> 'c2 alphabet \<Rightarrow> bool" where
   "formulas_equiv f1 a1 f2 a2 \<longleftrightarrow> (\<forall> val. eval a1 val f1 = eval a2 val f2)"
 
+definition conns_equiv :: "'c1 \<Rightarrow> 'c1 alphabet \<Rightarrow> 'c2 \<Rightarrow> 'c2 alphabet \<Rightarrow> bool" where
+  "conns_equiv conn1 a1 conn2 a2 \<longleftrightarrow> (arity a1 conn1 = arity a2 conn2 \<and>
+                                    (\<forall> val fs1 fs2. length fs1 = arity a1 conn1 \<longrightarrow> length fs2 = arity a2 conn2 \<longrightarrow>
+                                           (\<forall> i. i < length fs1 \<longrightarrow> formulas_equiv (fs1 ! i) a1 (fs2 ! i) a2) \<longrightarrow>
+                                           eval a1 val (Conn conn1 fs1) = eval a2 val (Conn conn2 fs2)))"
+
+definition equiv_formula_sets :: "'c1 formula set \<Rightarrow> 'c1 alphabet \<Rightarrow> 'c2 formula set \<Rightarrow> 'c2 alphabet \<Rightarrow> bool" where
+  "equiv_formula_sets fs1 a1 fs2 a2 \<longleftrightarrow> (\<forall> f1 \<in> fs1. \<exists> f2 \<in> fs2. formulas_equiv f1 a1 f2 a2) \<and>
+                                        (\<forall> f2 \<in> fs2. \<exists> f1 \<in> fs1. formulas_equiv f2 a2 f1 a1)"
+
 fun formula_well_formed :: "'c alphabet \<Rightarrow> 'c formula \<Rightarrow> bool" where
   "formula_well_formed alph (Atom _) = True" |
   "formula_well_formed alph (Conn c fs) =
@@ -761,6 +771,13 @@ proof -
     unfolding valid_proof_def by (simp add: last_map)
 qed
 end
+
+definition equiv_proofs :: "'c1 frege_proof \<Rightarrow> 'c1 frege \<Rightarrow> 'c2 frege_proof \<Rightarrow> 'c2 frege \<Rightarrow> bool" where
+  "equiv_proofs pr1 F1 pr2 F2 \<longleftrightarrow> (frege_system F1 \<and> valid_proof F1 pr1 \<and>
+                                   frege_system F2 \<and> valid_proof F2 pr2 \<and>
+                                   equiv_formula_sets (assumptions pr1) (alphabet F1) (assumptions pr2) (alphabet F2) \<and>
+                                   formulas_equiv (thesis pr1) (alphabet F1) (thesis pr2) (alphabet F2))"
+
 
 definition simulates :: "'c frege \<Rightarrow> 'c frege \<Rightarrow> bool" where
   "simulates F1 F2 \<longleftrightarrow>

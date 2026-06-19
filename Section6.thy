@@ -1,5 +1,5 @@
 theory Section6
-  imports Section5
+  imports Section5 "HOL-Types_To_Sets.Types_To_Sets"
 begin
 
 section \<open>Pushing the balancing translation through connectives (Filmus section 6)\<close>
@@ -14,6 +14,64 @@ definition conn_closed :: "'c alphabet \<Rightarrow> bool" where
              (\<forall>args. length args = arity alph c - 1 \<longrightarrow>
                 conn_evals alph c' args
                   = conn_evals alph c (take i args @ b # drop i args)))))"
+
+fun rename_conn :: "('c1 \<Rightarrow> 'c2) \<Rightarrow> 'c1 formula \<Rightarrow> 'c2 formula" where
+  "rename_conn phi (Atom a) = Atom a"
+| "rename_conn phi (Conn c fs) = Conn (phi c) (map (rename_conn phi) fs)"
+
+locale closure_of =
+  fixes F1 :: "'c1 frege"
+    and F2 :: "'c2 frege"
+    and phi :: "'c1 \<Rightarrow> 'c2"
+  assumes frege_system_F1: "frege_system F1"
+    and frege_system_F2: "frege_system F2"
+    and conn_closed_F2: "conn_closed (alphabet F2)"
+    and conns_equiv_phi: "\<And>c. conns_equiv c (alphabet F1) (phi c) (alphabet F2)"
+    and rule_simulation:
+      "\<And>fs f. derived (rules F1) fs f
+                \<Longrightarrow> derived (rules F2) (map (rename_conn phi) fs) (rename_conn phi f)"
+begin
+
+lemma extended_frege_translation_triv:
+  assumes "valid_proof F1 pr1"
+  shows "\<exists> pr2. equiv_proofs pr1 F1 pr2 F2 \<and> len_proof pr1 = len_proof pr2"
+  sorry
+
+end
+
+subsection \<open>Existence of the closure (via Types-To-Sets)\<close>
+
+text \<open>Up to semantics a connective is determined by its arity together with its
+  truth function, so the connectives needed to close an alphabet under fixing one
+  argument to a constant form a subset of the ambient type
+  nat * (bool list => bool).  This carrier is finite, and the Types-To-Sets
+  local-typedef rule then provides a finite connective type in bijection with it.\<close>
+
+inductive_set closure_carrier :: "'c alphabet \<Rightarrow> (nat \<times> (bool list \<Rightarrow> bool)) set"
+  for a1 :: "'c alphabet" where
+  base: "(arity a1 c, conn_evals a1 c) \<in> closure_carrier a1"
+| fix_slot: "\<lbrakk> (Suc n, g) \<in> closure_carrier a1; i \<le> n \<rbrakk>
+               \<Longrightarrow> (n, \<lambda>args. g (take i args @ b # drop i args)) \<in> closure_carrier a1"
+
+lemma closure_carrier_finite:
+  assumes "frege_system F1"
+  shows "finite (closure_carrier (alphabet F1))"
+  sorry
+
+text \<open>With the finite carrier realised as a connective type 'c2 (the
+  type_definition hypothesis being discharged by the Types-To-Sets local-typedef
+  rule together with closure_carrier_finite), the closed extension and a
+  witnessing renaming exist.\<close>
+
+lemma extended_frege_exists:
+  fixes Rep :: "'c2 \<Rightarrow> (nat \<times> (bool list \<Rightarrow> bool))"
+    and Abs :: "(nat \<times> (bool list \<Rightarrow> bool)) \<Rightarrow> 'c2"
+  assumes "frege_system F1"
+    and "type_definition Rep Abs (closure_carrier (alphabet F1))"
+  shows "\<exists> (F2 :: 'c2 frege) phi. closure_of F1 F2 phi"
+  sorry
+
+  
 
 locale frege_closure = frege_balancing +
   assumes conn_closed_alphabet: "conn_closed (alphabet F)"
@@ -4764,12 +4822,12 @@ proof -
             have "real dB
                   \<le> real (max ?Dc (conn_cong_max_step_depth
                               + max (depth_formula ?MID) (depth_formula ?BB)))"
-              using pBd by simp
+              using pBd by (simp only: of_nat_le_iff)
             also have "\<dots> = max (real ?Dc) (real conn_cong_max_step_depth
                               + max (real (depth_formula ?MID)) (real (depth_formula ?BB)))"
               by (simp add: of_nat_max)
             also have "\<dots> \<le> real (depth_formula (Conn cc0 fs)) + cc * log 2 (real MF + 1)"
-              using Dc_b L_ccmsd by simp
+              using Dc_b L_ccmsd by (simp only: max.bounded_iff)
             finally show ?thesis .
           qed
           have e: "real (max dA (max dB (trans_step_depth
