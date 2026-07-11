@@ -44,11 +44,17 @@ lemma mp_base_proof_spec:
        = {Atom sym_atom_x, iff_form (Atom sym_atom_x) (Atom sym_atom_y)}
    \<and> thesis mp_base_proof = Atom sym_atom_y"
 proof -
-  have "\<forall>val. (\<forall>f \<in> {Atom sym_atom_x, iff_form (Atom sym_atom_x) (Atom sym_atom_y)}.
+  have sem: "\<forall>val. (\<forall>f \<in> {Atom sym_atom_x, iff_form (Atom sym_atom_x) (Atom sym_atom_y)}.
                 eval (alphabet F) val f)
               \<longrightarrow> eval (alphabet F) val (Atom sym_atom_y)"
     using iff_form_eval by auto
-  thus ?thesis unfolding mp_base_proof_def using entails_proof_spec by blast
+  have wf_fs: "\<forall>f \<in> {Atom sym_atom_x, iff_form (Atom sym_atom_x) (Atom sym_atom_y)}.
+                 formula_well_formed (alphabet F) f"
+    by (auto intro: iff_form_wf)
+  have wf_th: "formula_well_formed (alphabet F) (Atom sym_atom_y)" by simp
+  show ?thesis
+    unfolding mp_base_proof_def
+    using entails_proof_spec[OF wf_fs wf_th sem] .
 qed
 
 definition mp_lines where
@@ -1437,7 +1443,8 @@ proof (induction f)
 next
   case (Conn c fs)
   have inner: "card (\<Union>g \<in> set gs. var_set_form g)
-               \<le> sum_list (map (\<lambda>g. card (var_set_form g)) gs)" for gs
+               \<le> sum_list (map (\<lambda>g. card (var_set_form g)) gs)"
+    for gs :: "'c formula list"
   proof (induction gs)
     case Nil
     show ?case by simp
@@ -2471,10 +2478,10 @@ proof -
         from yin obtain k where klt: "k < length (take j (steps pr))"
             and yk: "(take j (steps pr)) ! k = y"
           using in_set_conv_nth[of y "take j (steps pr)"] by blast
-        have kmin: "k < min j (length (steps pr))" using klt by (simp add: length_take)
+        have kmin: "k < min j (length (steps pr))" using klt by simp
         have kj: "k < j" using kmin by simp
         have km: "k < m" using kmin unfolding m_def by simp
-        have "steps pr ! k = y" using yk kj by (simp add: nth_take)
+        have "steps pr ! k = y" using yk kj by simp
         hence "x = spira_trans (steps pr ! k)" using xy by simp
         hence "x \<in> set (steps (DD k))" using thesis_in_steps[OF km] by simp
         thus "x \<in> (\<Union>k \<in> {0..<j}. set (steps (DD k)))" using kj by auto
@@ -2491,7 +2498,7 @@ proof -
     proof -
       fix i assume "i \<le> m - 1"
       hence "take i cvs = map DD [0..<i]"
-        unfolding cvs_def by (simp add: take_map min.absorb1)
+        unfolding cvs_def by (simp add: take_map)
       thus "set (take i cvs) = DD ` {0..<i}" by simp
     qed
     have vbase: "valid_proof F base"

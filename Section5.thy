@@ -44,8 +44,6 @@ lemma iff_form_eval:
    = (eval (alphabet F) val A = eval (alphabet F) val B)"
 proof -
   let ?al = "alphabet F"
-  have conn_iff_equiv: "formulas_equiv conn_iff ?al iff_dm dm_alphabet"
-    unfolding conn_iff_def using someI_ex[OF conn_iff_spec] .
   have iff_dm_eval: "\<And>w. eval dm_alphabet w iff_dm = (w ''a'' = w ''b'')"
     unfolding iff_dm_def dm_alphabet_def by auto
   have "eval ?al val (iff_form A B)
@@ -59,6 +57,12 @@ proof -
     unfolding iff_sub_def by simp
   finally show ?thesis .
 qed
+
+lemma iff_form_wf:
+  assumes "formula_well_formed (alphabet F) A" and "formula_well_formed (alphabet F) B"
+  shows "formula_well_formed (alphabet F) (iff_form A B)"
+  unfolding iff_form_def
+  by (rule sub_formula_well_formed[OF conn_iff_wf]) (auto simp: iff_sub_def assms)
 
 (*
   Lifting: substituting into iff_form A B is the same as building iff_form on
@@ -112,17 +116,21 @@ definition taut_proof :: "'c formula \<Rightarrow> 'c frege_proof" where
      (SOME pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut)"
 
 lemma taut_proof_spec:
-  assumes "\<forall>val. eval (alphabet F) val taut"
+  assumes "formula_well_formed (alphabet F) taut"
+    and "\<forall>val. eval (alphabet F) val taut"
   shows "valid_proof F (taut_proof taut)
        \<and> assumptions (taut_proof taut) = {}
        \<and> thesis (taut_proof taut) = taut"
 proof -
   have fs_F: "frege_system F"
     by (meson frege_balancing_axioms frege_balancing_def)
-  have "\<forall>val. (\<forall>f \<in> {}. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val taut"
-    using assms by simp
-  hence "\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut"
+  have "(\<forall>f \<in> {}. formula_well_formed (alphabet F) f) \<longrightarrow>
+        formula_well_formed (alphabet F) taut \<longrightarrow>
+        (\<forall>val. (\<forall>f \<in> {}. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val taut) \<longrightarrow>
+        (\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut)"
     using frege_system.impl_complete[OF fs_F] by blast
+  hence "\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut"
+    using assms by simp
   thus ?thesis unfolding taut_proof_def by (rule someI_ex)
 qed
 
@@ -305,7 +313,9 @@ qed
   (the case identities) they are constants.
 *)
 lemma iff_from_taut:
-  assumes "\<forall>val. eval (alphabet F) val (iff_form A B)"
+  assumes wfA: "formula_well_formed (alphabet F) A"
+    and wfB: "formula_well_formed (alphabet F) B"
+    and taut: "\<forall>val. eval (alphabet F) val (iff_form A B)"
   shows "provable_balanced_iff A B
            (length (steps (taut_proof (iff_form A B))))
            (Max (insert 1 (len_formula ` set (steps (taut_proof (iff_form A B))))))
@@ -314,7 +324,7 @@ proof -
   let ?pr = "taut_proof (iff_form A B)"
   have spec: "valid_proof F ?pr \<and> assumptions ?pr = {}
             \<and> thesis ?pr = iff_form A B"
-    using taut_proof_spec[OF assms] .
+    using taut_proof_spec[OF iff_form_wf[OF wfA wfB] taut] .
   have fin_l: "finite (insert 1 (len_formula ` set (steps ?pr)))" by simp
   have fin_d: "finite (insert 1 (depth_formula ` set (steps ?pr)))" by simp
   have step_len: "\<forall>s \<in> set (steps ?pr).
@@ -346,9 +356,10 @@ proof -
   let ?sub = "\<lambda>w. if w = ?z then A else Atom w"
   have taut: "\<forall>val. eval (alphabet F) val (iff_form (Atom ?z) (Atom ?z))"
     by (simp add: iff_form_eval)
+  have wfz: "formula_well_formed (alphabet F) (Atom ?z)" by simp
   have base: "provable_balanced_iff (Atom ?z) (Atom ?z)
                 refl_lines refl_step_len refl_step_depth"
-    using iff_from_taut[OF taut]
+    using iff_from_taut[OF wfz wfz taut]
     unfolding refl_lines_def refl_step_len_def refl_step_depth_def refl_base_proof_def
     by simp
   have fin: "finite {?z}" by simp
@@ -377,15 +388,22 @@ definition entails_proof :: "'c formula set \<Rightarrow> 'c formula \<Rightarro
      (SOME pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th)"
 
 lemma entails_proof_spec:
-  assumes "\<forall>val. (\<forall>f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th"
+  assumes "\<forall>f \<in> fs. formula_well_formed (alphabet F) f"
+    and "formula_well_formed (alphabet F) th"
+    and "\<forall>val. (\<forall>f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th"
   shows "valid_proof F (entails_proof fs th)
        \<and> assumptions (entails_proof fs th) = fs
        \<and> thesis (entails_proof fs th) = th"
 proof -
   have fs_F: "frege_system F"
     by (meson frege_balancing_axioms frege_balancing_def)
-  have "\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th"
-    using frege_system.impl_complete[OF fs_F] assms by blast
+  have "(\<forall>f \<in> fs. formula_well_formed (alphabet F) f) \<longrightarrow>
+        formula_well_formed (alphabet F) th \<longrightarrow>
+        (\<forall>val. (\<forall>f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th) \<longrightarrow>
+        (\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th)"
+    using frege_system.impl_complete[OF fs_F] by blast
+  hence "\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th"
+    using assms by simp
   thus ?thesis unfolding entails_proof_def by (rule someI_ex)
 qed
 
@@ -441,14 +459,22 @@ lemma trans_base_proof_spec:
         iff_form (Atom trans_atom_y) (Atom trans_atom_z)}
    \<and> thesis trans_base_proof = iff_form (Atom trans_atom_x) (Atom trans_atom_z)"
 proof -
-  have "\<forall>val. (\<forall>f \<in> {iff_form (Atom trans_atom_x) (Atom trans_atom_y),
+  have sem: "\<forall>val. (\<forall>f \<in> {iff_form (Atom trans_atom_x) (Atom trans_atom_y),
                      iff_form (Atom trans_atom_y) (Atom trans_atom_z)}.
                 eval (alphabet F) val f)
               \<longrightarrow> eval (alphabet F) val
                     (iff_form (Atom trans_atom_x) (Atom trans_atom_z))"
     using iff_form_eval by auto
-  thus ?thesis
-    unfolding trans_base_proof_def using entails_proof_spec by blast
+  have wf_fs: "\<forall>f \<in> {iff_form (Atom trans_atom_x) (Atom trans_atom_y),
+                     iff_form (Atom trans_atom_y) (Atom trans_atom_z)}.
+                 formula_well_formed (alphabet F) f"
+    by (auto intro: iff_form_wf)
+  have wf_th: "formula_well_formed (alphabet F)
+                 (iff_form (Atom trans_atom_x) (Atom trans_atom_z))"
+    by (intro iff_form_wf) auto
+  show ?thesis
+    unfolding trans_base_proof_def
+    using entails_proof_spec[OF wf_fs wf_th sem] .
 qed
 
 definition trans_lines :: nat where
@@ -849,7 +875,7 @@ proof -
   let ?a0 = "cong_atoms ! 0" and ?a1 = "cong_atoms ! 1"
   and ?a2 = "cong_atoms ! 2" and ?a3 = "cong_atoms ! 3"
   and ?a4 = "cong_atoms ! 4" and ?a5 = "cong_atoms ! 5"
-  have "\<forall>val. (\<forall>f \<in> {iff_form (Atom ?a0) (Atom ?a1),
+  have sem: "\<forall>val. (\<forall>f \<in> {iff_form (Atom ?a0) (Atom ?a1),
                      iff_form (Atom ?a2) (Atom ?a3),
                      iff_form (Atom ?a4) (Atom ?a5)}.
                 eval (alphabet F) val f)
@@ -890,8 +916,18 @@ proof -
                       (balance (Atom ?a1) (Atom ?a3) (Atom ?a5)))"
       by (simp add: iff_form_eval)
   qed
-  thus ?thesis
-    unfolding balance_cong_base_proof_def using entails_proof_spec by blast
+  have wf_fs: "\<forall>f \<in> {iff_form (Atom ?a0) (Atom ?a1),
+                     iff_form (Atom ?a2) (Atom ?a3),
+                     iff_form (Atom ?a4) (Atom ?a5)}.
+                 formula_well_formed (alphabet F) f"
+    by (auto intro: iff_form_wf)
+  have wf_th: "formula_well_formed (alphabet F)
+                 (iff_form (balance (Atom ?a0) (Atom ?a2) (Atom ?a4))
+                           (balance (Atom ?a1) (Atom ?a3) (Atom ?a5)))"
+    by (intro iff_form_wf balance_wf) auto
+  show ?thesis
+    unfolding balance_cong_base_proof_def
+    using entails_proof_spec[OF wf_fs wf_th sem] .
 qed
 
 definition balance_cong_lines :: nat where
@@ -1492,13 +1528,20 @@ lemma sym_base_proof_spec:
    \<and> assumptions sym_base_proof = {iff_form (Atom sym_atom_x) (Atom sym_atom_y)}
    \<and> thesis sym_base_proof = iff_form (Atom sym_atom_y) (Atom sym_atom_x)"
 proof -
-  have "\<forall>val. (\<forall>f \<in> {iff_form (Atom sym_atom_x) (Atom sym_atom_y)}.
+  have sem: "\<forall>val. (\<forall>f \<in> {iff_form (Atom sym_atom_x) (Atom sym_atom_y)}.
                 eval (alphabet F) val f)
               \<longrightarrow> eval (alphabet F) val
                     (iff_form (Atom sym_atom_y) (Atom sym_atom_x))"
     using iff_form_eval by auto
-  thus ?thesis
-    unfolding sym_base_proof_def using entails_proof_spec by blast
+  have wf_fs: "\<forall>f \<in> {iff_form (Atom sym_atom_x) (Atom sym_atom_y)}.
+                 formula_well_formed (alphabet F) f"
+    by (auto intro: iff_form_wf)
+  have wf_th: "formula_well_formed (alphabet F)
+                 (iff_form (Atom sym_atom_y) (Atom sym_atom_x))"
+    by (intro iff_form_wf) auto
+  show ?thesis
+    unfolding sym_base_proof_def
+    using entails_proof_spec[OF wf_fs wf_th sem] .
 qed
 
 definition sym_lines :: nat where
@@ -1807,8 +1850,15 @@ definition case_one_step_depth :: nat where
 lemma case_one:
   "provable_balanced_iff reassoc_lhs reassoc_rhs
      case_one_lines case_one_step_len case_one_step_depth"
-  using iff_from_taut[OF reassoc_taut]
-  unfolding case_one_lines_def case_one_step_len_def case_one_step_depth_def .
+proof -
+  have wf_lhs: "formula_well_formed (alphabet F) reassoc_lhs"
+    unfolding reassoc_lhs_def by (intro balance_wf) auto
+  have wf_rhs: "formula_well_formed (alphabet F) reassoc_rhs"
+    unfolding reassoc_rhs_def by (intro balance_wf) auto
+  show ?thesis
+    using iff_from_taut[OF wf_lhs wf_rhs reassoc_taut]
+    unfolding case_one_lines_def case_one_step_len_def case_one_step_depth_def .
+qed
 
 (*
   Case 1 of Lemma 5.1 (R a descendant of Q). Given the three recursive
@@ -3361,8 +3411,15 @@ definition case_three_step_depth :: nat where
 lemma case_three:
   "provable_balanced_iff case_three_lhs case_three_rhs
      case_three_lines case_three_step_len case_three_step_depth"
-  using iff_from_taut[OF case_three_taut]
-  unfolding case_three_lines_def case_three_step_len_def case_three_step_depth_def .
+proof -
+  have wf_lhs: "formula_well_formed (alphabet F) case_three_lhs"
+    unfolding case_three_lhs_def by (intro balance_wf) auto
+  have wf_rhs: "formula_well_formed (alphabet F) case_three_rhs"
+    unfolding case_three_rhs_def by (intro balance_wf) auto
+  show ?thesis
+    using iff_from_taut[OF wf_lhs wf_rhs case_three_taut]
+    unfolding case_three_lines_def case_three_step_len_def case_three_step_depth_def .
+qed
 
 (*
   Case 3 of Lemma 5.1 (Q and R disjoint subtrees). Fixing Q and fixing R
@@ -4455,9 +4512,14 @@ lemma mux_collapse_iff:
 proof -
   let ?z = "refl_atom"
   let ?sub = "\<lambda>w. if w = ?z then G else Atom w"
+  have wf_lhs: "formula_well_formed (alphabet F) pos_empty_lhs"
+    unfolding pos_empty_lhs_def by simp
+  have wf_rhs: "formula_well_formed (alphabet F) pos_empty_rhs"
+    unfolding pos_empty_rhs_def
+    by (intro balance_wf) (auto simp: true_const_wf false_const_wf)
   have base: "provable_balanced_iff pos_empty_lhs pos_empty_rhs
                 pos_empty_lines pos_empty_step_len pos_empty_step_depth"
-    using iff_from_taut[OF pos_empty_taut]
+    using iff_from_taut[OF wf_lhs wf_rhs pos_empty_taut]
     unfolding pos_empty_lines_def pos_empty_step_len_def pos_empty_step_depth_def .
   have fin: "finite {?z}" by simp
   have sig_id: "\<forall>v. v \<notin> {?z} \<longrightarrow> ?sub v = Atom v" by simp
@@ -4605,7 +4667,7 @@ proof -
       have "frege_proof.thesis p1 = last (steps p1)"
         using p1(1) unfolding valid_proof_def by simp
       hence "iff_form \<phi> \<psi> = last (steps p1)" using p1(3) by simp
-      thus ?thesis using ne by (simp add: last_in_set)
+      thus ?thesis using ne by simp
     qed
 
     define cb where cb_def: "cb = combine_proofs p1 pc"
@@ -4812,9 +4874,52 @@ lemma reassoc_conn_proof:
   "provable_balanced_iff (reassoc_conn_lhs c i) (reassoc_conn_rhs c i)
      (reassoc_conn_lines c i) (reassoc_conn_step_len c i)
      (reassoc_conn_step_depth c i)"
-  using iff_from_taut[OF reassoc_conn_taut]
-  unfolding reassoc_conn_lines_def reassoc_conn_step_len_def
-            reassoc_conn_step_depth_def .
+proof -
+  have conn_atoms_wf:
+    "formula_well_formed (alphabet F)
+       (Conn c ((map Atom (reassoc_conn_slots c))[i := Atom z]))" for z :: string
+  proof -
+    have len: "length ((map Atom (reassoc_conn_slots c))[i := Atom z])
+               = arity (alphabet F) c"
+      unfolding reassoc_conn_slots_def using reassoc_conn_atoms_spec by simp
+    have "\<forall>g\<in>set ((map Atom (reassoc_conn_slots c))[i := Atom z]).
+            formula_well_formed (alphabet F) (g::'c formula)"
+    proof
+      fix g :: "'c formula"
+      assume "g \<in> set ((map Atom (reassoc_conn_slots c))[i := Atom z])"
+      hence "g \<in> insert (Atom z) (set (map Atom (reassoc_conn_slots c)))"
+        using set_update_subset_insert by fastforce
+      thus "formula_well_formed (alphabet F) g" by auto
+    qed
+    thus ?thesis using len by simp
+  qed
+  have wf_lhs: "formula_well_formed (alphabet F) (reassoc_conn_lhs c i)"
+  proof -
+    let ?bal = "balance (Atom (reassoc_conn_p c)) (Atom (reassoc_conn_q c))
+                        (Atom (reassoc_conn_r c))"
+    have wf_bal: "formula_well_formed (alphabet F) ?bal" by (intro balance_wf) auto
+    have len: "length ((map Atom (reassoc_conn_slots c))[i := ?bal])
+               = arity (alphabet F) c"
+      unfolding reassoc_conn_slots_def using reassoc_conn_atoms_spec by simp
+    have "\<forall>g\<in>set ((map Atom (reassoc_conn_slots c))[i := ?bal]).
+            formula_well_formed (alphabet F) (g::'c formula)"
+    proof
+      fix g :: "'c formula"
+      assume "g \<in> set ((map Atom (reassoc_conn_slots c))[i := ?bal])"
+      hence "g \<in> insert ?bal (set (map Atom (reassoc_conn_slots c)))"
+        using set_update_subset_insert by fastforce
+      thus "formula_well_formed (alphabet F) g" using wf_bal by auto
+    qed
+    thus ?thesis unfolding reassoc_conn_lhs_def using len by simp
+  qed
+  have wf_rhs: "formula_well_formed (alphabet F) (reassoc_conn_rhs c i)"
+    unfolding reassoc_conn_rhs_def
+    by (intro balance_wf conn_atoms_wf) auto
+  show ?thesis
+    using iff_from_taut[OF wf_lhs wf_rhs reassoc_conn_taut]
+    unfolding reassoc_conn_lines_def reassoc_conn_step_len_def
+              reassoc_conn_step_depth_def .
+qed
 
 (*
   The substitution lifting the per-connective reassociation tautology to actual
@@ -4853,7 +4958,7 @@ proof -
   have slots_len: "length ?slots = ?k"
     unfolding reassoc_conn_slots_def using alen by simp
   have slots_nth: "\<And>j. j < ?k \<Longrightarrow> ?slots ! j = ?atoms ! j"
-    unfolding reassoc_conn_slots_def by (simp add: nth_take)
+    unfolding reassoc_conn_slots_def by simp
 
   have sub_nth: "\<And>j. j < ?k + 3 \<Longrightarrow> ?sub (?atoms ! j) = ?vals ! j"
   proof -
@@ -5269,7 +5374,7 @@ proof -
     hence "Max (insert (depth_formula g) (set (map depth_formula gs)))
          = max (depth_formula g) (Max (set (map depth_formula gs)))"
       using fin by simp
-    thus ?thesis using dg_le by (simp add: max.absorb2)
+    thus ?thesis using dg_le by simp
   qed
   finally show ?thesis using ne by simp
 qed
@@ -5337,7 +5442,7 @@ proof -
         assume jne: "j \<noteq> i"
         have "(gs[i := Atom h]) ! j = gs ! j"
           using jne by (simp add: nth_list_update)
-        moreover have "gs ! j \<in> set gs" using j i_lt by (simp add: nth_mem)
+        moreover have "gs ! j \<in> set gs" using j i_lt by simp
         ultimately have "h \<notin> var_set_form ((gs[i := Atom h]) ! j)"
           using h_fresh by auto
         hence "\<not> contains_atom ((gs[i := Atom h]) ! j) h"

@@ -84,6 +84,8 @@ locale de_morgan_frege =
   fixes F :: dfrege
   assumes alph: "alphabet F = dm_alphabet"
   and "frege_system F"
+  and rules_wf: "\<forall>r \<in> rules F. (\<forall>f \<in> set (prems r). formula_well_formed (alphabet F) f)
+                                \<and> formula_well_formed (alphabet F) (concl r)"
 begin
 abbreviation a where "a \<equiv> alphabet F"
 
@@ -237,20 +239,27 @@ lemma proof_exists_for_rule:
   assumes "rule \<in> rules F"
     shows "\<exists> pr. valid_proof F' pr \<and> assumptions pr = set (prems rule) \<and> thesis pr = concl rule"
 proof -
-  have "alphabet F = alphabet F'"
+  have alph_eq: "alphabet F = alphabet F'"
     using dm1 dm2 de_morgan_frege_def by fastforce
   hence val_sat: "\<forall> val. (\<forall> f \<in> set (prems rule). eval (alphabet F') val f)
                 \<longrightarrow> eval (alphabet F') val (concl rule)"
     using dm1 assms frege_system.sound sound_rule_def
     by (metis de_morgan_frege_def)
-  have "(\<forall> val. (\<forall> f \<in> set (prems rule). eval (alphabet F') val f) \<longrightarrow>
+  have rwf0: "(\<forall>f\<in>set (prems rule). formula_well_formed (alphabet F) f)
+              \<and> formula_well_formed (alphabet F) (concl rule)"
+    using de_morgan_frege.rules_wf[OF dm1] assms by blast
+  have rwf: "(\<forall>f\<in>set (prems rule). formula_well_formed (alphabet F') f)
+             \<and> formula_well_formed (alphabet F') (concl rule)"
+    using rwf0 alph_eq by simp
+  have "(\<forall>f\<in>set (prems rule). formula_well_formed (alphabet F') f) \<longrightarrow>
+        formula_well_formed (alphabet F') (concl rule) \<longrightarrow>
+        (\<forall> val. (\<forall> f \<in> set (prems rule). eval (alphabet F') val f) \<longrightarrow>
                  eval (alphabet F') val (concl rule))
                           \<longrightarrow> (\<exists> pr. valid_proof F' pr
                                    \<and> assumptions pr = set (prems rule)
                                    \<and> thesis pr = concl rule)"
     using dm2 frege_system.impl_complete[of F'] de_morgan_frege_def by blast
-  thus ?thesis using val_sat
-    by force
+  thus ?thesis using val_sat rwf by blast
 qed
 
 lemma rule_proof_fun_exists: "\<exists> f :: drule \<Rightarrow> dproof. \<forall> rule \<in> rules F.

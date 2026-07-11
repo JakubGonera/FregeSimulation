@@ -170,11 +170,31 @@ definition iff_dm :: "dm_conn formula" where
                      Conn And [Conn Not [Atom ''a''], Conn Not [Atom ''b'']]]"
 
 definition conn_iff :: "'c formula" where
-  "conn_iff = (SOME f. formulas_equiv f (alphabet F) iff_dm dm_alphabet)"
+  "conn_iff = (SOME f. formula_well_formed (alphabet F) f
+                       \<and> formulas_equiv f (alphabet F) iff_dm dm_alphabet)"
 
 lemma conn_iff_spec:
-  shows "\<exists> f. formulas_equiv f (alphabet F) iff_dm dm_alphabet"
-  by (meson formulas_equiv_def frege_balancing_axioms frege_balancing_def frege_system_def)
+  shows "\<exists> f. formula_well_formed (alphabet F) f
+             \<and> formulas_equiv f (alphabet F) iff_dm dm_alphabet"
+proof -
+  have fs_F: "frege_system F"
+    using frege_balancing_axioms frege_balancing_def by blast
+  from frege_system.func_complete[OF fs_F]
+  have "\<exists> f'. formula_well_formed (alphabet F) f'
+             \<and> formulas_equiv iff_dm dm_alphabet f' (alphabet F)"
+    by blast
+  then obtain f' where wf': "formula_well_formed (alphabet F) f'"
+    and eq': "formulas_equiv iff_dm dm_alphabet f' (alphabet F)" by blast
+  have "formulas_equiv f' (alphabet F) iff_dm dm_alphabet"
+    using eq' by (simp add: formulas_equiv_def)
+  thus ?thesis using wf' by blast
+qed
+
+lemma conn_iff_wf: "formula_well_formed (alphabet F) conn_iff"
+  unfolding conn_iff_def using someI_ex[OF conn_iff_spec] by blast
+
+lemma conn_iff_equiv: "formulas_equiv conn_iff (alphabet F) iff_dm dm_alphabet"
+  unfolding conn_iff_def using someI_ex[OF conn_iff_spec] by blast
 
 (* lemma 3.1 already proven in Frege.thy *)
 
@@ -256,7 +276,7 @@ proof -
   have "hole_depth (fs ! i) h \<in> (\<lambda>f. hole_depth f h) ` set fs"
     using i_lt nth_mem by force
   hence "hole_depth (fs ! i) h \<le> Max ((\<lambda>f. hole_depth f h) ` set fs)"
-    using fin by (simp add: Max_ge)
+    using fin by simp
   also have "\<dots> < 1 + Max ((\<lambda>f. hole_depth f h) ` set fs)" by simp
   also have "\<dots> = hole_depth (Conn c fs) h"
     using witness by simp
@@ -381,8 +401,6 @@ proof -
   have fs_F: "frege_system F"
     by (meson frege_balancing_axioms frege_balancing_def)
 
-  have conn_iff_equiv: "formulas_equiv conn_iff ?al iff_dm dm_alphabet"
-    unfolding conn_iff_def using someI_ex[OF conn_iff_spec] .
 
   have iff_dm_eval: "\<And>v. eval dm_alphabet v iff_dm = (v ''a'' = v ''b'')"
     unfolding iff_dm_def dm_alphabet_def by auto
@@ -497,10 +515,50 @@ proof -
            eval ?al val (sub_formula ?sub' conn_iff)"
     using sem_valid by simp
 
+  have fs_wf: "\<forall>f\<in>{conn_iff}. formula_well_formed (alphabet F) f"
+    using conn_iff_wf by simp
+  have conn_sub_wf:
+    "formula_well_formed (alphabet F) (Conn c ((map Atom ?atoms)[i := Atom z]))" for z :: string
+  proof -
+    have allg: "formula_well_formed (alphabet F) (g :: 'c formula)"
+      if "g \<in> set ((map Atom ?atoms)[i := Atom z])" for g
+    proof -
+      from that have "g \<in> insert (Atom z) (set (map Atom ?atoms))"
+        using set_update_subset_insert by fastforce
+      thus "formula_well_formed (alphabet F) g" by auto
+    qed
+    have "length ((map Atom ?atoms)[i := Atom z]) = arity (alphabet F) c"
+      using atoms_len by simp
+    thus ?thesis using allg by auto
+  qed
+  have sub'_wf: "formula_well_formed (alphabet F) (?sub' v)" for v :: string
+  proof (cases "v = ''a''")
+    case True
+    thus ?thesis using conn_sub_wf[of "''a''"] by simp
+  next
+    case False
+    show ?thesis
+    proof (cases "v = ''b''")
+      case True
+      thus ?thesis using conn_sub_wf[of "''b''"] by simp
+    next
+      case False
+      with \<open>v \<noteq> ''a''\<close> show ?thesis by simp
+    qed
+  qed
+  have th_wf: "formula_well_formed (alphabet F) (sub_formula ?sub' conn_iff)"
+    using sub_formula_well_formed[OF conn_iff_wf sub'_wf] .
+  have inst: "(\<forall>f\<in>{conn_iff}. formula_well_formed (alphabet F) f) \<longrightarrow>
+              formula_well_formed (alphabet F) (sub_formula ?sub' conn_iff) \<longrightarrow>
+              (\<forall>val. (\<forall>f\<in>{conn_iff}. eval (alphabet F) val f) \<longrightarrow>
+                     eval (alphabet F) val (sub_formula ?sub' conn_iff)) \<longrightarrow>
+              (\<exists>pr. valid_proof F pr \<and> assumptions pr = {conn_iff} \<and>
+                    thesis pr = sub_formula ?sub' conn_iff)"
+    using frege_system.impl_complete[OF fs_F] by blast
   show "\<exists>pr. valid_proof F pr \<and>
              assumptions pr = {conn_iff} \<and>
              thesis pr = sub_formula ?sub' conn_iff"
-    using one_premise frege_system.impl_complete[OF fs_F] by blast
+    using inst fs_wf th_wf one_premise by blast
 qed
 
 (*
@@ -1370,10 +1428,10 @@ next
       have "(\<Sum>v \<in> insert ''a'' (insert ''b'' (set ?canon)). len_formula (?sub_lift v))
               = len_formula (?sub_lift ''a'')
                 + (\<Sum>v \<in> insert ''b'' (set ?canon). len_formula (?sub_lift v))"
-        using a_neq_b a_not_canon fin_canon by (simp add: sum.insert)
+        using a_neq_b a_not_canon fin_canon by simp
       also have "(\<Sum>v \<in> insert ''b'' (set ?canon). len_formula (?sub_lift v))
                   = len_formula (?sub_lift ''b'') + (\<Sum>v \<in> set ?canon. len_formula (?sub_lift v))"
-        using b_not_canon fin_canon by (simp add: sum.insert)
+        using b_not_canon fin_canon by simp
       finally show ?thesis by simp
     qed
 
@@ -2777,7 +2835,7 @@ next
       case True
       have "fix_at (i # qp') c (fix_at ((i # qp') @ rp) b (Conn c0 fs))
           = Conn c0 (fs[i := fix_at qp' c (fix_at (qp' @ rp) b (fs ! i))])"
-        using True by (simp add: list_update_overwrite)
+        using True by simp
       also have "\<dots> = Conn c0 (fs[i := fix_at qp' c (fs ! i)])"
         using Cons.IH by simp
       finally show ?thesis using Conn by simp
@@ -2914,12 +2972,12 @@ next
       case neq: False
       have "fix_at (i # qp') c (fix_at rp b (Conn c0 fs))
           = Conn c0 ((fs[j := fix_at rp' b (fs ! j)])[i := fix_at qp' c (fs ! i)])"
-        using rp_eq neq by (simp add: nth_list_update_neq)
+        using rp_eq neq by simp
       also have "\<dots> = Conn c0 ((fs[i := fix_at qp' c (fs ! i)])[j := fix_at rp' b (fs ! j)])"
         using list_update_swap[of j i fs "fix_at rp' b (fs ! j)" "fix_at qp' c (fs ! i)"]
               neq by simp
       also have "\<dots> = fix_at rp b (fix_at (i # qp') c (Conn c0 fs))"
-        using rp_eq neq by (simp add: nth_list_update_neq)
+        using rp_eq neq by simp
       finally show ?thesis using Conn by simp
     next
       case eq: True
@@ -2929,11 +2987,11 @@ next
         case True
         have "fix_at (i # qp') c (fix_at rp b (Conn c0 fs))
             = Conn c0 (fs[i := fix_at qp' c (fix_at rp' b (fs ! i))])"
-          using rp_eq eq True by (simp add: list_update_overwrite)
+          using rp_eq eq True by simp
         also have "\<dots> = Conn c0 (fs[i := fix_at rp' b (fix_at qp' c (fs ! i))])"
           using Cons.IH[OF disj'] by simp
         also have "\<dots> = fix_at rp b (fix_at (i # qp') c (Conn c0 fs))"
-          using rp_eq eq True by (simp add: list_update_overwrite)
+          using rp_eq eq True by simp
         finally show ?thesis using Conn by simp
       next
         case False
@@ -2963,7 +3021,7 @@ next
     proof (cases "i = j")
       case neq: False
       have "subterm_at (fix_at rp b (Conn c0 fs)) (i # qp') = subterm_at (fs ! i) qp'"
-        using rp_eq neq by (simp add: nth_list_update_neq)
+        using rp_eq neq by simp
       thus ?thesis using Conn by simp
     next
       case eq: True
@@ -3022,7 +3080,7 @@ next
     case neq: False
     have "valid_position (fix_at rp b (Conn c0 fs)) (i # qp')
         = (i < length fs \<and> valid_position (fs ! i) qp')"
-      using rp_eq neq by (simp add: nth_list_update_neq)
+      using rp_eq neq by simp
     thus ?thesis using p_eq i_lt vi by simp
   next
     case eq: True

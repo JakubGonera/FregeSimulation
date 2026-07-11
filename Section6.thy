@@ -1,5 +1,5 @@
 theory Section6
-  imports Section5 "HOL-Types_To_Sets.Types_To_Sets"
+  imports FregeCompleteness Section5 "HOL-Types_To_Sets.Types_To_Sets"
 begin
 
 section \<open>Pushing the balancing translation through connectives (Filmus section 6)\<close>
@@ -19,6 +19,169 @@ fun rename_conn :: "('c1 \<Rightarrow> 'c2) \<Rightarrow> 'c1 formula \<Rightarr
   "rename_conn phi (Atom a) = Atom a"
 | "rename_conn phi (Conn c fs) = Conn (phi c) (map (rename_conn phi) fs)"
 
+lemma rename_conn_len [simp]:
+  "len_formula (rename_conn phi f) = len_formula f"
+proof (induction f)
+  case (Atom a)
+  show ?case by simp
+next
+  case (Conn c fs)
+  have m: "map len_formula (map (rename_conn phi) fs) = map len_formula fs"
+    using Conn.IH by simp
+  show ?case by (simp only: rename_conn.simps len_formula.simps m)
+qed
+
+lemma rename_conn_equiv:
+  assumes "\<And>c. conns_equiv c a1 (phi c) a2"
+  shows "formulas_equiv f a1 (rename_conn phi f) a2"
+proof (induction f)
+  case (Atom a)
+  show ?case by (simp add: formulas_equiv_def)
+next
+  case (Conn c fs)
+  from conjunct2[OF assms[of c, unfolded conns_equiv_def]]
+  have ce: "\<And>val fs1 fs2. length fs1 = length fs2 \<Longrightarrow>
+              (\<forall>i<length fs1. formulas_equiv (fs1 ! i) a1 (fs2 ! i) a2) \<Longrightarrow>
+              eval a1 val (Conn c fs1) = eval a2 val (Conn (phi c) fs2)"
+    by blast
+  show ?case
+    unfolding formulas_equiv_def
+  proof (intro allI)
+    fix val
+    have ptw: "\<forall>i<length fs. formulas_equiv (fs ! i) a1 (map (rename_conn phi) fs ! i) a2"
+    proof (intro allI impI)
+      fix i assume i: "i < length fs"
+      have "formulas_equiv (fs ! i) a1 (rename_conn phi (fs ! i)) a2"
+        using Conn.IH[OF nth_mem[OF i]] .
+      then show "formulas_equiv (fs ! i) a1 (map (rename_conn phi) fs ! i) a2"
+        using i by simp
+    qed
+    have "eval a1 val (Conn c fs) = eval a2 val (Conn (phi c) (map (rename_conn phi) fs))"
+      by (rule ce[OF _ ptw]) simp
+    then show "eval a1 val (Conn c fs) = eval a2 val (rename_conn phi (Conn c fs))"
+      by simp
+  qed
+qed
+
+definition rename_rule :: "('c1 \<Rightarrow> 'c2) \<Rightarrow> 'c1 rule \<Rightarrow> 'c2 rule" where
+  "rename_rule phi r = \<lparr> prems = map (rename_conn phi) (prems r),
+                         concl = rename_conn phi (concl r) \<rparr>"
+
+lemma sub_rename_commute:
+  "sub_formula (\<lambda>a. rename_conn phi (sub a)) (rename_conn phi t)
+   = rename_conn phi (sub_formula sub t)"
+proof (induction t)
+  case (Atom a)
+  show ?case by simp
+next
+  case (Conn c ts)
+  have m: "map (sub_formula (\<lambda>a. rename_conn phi (sub a)) \<circ> rename_conn phi) ts
+           = map (rename_conn phi \<circ> sub_formula sub) ts"
+    by (rule map_cong[OF refl]) (simp add: comp_def Conn.IH)
+  show ?case
+    by (simp only: rename_conn.simps sub_formula.simps map_map m)
+qed
+
+lemma derived_rename:
+  assumes "derived rs fs f"
+  shows "derived (rename_rule phi ` rs) (map (rename_conn phi) fs) (rename_conn phi f)"
+proof -
+  from assms obtain r sub where
+    r_in: "r \<in> rs"
+    and concl_eq: "concl (sub_rule sub r) = f"
+    and prems_in: "\<forall>p \<in> set (prems (sub_rule sub r)). \<exists>q \<in> set fs. p = q"
+    unfolding derived_def by auto
+  let ?sub' = "\<lambda>a. rename_conn phi (sub a)"
+  have r'_in: "rename_rule phi r \<in> rename_rule phi ` rs" using r_in by simp
+  have concl': "concl (sub_rule ?sub' (rename_rule phi r)) = rename_conn phi f"
+  proof -
+    have "concl (sub_rule ?sub' (rename_rule phi r))
+          = sub_formula ?sub' (rename_conn phi (concl r))"
+      by (simp add: rename_rule_def)
+    also have "\<dots> = rename_conn phi (sub_formula sub (concl r))"
+      by (rule sub_rename_commute)
+    also have "\<dots> = rename_conn phi f" using concl_eq by simp
+    finally show ?thesis .
+  qed
+  have prems': "\<forall>p \<in> set (prems (sub_rule ?sub' (rename_rule phi r))).
+                   \<exists>q \<in> set (map (rename_conn phi) fs). p = q"
+  proof
+    fix p assume "p \<in> set (prems (sub_rule ?sub' (rename_rule phi r)))"
+    then have "p \<in> set (map (sub_formula ?sub') (map (rename_conn phi) (prems r)))"
+      by (simp add: rename_rule_def)
+    then obtain t where t_in: "t \<in> set (prems r)"
+      and p_eq: "p = sub_formula ?sub' (rename_conn phi t)" by auto
+    have p_eq2: "p = rename_conn phi (sub_formula sub t)"
+      using p_eq by (simp add: sub_rename_commute)
+    have "sub_formula sub t \<in> set (prems (sub_rule sub r))" using t_in by simp
+    then obtain q where "q \<in> set fs" and "sub_formula sub t = q" using prems_in by blast
+    thus "\<exists>q \<in> set (map (rename_conn phi) fs). p = q" using p_eq2 by auto
+  qed
+  show ?thesis
+    unfolding derived_def
+  proof (intro bexI[where x = "rename_rule phi r"] exI[where x = "?sub'"])
+    show "let sub_r = sub_rule ?sub' (rename_rule phi r)
+          in concl sub_r = rename_conn phi f \<and>
+             (\<forall>f1\<in>set (prems sub_r). \<exists>f2\<in>set (map (rename_conn phi) fs). f1 = f2)"
+      unfolding Let_def using concl' prems' by blast
+  next
+    show "rename_rule phi r \<in> rename_rule phi ` rs" by (rule r'_in)
+  qed
+qed
+
+lemma derived_mono_rules:
+  assumes "rs \<subseteq> rs'" and "derived rs fs f"
+  shows "derived rs' fs f"
+proof -
+  from assms(2) obtain r sub where
+    "r \<in> rs" "concl (sub_rule sub r) = f"
+    "\<forall>p\<in>set (prems (sub_rule sub r)). \<exists>q\<in>set fs. p = q"
+    unfolding derived_def by auto
+  thus ?thesis using assms(1) unfolding derived_def by auto
+qed
+
+lemma valid_proof_mono_rules:
+  assumes "rules F \<subseteq> rules G" and "valid_proof F pr"
+  shows "valid_proof G pr"
+proof -
+  have "\<forall>i<length (steps pr). steps pr ! i \<in> assumptions pr \<or>
+          derived (rules G) (take i (steps pr)) (steps pr ! i)"
+  proof (intro allI impI)
+    fix i assume "i < length (steps pr)"
+    with assms(2) have "steps pr ! i \<in> assumptions pr \<or>
+            derived (rules F) (take i (steps pr)) (steps pr ! i)"
+      unfolding valid_proof_def by simp
+    thus "steps pr ! i \<in> assumptions pr \<or> derived (rules G) (take i (steps pr)) (steps pr ! i)"
+      using derived_mono_rules[OF assms(1)] by blast
+  qed
+  thus ?thesis using assms(2) unfolding valid_proof_def by simp
+qed
+
+lemma rename_conn_well_formed:
+  assumes "\<And>c. arity a2 (phi c) = arity a1 c"
+    and "formula_well_formed a1 g"
+  shows "formula_well_formed a2 (rename_conn phi g)"
+  using assms(2)
+proof (induction g)
+  case (Atom a)
+  show ?case by simp
+next
+  case (Conn c gs)
+  have len: "length gs = arity a1 c" and all: "\<forall>g'\<in>set gs. formula_well_formed a1 g'"
+    using Conn.prems by auto
+  have "formula_well_formed a2 (rename_conn phi g')" if "g' \<in> set gs" for g'
+    using Conn.IH that all by blast
+  thus ?case using len assms(1)[of c] by auto
+qed
+
+text \<open>Every functionally complete finite connective alphabet (with the boolean
+  constants) carries a complete sound Frege system.  This is
+  \<open>frege_system_over_complete_alphabet\<close>, proven in theory \<open>FregeCompleteness\<close>
+  by bridging the completeness of the AFP Hilbert calculus.\<close>
+
+
+
+
 locale closure_of =
   fixes F1 :: "'c1 frege"
     and F2 :: "'c2 frege"
@@ -35,7 +198,93 @@ begin
 lemma extended_frege_translation_triv:
   assumes "valid_proof F1 pr1"
   shows "\<exists> pr2. equiv_proofs pr1 F1 pr2 F2 \<and> len_proof pr1 = len_proof pr2"
-  sorry
+proof -
+  define pr2 where
+    "pr2 = \<lparr> assumptions = rename_conn phi ` assumptions pr1,
+             thesis = rename_conn phi (thesis pr1),
+             steps = map (rename_conn phi) (steps pr1) \<rparr>"
+  have steps2: "steps pr2 = map (rename_conn phi) (steps pr1)" by (simp add: pr2_def)
+  have assm2: "assumptions pr2 = rename_conn phi ` assumptions pr1" by (simp add: pr2_def)
+  have th2: "thesis pr2 = rename_conn phi (thesis pr1)" by (simp add: pr2_def)
+
+  have vp1: "valid_proof F1 pr1" by (rule assms)
+  have ne1: "steps pr1 \<noteq> []" using vp1 unfolding valid_proof_def by simp
+  have thlast: "thesis pr1 = last (steps pr1)" using vp1 unfolding valid_proof_def by simp
+
+  note equiv_f = rename_conn_equiv[OF conns_equiv_phi]
+
+  have len_steps: "length (steps pr2) = length (steps pr1)" by (simp add: steps2)
+
+  have vp2: "valid_proof F2 pr2"
+    unfolding valid_proof_def
+  proof (intro conjI)
+    show "thesis pr2 = last (steps pr2)"
+    proof -
+      have "last (steps pr2) = rename_conn phi (last (steps pr1))"
+        using ne1 by (simp add: steps2 last_map)
+      thus ?thesis using th2 thlast by simp
+    qed
+    show "steps pr2 \<noteq> []" using steps2 ne1 by simp
+    show "\<forall>i<length (steps pr2). steps pr2 ! i \<in> assumptions pr2 \<or>
+            derived (rules F2) (take i (steps pr2)) (steps pr2 ! i)"
+    proof (intro allI impI)
+      fix i assume i: "i < length (steps pr2)"
+      hence i1: "i < length (steps pr1)" by (simp add: len_steps)
+      have step_i: "steps pr2 ! i = rename_conn phi (steps pr1 ! i)"
+        using i1 by (simp add: steps2)
+      from vp1 i1 have
+        "steps pr1 ! i \<in> assumptions pr1 \<or>
+           derived (rules F1) (take i (steps pr1)) (steps pr1 ! i)"
+        unfolding valid_proof_def by simp
+      thus "steps pr2 ! i \<in> assumptions pr2 \<or>
+              derived (rules F2) (take i (steps pr2)) (steps pr2 ! i)"
+      proof
+        assume "steps pr1 ! i \<in> assumptions pr1"
+        hence "rename_conn phi (steps pr1 ! i) \<in> assumptions pr2"
+          using assm2 by blast
+        thus ?thesis using step_i by simp
+      next
+        assume "derived (rules F1) (take i (steps pr1)) (steps pr1 ! i)"
+        from rule_simulation[OF this]
+        have d: "derived (rules F2)
+                   (map (rename_conn phi) (take i (steps pr1))) (rename_conn phi (steps pr1 ! i))" .
+        have "map (rename_conn phi) (take i (steps pr1)) = take i (steps pr2)"
+          by (simp add: steps2 take_map)
+        with d have "derived (rules F2) (take i (steps pr2)) (rename_conn phi (steps pr1 ! i))"
+          by simp
+        thus ?thesis using step_i by simp
+      qed
+    qed
+  qed
+
+  have efs: "equiv_formula_sets (assumptions pr1) (alphabet F1) (assumptions pr2) (alphabet F2)"
+    unfolding equiv_formula_sets_def
+  proof (intro conjI ballI)
+    fix f1 assume "f1 \<in> assumptions pr1"
+    hence "rename_conn phi f1 \<in> assumptions pr2" using assm2 by blast
+    thus "\<exists>f2\<in>assumptions pr2. formulas_equiv f1 (alphabet F1) f2 (alphabet F2)"
+      using equiv_f[of f1] by blast
+  next
+    fix f2 assume "f2 \<in> assumptions pr2"
+    then obtain f1 where f1: "f1 \<in> assumptions pr1" and f2eq: "f2 = rename_conn phi f1"
+      using assm2 by blast
+    have "formulas_equiv f2 (alphabet F2) f1 (alphabet F1)"
+      using equiv_f[of f1] f2eq unfolding formulas_equiv_def by auto
+    thus "\<exists>f1\<in>assumptions pr1. formulas_equiv f2 (alphabet F2) f1 (alphabet F1)"
+      using f1 by blast
+  qed
+
+  have th_equiv: "formulas_equiv (thesis pr1) (alphabet F1) (thesis pr2) (alphabet F2)"
+    using equiv_f[of "thesis pr1"] by (simp add: th2)
+
+  have len_eq: "len_proof pr1 = len_proof pr2"
+    by (simp add: steps2 comp_def)
+
+  have "equiv_proofs pr1 F1 pr2 F2"
+    unfolding equiv_proofs_def
+    using frege_system_F1 vp1 frege_system_F2 vp2 efs th_equiv by blast
+  thus ?thesis using len_eq by blast
+qed
 
 end
 
@@ -53,10 +302,104 @@ inductive_set closure_carrier :: "'c alphabet \<Rightarrow> (nat \<times> (bool 
 | fix_slot: "\<lbrakk> (Suc n, g) \<in> closure_carrier a1; i \<le> n \<rbrakk>
                \<Longrightarrow> (n, \<lambda>args. g (take i args @ b # drop i args)) \<in> closure_carrier a1"
 
+fun fix_one :: "(nat \<times> (bool list \<Rightarrow> bool)) \<Rightarrow> (nat \<times> bool) \<Rightarrow> (nat \<times> (bool list \<Rightarrow> bool))" where
+  "fix_one (n, g) (i, b) = (n - 1, \<lambda>args. g (take i args @ b # drop i args))"
+
+lemma fst_foldl_fix_one:
+  "fst (foldl fix_one p ops) = fst p - length ops"
+proof (induction ops arbitrary: p)
+  case Nil
+  thus ?case by simp
+next
+  case (Cons op ops)
+  obtain n g where p: "p = (n, g)" by (cases p)
+  obtain i b where op: "op = (i, b)" by (cases op)
+  have "fst (foldl fix_one p (op # ops)) = fst (foldl fix_one (fix_one p op) ops)" by simp
+  also have "\<dots> = fst (fix_one p op) - length ops" by (rule Cons.IH)
+  also have "fst (fix_one p op) = fst p - 1" using p op by simp
+  finally show ?case by simp
+qed
+
 lemma closure_carrier_finite:
   assumes "frege_system F1"
   shows "finite (closure_carrier (alphabet F1))"
-  sorry
+proof -
+  note finU = frege_system.finite_alphabet[OF assms]
+  define a where "a = alphabet F1"
+  define M where "M = Max (arity a ` UNIV)"
+  have finA: "finite (arity a ` UNIV)" using finU by (rule finite_imageI)
+  have arity_le: "arity a c \<le> M" for c
+    unfolding M_def by (rule Max_ge[OF finA]) simp
+  define base_conn where "base_conn = (\<lambda>c. (arity a c, conn_evals a c))"
+  define G where
+    "G = (\<lambda>(c, ops). foldl fix_one (base_conn c) ops) `
+           (UNIV \<times> {ops. set ops \<subseteq> {0..M} \<times> UNIV \<and> length ops \<le> M})"
+  have finG: "finite G"
+    unfolding G_def
+    by (intro finite_imageI finite_cartesian_product[OF finU] finite_lists_length_le) simp
+  have sub: "closure_carrier a \<subseteq> G"
+  proof (rule subsetI)
+    fix x assume xin: "x \<in> closure_carrier a"
+    obtain n0 g0 where x: "x = (n0, g0)" by (cases x)
+    with xin have "(n0, g0) \<in> closure_carrier a" by simp
+    then have "(n0, g0) \<in> G"
+    proof (induction rule: closure_carrier.induct)
+      case (base c)
+      have "(arity a c, conn_evals a c) = (\<lambda>(c, ops). foldl fix_one (base_conn c) ops) (c, [])"
+        by (simp add: base_conn_def)
+      moreover have "(c, []) \<in> UNIV \<times> {ops. set ops \<subseteq> {0..M} \<times> UNIV \<and> length ops \<le> M}"
+        by simp
+      ultimately show ?case unfolding G_def by (rule image_eqI)
+    next
+      case (fix_slot n g i b)
+      from fix_slot.IH obtain c ops where
+        eq: "(Suc n, g) = foldl fix_one (base_conn c) ops"
+        and setM: "set ops \<subseteq> {0..M} \<times> UNIV"
+        and lenM: "length ops \<le> M"
+        unfolding G_def by auto
+      have fst_eq: "arity a c - length ops = Suc n"
+      proof -
+        have "arity a c - length ops = fst (base_conn c) - length ops"
+          by (simp add: base_conn_def)
+        also have "\<dots> = fst (foldl fix_one (base_conn c) ops)"
+          by (rule fst_foldl_fix_one[symmetric])
+        also have "\<dots> = fst (Suc n, g)" using eq by simp
+        finally show ?thesis by simp
+      qed
+      have le1: "length ops \<le> arity a c"
+      proof (rule ccontr)
+        assume "\<not> length ops \<le> arity a c"
+        hence "arity a c - length ops = 0" by simp
+        with fst_eq show False by simp
+      qed
+      have arity_c: "arity a c = Suc n + length ops"
+        using fst_eq le1 by linarith
+      have iM: "i \<le> M"
+        using \<open>i \<le> n\<close> arity_c arity_le[of c] by linarith
+      have l1: "length ops + 1 \<le> M"
+        using arity_c arity_le[of c] by linarith
+      have setM': "set (ops @ [(i, b)]) \<subseteq> {0..M} \<times> UNIV"
+        using setM iM by auto
+      have fold_eq: "foldl fix_one (base_conn c) (ops @ [(i, b)])
+                     = (n, \<lambda>args. g (take i args @ b # drop i args))"
+      proof -
+        have "foldl fix_one (base_conn c) (ops @ [(i, b)]) = fix_one (Suc n, g) (i, b)"
+          using eq[symmetric] by simp
+        also have "\<dots> = (n, \<lambda>args. g (take i args @ b # drop i args))" by simp
+        finally show ?thesis .
+      qed
+      have "(n, \<lambda>args. g (take i args @ b # drop i args))
+            = (\<lambda>(c, ops). foldl fix_one (base_conn c) ops) (c, ops @ [(i, b)])"
+        using fold_eq by simp
+      moreover have "(c, ops @ [(i, b)]) \<in> UNIV \<times> {ops. set ops \<subseteq> {0..M} \<times> UNIV \<and> length ops \<le> M}"
+        using setM' l1 by simp
+      ultimately show ?case unfolding G_def by (rule image_eqI)
+    qed
+    thus "x \<in> G" using x by simp
+  qed
+  have "finite (closure_carrier a)" using sub finG by (rule finite_subset)
+  thus ?thesis by (simp add: a_def)
+qed
 
 text \<open>With the finite carrier realised as a connective type 'c2 (the
   type_definition hypothesis being discharged by the Types-To-Sets local-typedef
@@ -67,9 +410,232 @@ lemma extended_frege_exists:
   fixes Rep :: "'c2 \<Rightarrow> (nat \<times> (bool list \<Rightarrow> bool))"
     and Abs :: "(nat \<times> (bool list \<Rightarrow> bool)) \<Rightarrow> 'c2"
   assumes "frege_system F1"
-    and "type_definition Rep Abs (closure_carrier (alphabet F1))"
+    and td: "type_definition Rep Abs (closure_carrier (alphabet F1))"
   shows "\<exists> (F2 :: 'c2 frege) phi. closure_of F1 F2 phi"
-  sorry
+proof -
+  interpret td: type_definition Rep Abs "closure_carrier (alphabet F1)" by (rule td)
+  define phi where "phi = (\<lambda>c. Abs (arity (alphabet F1) c, conn_evals (alphabet F1) c))"
+  define alph2 where "alph2 = \<lparr> arity = fst \<circ> Rep, conn_evals = snd \<circ> Rep \<rparr>"
+  have arity2: "arity alph2 x = fst (Rep x)" for x by (simp add: alph2_def)
+  have eval2: "conn_evals alph2 x = snd (Rep x)" for x by (simp add: alph2_def)
+  have rep_in: "Rep x \<in> closure_carrier (alphabet F1)" for x by (rule td.Rep)
+  have rep_phi: "Rep (phi c) = (arity (alphabet F1) c, conn_evals (alphabet F1) c)" for c
+    unfolding phi_def by (rule td.Abs_inverse) (rule closure_carrier.base)
+  have arity_phi: "arity alph2 (phi c) = arity (alphabet F1) c" for c
+    by (simp add: arity2 rep_phi)
+
+  \<comment> \<open>@{term phi} maps each connective to a semantically equal closure connective\<close>
+  have cev: "conns_equiv c (alphabet F1) (phi c) alph2" for c
+  proof -
+    have ar: "arity (alphabet F1) c = arity alph2 (phi c)" by (simp add: arity_phi)
+    have ev: "conn_evals alph2 (phi c) = conn_evals (alphabet F1) c"
+      by (simp add: eval2 rep_phi)
+    have bigeq: "\<forall>val fs1 fs2. length fs1 = length fs2 \<longrightarrow>
+            (\<forall>i<length fs1. formulas_equiv (fs1 ! i) (alphabet F1) (fs2 ! i) alph2) \<longrightarrow>
+            eval (alphabet F1) val (Conn c fs1) = eval alph2 val (Conn (phi c) fs2)"
+    proof (intro allI impI)
+      fix val fs1 fs2
+      assume len: "length fs1 = length fs2"
+        and ptw: "\<forall>i<length fs1. formulas_equiv (fs1 ! i) (alphabet F1) (fs2 ! i) alph2"
+      have "map (eval (alphabet F1) val) fs1 = map (eval alph2 val) fs2"
+      proof (rule nth_equalityI)
+        show "length (map (eval (alphabet F1) val) fs1) = length (map (eval alph2 val) fs2)"
+          using len by simp
+        fix i assume "i < length (map (eval (alphabet F1) val) fs1)"
+        hence i: "i < length fs1" by simp
+        hence "formulas_equiv (fs1 ! i) (alphabet F1) (fs2 ! i) alph2" using ptw by simp
+        hence "eval (alphabet F1) val (fs1 ! i) = eval alph2 val (fs2 ! i)"
+          unfolding formulas_equiv_def by simp
+        thus "map (eval (alphabet F1) val) fs1 ! i = map (eval alph2 val) fs2 ! i"
+          using i len by simp
+      qed
+      thus "eval (alphabet F1) val (Conn c fs1) = eval alph2 val (Conn (phi c) fs2)"
+        by (simp add: ev)
+    qed
+    show ?thesis unfolding conns_equiv_def using ar bigeq by blast
+  qed
+  have eval_rename: "eval alph2 val (rename_conn phi t) = eval (alphabet F1) val t" for val t
+    using rename_conn_equiv[OF cev, of t] by (simp add: formulas_equiv_def)
+
+  \<comment> \<open>the closure alphabet is closed under fixing one argument to a constant\<close>
+  have ccl: "conn_closed alph2"
+    unfolding conn_closed_def
+  proof (intro allI)
+    fix x i b
+    show "arity alph2 x = 0 \<or> (i < arity alph2 x \<longrightarrow>
+            (\<exists>c'. arity alph2 c' = arity alph2 x - 1 \<and>
+              (\<forall>args. length args = arity alph2 x - 1 \<longrightarrow>
+                 conn_evals alph2 c' args = conn_evals alph2 x (take i args @ b # drop i args))))"
+    proof (cases "arity alph2 x = 0")
+      case True thus ?thesis by simp
+    next
+      case False
+      show ?thesis
+      proof (rule disjI2, rule impI)
+        assume ix: "i < arity alph2 x"
+        obtain n g where ng: "Rep x = (n, g)" by (cases "Rep x")
+        have "n \<noteq> 0" using False ng by (simp add: arity2)
+        then obtain m where "n = Suc m" using not0_implies_Suc by blast
+        with ng have rx: "Rep x = (Suc m, g)" by simp
+        have m_eq: "arity alph2 x = Suc m" using rx by (simp add: arity2)
+        have im: "i \<le> m" using ix m_eq by simp
+        let ?g' = "\<lambda>args. g (take i args @ b # drop i args)"
+        have incarr: "(m, ?g') \<in> closure_carrier (alphabet F1)"
+        proof -
+          have "(Suc m, g) \<in> closure_carrier (alphabet F1)" using rx rep_in[of x] by simp
+          thus ?thesis using im by (rule closure_carrier.fix_slot)
+        qed
+        have rep_c': "Rep (Abs (m, ?g')) = (m, ?g')" using incarr by (rule td.Abs_inverse)
+        have "arity alph2 (Abs (m, ?g')) = arity alph2 x - 1"
+          using rep_c' m_eq by (simp add: arity2)
+        moreover have "\<forall>args. length args = arity alph2 x - 1 \<longrightarrow>
+              conn_evals alph2 (Abs (m, ?g')) args = conn_evals alph2 x (take i args @ b # drop i args)"
+          using rep_c' rx by (simp add: eval2)
+        ultimately show "\<exists>c'. arity alph2 c' = arity alph2 x - 1 \<and>
+              (\<forall>args. length args = arity alph2 x - 1 \<longrightarrow>
+                 conn_evals alph2 c' args = conn_evals alph2 x (take i args @ b # drop i args))"
+          by blast
+      qed
+    qed
+  qed
+
+  \<comment> \<open>alphabet-level Frege-system requirements for the closure alphabet\<close>
+  have finUNIV2: "finite (UNIV :: 'c2 set)"
+  proof -
+    have "finite (Abs ` closure_carrier (alphabet F1))"
+      using closure_carrier_finite[OF assms(1)] by simp
+    thus ?thesis using td.Abs_image by simp
+  qed
+  have fcomp: "\<forall>f :: dm_conn formula. \<exists> f' :: 'c2 formula.
+                  formula_well_formed alph2 f' \<and> formulas_equiv f dm_alphabet f' alph2"
+  proof
+    fix f :: "dm_conn formula"
+    obtain g where g_wf: "formula_well_formed (alphabet F1) g"
+      and g_eq: "formulas_equiv f dm_alphabet g (alphabet F1)"
+      using frege_system.func_complete[OF assms(1)] by blast
+    have "formula_well_formed alph2 (rename_conn phi g)"
+      by (rule rename_conn_well_formed[OF arity_phi g_wf])
+    moreover have "formulas_equiv f dm_alphabet (rename_conn phi g) alph2"
+      using g_eq rename_conn_equiv[OF cev, of g] by (auto simp: formulas_equiv_def)
+    ultimately show "\<exists> f' :: 'c2 formula. formula_well_formed alph2 f' \<and> formulas_equiv f dm_alphabet f' alph2"
+      by blast
+  qed
+  have htop: "\<exists> t. arity alph2 t = 0 \<and> (\<forall> val. eval alph2 val (Conn t []) = True)"
+  proof -
+    obtain t0 where t0: "arity (alphabet F1) t0 = 0"
+      "\<forall>val. eval (alphabet F1) val (Conn t0 []) = True"
+      using frege_system.has_top[OF assms(1)] by blast
+    have "arity alph2 (phi t0) = 0" using t0(1) by (simp add: arity_phi)
+    moreover have "\<forall>val. eval alph2 val (Conn (phi t0) []) = True"
+    proof
+      fix val
+      have "eval alph2 val (Conn (phi t0) []) = eval alph2 val (rename_conn phi (Conn t0 []))" by simp
+      also have "\<dots> = eval (alphabet F1) val (Conn t0 [])" by (rule eval_rename)
+      also have "\<dots> = True" using t0(2) by simp
+      finally show "eval alph2 val (Conn (phi t0) []) = True" .
+    qed
+    ultimately show ?thesis by blast
+  qed
+  have hbot: "\<exists> b. arity alph2 b = 0 \<and> (\<forall> val. eval alph2 val (Conn b []) = False)"
+  proof -
+    obtain b0 where b0: "arity (alphabet F1) b0 = 0"
+      "\<forall>val. eval (alphabet F1) val (Conn b0 []) = False"
+      using frege_system.has_bot[OF assms(1)] by blast
+    have "arity alph2 (phi b0) = 0" using b0(1) by (simp add: arity_phi)
+    moreover have "\<forall>val. eval alph2 val (Conn (phi b0) []) = False"
+    proof
+      fix val
+      have "eval alph2 val (Conn (phi b0) []) = eval alph2 val (rename_conn phi (Conn b0 []))" by simp
+      also have "\<dots> = eval (alphabet F1) val (Conn b0 [])" by (rule eval_rename)
+      also have "\<dots> = False" using b0(2) by simp
+      finally show "eval alph2 val (Conn (phi b0) []) = False" .
+    qed
+    ultimately show ?thesis by blast
+  qed
+
+  \<comment> \<open>a complete Frege system over the closure alphabet exists; @{term F2} adds the
+      renamed @{term F1} rules to it\<close>
+  obtain Fc :: "'c2 frege" where fc: "frege_system Fc" and fc_alph: "alphabet Fc = alph2"
+    using frege_system_over_complete_alphabet[OF finUNIV2 fcomp htop hbot] by blast
+  define F2 where "F2 = \<lparr> rules = rules Fc \<union> rename_rule phi ` rules F1, alphabet = alph2 \<rparr>"
+  have alphF2: "alphabet F2 = alph2" by (simp add: F2_def)
+  have rules_sub: "rename_rule phi ` rules F1 \<subseteq> rules F2" by (auto simp: F2_def)
+  have rulesFc_sub: "rules Fc \<subseteq> rules F2" by (auto simp: F2_def)
+
+  have fsF2: "frege_system F2"
+  proof (rule frege_system.intro)
+    show "\<forall>r\<in>rules F2. sound_rule F2 r"
+    proof
+      fix r assume "r \<in> rules F2"
+      hence "r \<in> rules Fc \<or> r \<in> rename_rule phi ` rules F1" by (auto simp: F2_def)
+      thus "sound_rule F2 r"
+      proof
+        assume "r \<in> rules Fc"
+        hence "sound_rule Fc r" using frege_system.sound[OF fc] by blast
+        thus "sound_rule F2 r" by (simp add: sound_rule_def alphF2 fc_alph)
+      next
+        assume "r \<in> rename_rule phi ` rules F1"
+        then obtain r0 where r0: "r0 \<in> rules F1" and r_eq: "r = rename_rule phi r0" by auto
+        have "sound_rule F1 r0" using frege_system.sound[OF assms(1)] r0 by blast
+        thus "sound_rule F2 r"
+          using r_eq by (auto simp: sound_rule_def rename_rule_def alphF2 eval_rename)
+      qed
+    qed
+  next
+    show "\<forall>fs th. (\<forall>f\<in>fs. formula_well_formed (alphabet F2) f) \<longrightarrow>
+            formula_well_formed (alphabet F2) th \<longrightarrow>
+            (\<forall>val. (\<forall>f\<in>fs. eval (alphabet F2) val f) \<longrightarrow> eval (alphabet F2) val th) \<longrightarrow>
+            (\<exists>pr. valid_proof F2 pr \<and> assumptions pr = fs \<and> thesis pr = th)"
+    proof (intro allI impI)
+      fix fs th
+      assume wf_fs: "\<forall>f\<in>fs. formula_well_formed (alphabet F2) f"
+      assume wf_th: "formula_well_formed (alphabet F2) th"
+      assume "\<forall>val. (\<forall>f\<in>fs. eval (alphabet F2) val f) \<longrightarrow> eval (alphabet F2) val th"
+      hence semFc: "\<forall>val. (\<forall>f\<in>fs. eval (alphabet Fc) val f) \<longrightarrow> eval (alphabet Fc) val th"
+        by (simp add: alphF2 fc_alph)
+      have wf_fsFc: "\<forall>f\<in>fs. formula_well_formed (alphabet Fc) f"
+        using wf_fs by (simp add: alphF2 fc_alph)
+      have wf_thFc: "formula_well_formed (alphabet Fc) th"
+        using wf_th by (simp add: alphF2 fc_alph)
+      have exFc: "\<exists>pr. valid_proof Fc pr \<and> assumptions pr = fs \<and> thesis pr = th"
+        using frege_system.impl_complete[OF fc, THEN spec[where x = fs], THEN spec[where x = th]]
+              wf_fsFc wf_thFc semFc by blast
+      show "\<exists>pr. valid_proof F2 pr \<and> assumptions pr = fs \<and> thesis pr = th"
+        using exFc valid_proof_mono_rules[OF rulesFc_sub] by blast
+    qed
+  next
+    show "finite (rules F2)"
+      using frege_system.finite[OF fc] frege_system.finite[OF assms(1)] by (simp add: F2_def)
+  next
+    show "finite (UNIV :: 'c2 set)" by (rule finUNIV2)
+  next
+    show "\<forall>f :: dm_conn formula. \<exists> f' :: 'c2 formula.
+            formula_well_formed (alphabet F2) f' \<and> formulas_equiv f dm_alphabet f' (alphabet F2)"
+      using fcomp by (simp add: alphF2)
+  next
+    show "\<exists> t. arity (alphabet F2) t = 0 \<and> (\<forall> val. eval (alphabet F2) val (Conn t []) = True)"
+      using htop by (simp add: alphF2)
+  next
+    show "\<exists> b. arity (alphabet F2) b = 0 \<and> (\<forall> val. eval (alphabet F2) val (Conn b []) = False)"
+      using hbot by (simp add: alphF2)
+  qed
+
+  have rsim: "derived (rules F2) (map (rename_conn phi) fs) (rename_conn phi f)"
+    if "derived (rules F1) fs f" for fs f
+    using derived_mono_rules[OF rules_sub derived_rename[OF that]] .
+
+  have "closure_of F1 F2 phi"
+  proof (rule closure_of.intro)
+    show "frege_system F1" by (rule assms(1))
+    show "frege_system F2" by (rule fsF2)
+    show "conn_closed (alphabet F2)" using ccl by (simp add: alphF2)
+    show "\<And>c. conns_equiv c (alphabet F1) (phi c) (alphabet F2)" using cev by (simp add: alphF2)
+    show "\<And>fs f. derived (rules F1) fs f
+            \<Longrightarrow> derived (rules F2) (map (rename_conn phi) fs) (rename_conn phi f)"
+      by (rule rsim)
+  qed
+  thus ?thesis by blast
+qed
 
   
 
@@ -206,8 +772,18 @@ lemma reduce_proof:
   assumes "arity (alphabet F) c \<ge> 1"
   shows "provable_balanced_iff (reduce_lhs c b) (reduce_rhs c b)
            (reduce_lines c b) (reduce_step_len c b) (reduce_step_depth c b)"
-  using iff_from_taut[OF reduce_taut[OF assms]]
-  unfolding reduce_lines_def reduce_step_len_def reduce_step_depth_def .
+proof -
+  have cf_ar: "arity (alphabet F) (conn_fix c 0 b) = arity (alphabet F) c - 1"
+    using conn_fix_spec[of 0 c b] assms by simp
+  have wf_lhs: "formula_well_formed (alphabet F) (reduce_lhs c b)"
+    unfolding reduce_lhs_def using reduce_atoms_spec assms
+    by (cases b) (auto simp: true_const_wf false_const_wf)
+  have wf_rhs: "formula_well_formed (alphabet F) (reduce_rhs c b)"
+    unfolding reduce_rhs_def using reduce_atoms_spec cf_ar by simp
+  show ?thesis
+    using iff_from_taut[OF wf_lhs wf_rhs reduce_taut[OF assms]]
+    unfolding reduce_lines_def reduce_step_len_def reduce_step_depth_def .
+qed
 
 definition reduce_sub where
   "reduce_sub c qs =
@@ -339,8 +915,33 @@ lemma shc_proof:
   assumes "i < arity (alphabet F) d"
   shows "provable_balanced_iff (shc_lhs d i) (shc_rhs d i)
            (shc_lines d i) (shc_step_len d i) (shc_step_depth d i)"
-  using iff_from_taut[OF shc_taut[OF assms]]
-  unfolding shc_lines_def shc_step_len_def shc_step_depth_def .
+proof -
+  have conn_slot_wf:
+    "formula_well_formed (alphabet F) (Conn d ((map Atom (shc_slots d))[i := X]))"
+    if "formula_well_formed (alphabet F) X" for X
+  proof -
+    have len: "length ((map Atom (shc_slots d))[i := X]) = arity (alphabet F) d"
+      using shc_slots_len by simp
+    have "\<forall>g\<in>set ((map Atom (shc_slots d))[i := X]).
+            formula_well_formed (alphabet F) g"
+    proof
+      fix g
+      assume "g \<in> set ((map Atom (shc_slots d))[i := X])"
+      hence "g \<in> insert X (set (map Atom (shc_slots d)))"
+        using set_update_subset_insert by fastforce
+      thus "formula_well_formed (alphabet F) g" using that by auto
+    qed
+    thus ?thesis using len by simp
+  qed
+  have wf_lhs: "formula_well_formed (alphabet F) (shc_lhs d i)"
+    unfolding shc_lhs_def
+    by (intro balance_wf conn_slot_wf) (auto simp: true_const_wf false_const_wf)
+  have wf_rhs: "formula_well_formed (alphabet F) (shc_rhs d i)"
+    unfolding shc_rhs_def by (rule conn_slot_wf) simp
+  show ?thesis
+    using iff_from_taut[OF wf_lhs wf_rhs shc_taut[OF assms]]
+    unfolding shc_lines_def shc_step_len_def shc_step_depth_def .
+qed
 
 definition shc_sub where
   "shc_sub d gs Z =
@@ -368,7 +969,7 @@ proof -
   have vlen: "length ?vals = ?k + 1" using len_gs by simp
   have lveq: "length ?atoms = length ?vals" using alen vlen by simp
   have slots_nth: "\<And>j. j < ?k \<Longrightarrow> ?slots ! j = ?atoms ! j"
-    unfolding shc_slots_def by (simp add: nth_take)
+    unfolding shc_slots_def by simp
   have sub_nth: "\<And>j. j < ?k + 1 \<Longrightarrow> ?sub (?atoms ! j) = ?vals ! j"
   proof -
     fix j assume j: "j < ?k + 1"
@@ -3061,7 +3662,7 @@ proof -
         also have "\<dots> = 2 * real Kc + real Kc * tcm * log 2 (real ?N + 1)"
           by (simp add: distrib_left mult.assoc)
         finally show "real d4 \<le> 2 * real Kc + real Kc * tcm * log 2 (real ?N + 1)" .
-      qed (use logge1 tcm1 ccL7 in \<open>simp_all add: mult_nonneg_nonneg\<close>)
+      qed (use logge1 tcm1 ccL7 in simp_all)
       have DL8: "real (trans_step_depth + max (depth_formula (spira_trans (Conn conn ps)))
                    (max (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
                        (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))
@@ -3187,7 +3788,7 @@ proof (intro allI impI)
   have eqi: "\<And>i. i < ?k \<Longrightarrow> val (?as ! i) = val (?bs ! i)"
   proof -
     fix i assume i: "i < ?k"
-    have asi: "?as ! i = conn_cong_atoms c ! i" using i lena by (simp add: nth_take)
+    have asi: "?as ! i = conn_cong_atoms c ! i" using i lena by simp
     have bsi: "?bs ! i = conn_cong_atoms c ! (?k + i)" using i lenb by simp
     have "iff_form (Atom (conn_cong_atoms c ! i)) (Atom (conn_cong_atoms c ! (?k + i)))
           \<in> conn_cong_asms c"
@@ -3221,8 +3822,20 @@ lemma conn_cong_base_proof_spec:
   "valid_proof F (conn_cong_base_proof c)
    \<and> assumptions (conn_cong_base_proof c) = conn_cong_asms c
    \<and> thesis (conn_cong_base_proof c) = iff_form (conn_cong_lhs c) (conn_cong_rhs c)"
-  unfolding conn_cong_base_proof_def
-  using entails_proof_spec[OF conn_cong_taut] .
+proof -
+  have wf_asms: "\<forall>f \<in> conn_cong_asms c. formula_well_formed (alphabet F) f"
+    unfolding conn_cong_asms_def by (auto intro: iff_form_wf)
+  have wf_lhs: "formula_well_formed (alphabet F) (conn_cong_lhs c)"
+    unfolding conn_cong_lhs_def using conn_cong_atoms_spec by auto
+  have wf_rhs: "formula_well_formed (alphabet F) (conn_cong_rhs c)"
+    unfolding conn_cong_rhs_def using conn_cong_atoms_spec by auto
+  have wf_th: "formula_well_formed (alphabet F)
+                 (iff_form (conn_cong_lhs c) (conn_cong_rhs c))"
+    by (rule iff_form_wf[OF wf_lhs wf_rhs])
+  show ?thesis
+    unfolding conn_cong_base_proof_def
+    using entails_proof_spec[OF wf_asms wf_th conn_cong_taut] .
+qed
 
 definition conn_cong_lines where
   "conn_cong_lines c = length (steps (conn_cong_base_proof c))"
@@ -3408,7 +4021,7 @@ proof -
       assume vAs: "csub v \<in> set As"
       hence ne: "As \<noteq> []" by auto
       have "depth_formula (csub v) \<le> Max (set (map depth_formula As))"
-        using vAs by (simp add: Max_ge)
+        using vAs by simp
       also have "\<dots> \<le> depth_formula (Conn c As)"
       proof -
         have "depth_formula (Conn c As) = 1 + Max (set (map depth_formula As))"
@@ -3421,7 +4034,7 @@ proof -
       assume vBs: "csub v \<in> set Bs"
       hence ne: "Bs \<noteq> []" by auto
       have "depth_formula (csub v) \<le> Max (set (map depth_formula Bs))"
-        using vBs by (simp add: Max_ge)
+        using vBs by simp
       also have "\<dots> \<le> depth_formula (Conn c Bs)"
       proof -
         have "depth_formula (Conn c Bs) = 1 + Max (set (map depth_formula Bs))"
@@ -3479,7 +4092,7 @@ proof -
     fix i assume "i < length (map csub (take kk atoms))"
     hence i: "i < kk" using atlen by simp
     have "map csub (take kk atoms) ! i = csub (atoms ! i)"
-      using i atlen by (simp add: nth_take)
+      using i atlen by simp
     also have "\<dots> = vals ! i" using csub_nth i by simp
     also have "\<dots> = As ! i" using i askk unfolding vals_def by (simp add: nth_append)
     finally show "map csub (take kk atoms) ! i = As ! i" .
@@ -3491,19 +4104,17 @@ proof -
     fix i assume "i < length (map csub (drop kk atoms))"
     hence i: "i < kk" using atlen by simp
     have "map csub (drop kk atoms) ! i = csub (atoms ! (kk + i))"
-      using i atlen by (simp add: nth_drop)
+      using i atlen by simp
     also have "\<dots> = vals ! (kk + i)" using csub_nth i by simp
     also have "\<dots> = Bs ! i" using i askk bskk unfolding vals_def by (simp add: nth_append)
     finally show "map csub (drop kk atoms) ! i = Bs ! i" .
   qed
   have sub_lhs: "sub_formula csub (conn_cong_lhs c) = Conn c As"
     unfolding conn_cong_lhs_def atoms_def[symmetric] kk_def[symmetric]
-    by (simp only: sub_formula.simps list.map map_map comp_def
-                   sub_formula.simps(1) map_lhs)
+    by (simp only: sub_formula.simps list.map map_map comp_def map_lhs)
   have sub_rhs: "sub_formula csub (conn_cong_rhs c) = Conn c Bs"
     unfolding conn_cong_rhs_def atoms_def[symmetric] kk_def[symmetric]
-    by (simp only: sub_formula.simps list.map map_map comp_def
-                   sub_formula.simps(1) map_rhs)
+    by (simp only: sub_formula.simps list.map map_map comp_def map_rhs)
   have ci_thesis: "thesis ci = iff_form (Conn c As) (Conn c Bs)"
   proof -
     have "thesis ci = sub_formula csub (iff_form (conn_cong_lhs c) (conn_cong_rhs c))"
@@ -3556,7 +4167,7 @@ proof -
     also have "\<dots> \<le> conn_cong_max_step_len * (2 * kk * LAB + 1)"
     proof (rule mult_le_mono1)
       have "len_formula s0 \<le> conn_cong_step_len c"
-        unfolding conn_cong_step_len_def using s0 by (simp add: Max_ge)
+        unfolding conn_cong_step_len_def using s0 by simp
       thus "len_formula s0 \<le> conn_cong_max_step_len"
         using conn_cong_max_ge[of c] by linarith
     qed
@@ -3572,7 +4183,7 @@ proof -
     also have "\<dots> \<le> conn_cong_step_depth c + DAB"
     proof -
       have "depth_formula s0 \<le> conn_cong_step_depth c"
-        unfolding conn_cong_step_depth_def using s0 by (simp add: Max_ge)
+        unfolding conn_cong_step_depth_def using s0 by simp
       thus ?thesis using dep_sub_le by linarith
     qed
     also have "\<dots> \<le> conn_cong_max_step_depth + DAB"
@@ -3652,7 +4263,7 @@ proof -
       using ip_spec[OF i] unfolding valid_proof_def by simp
     hence "iff_form (As ! i) (Bs ! i) = last (steps (ip i))" using ip_spec[OF i] by simp
     hence "iff_form (As ! i) (Bs ! i) \<in> set (steps (ip i))"
-      using ne by (simp add: last_in_set)
+      using ne by simp
     thus "iff_form (As ! i) (Bs ! i) \<in> (\<Union>p \<in> set ps. set (steps p))" using ipin by blast
   qed
   have sub_asm: "assumptions ci \<subseteq> (\<Union>p \<in> set ps. set (steps p))"
@@ -4284,7 +4895,7 @@ proof -
           proof -
             have "depth_formula (fs ! i) \<in> set (map depth_formula fs)" using mem by simp
             hence "depth_formula (fs ! i) \<le> Max (set (map depth_formula fs))"
-              by (simp add: Max_ge)
+              by simp
             thus ?thesis using dconn by simp
           qed
           \<comment> \<open>convert the bounds\<close>
@@ -4621,7 +5232,7 @@ proof -
           proof -
             fix x y :: real assume xy: "0 < x" "x \<le> y"
             have "0 < y" using xy by simp
-            thus "log 2 x \<le> log 2 y" using xy by (simp add: log_le_cancel_iff)
+            thus "log 2 x \<le> log 2 y" using xy by simp
           qed
           have logge0: "\<And>N::nat. 0 \<le> log 2 (real N + 1)"
           proof -
@@ -4706,7 +5317,7 @@ proof -
               finally show "real d \<le> \<bar>tc\<bar> * (2 * log 2 (real MF + 1))" .
             qed
             have "Max (set (map depth_formula ?As)) \<in> set (map depth_formula ?As)"
-              using False by (simp add: Max_in)
+              using False by simp
             hence "real (Max (set (map depth_formula ?As)))
                    \<le> \<bar>tc\<bar> * (2 * log 2 (real MF + 1))" using ch by blast
             thus ?thesis using dM by simp

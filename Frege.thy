@@ -341,7 +341,7 @@ proof -
 
   have scaled_sum_gen:
     "sum_list (map (\<lambda>f. len_formula f * ?L) xs) = sum_list (map len_formula xs) * ?L"
-    for xs
+    for xs :: "'c formula list"
   proof (induction xs)
     case Nil
     then show ?case by simp
@@ -426,7 +426,7 @@ next
       have ih: "depth_formula (sub_formula sub f') \<le> depth_formula f' + ?D"
         by blast
       have df'_le: "depth_formula f' \<le> Max (set (map depth_formula fs))"
-        using f'_in fin_fs by (simp add: Max_ge)
+        using f'_in fin_fs by simp
       from ih df'_le show "x \<le> Max (set (map depth_formula fs)) + ?D"
         using x_eq by simp
     qed
@@ -485,7 +485,7 @@ proof -
     have ih: "depth_formula (sub_formula sub f) \<le> depth_formula f + ?D"
       by blast
     have df_le: "depth_formula f \<le> depth_proof pr"
-      using f_in fin by (simp add: Max_ge)
+      using f_in fin by simp
     from ih df_le show "x \<le> depth_proof pr + ?D"
       using x_eq by simp
   qed
@@ -507,7 +507,7 @@ definition formulas_equiv :: "'c1 formula \<Rightarrow> 'c1 alphabet \<Rightarro
 
 definition conns_equiv :: "'c1 \<Rightarrow> 'c1 alphabet \<Rightarrow> 'c2 \<Rightarrow> 'c2 alphabet \<Rightarrow> bool" where
   "conns_equiv conn1 a1 conn2 a2 \<longleftrightarrow> (arity a1 conn1 = arity a2 conn2 \<and>
-                                    (\<forall> val fs1 fs2. length fs1 = arity a1 conn1 \<longrightarrow> length fs2 = arity a2 conn2 \<longrightarrow>
+                                    (\<forall> val fs1 fs2. length fs1 = length fs2 \<longrightarrow>
                                            (\<forall> i. i < length fs1 \<longrightarrow> formulas_equiv (fs1 ! i) a1 (fs2 ! i) a2) \<longrightarrow>
                                            eval a1 val (Conn conn1 fs1) = eval a2 val (Conn conn2 fs2)))"
 
@@ -520,11 +520,19 @@ fun formula_well_formed :: "'c alphabet \<Rightarrow> 'c formula \<Rightarrow> b
   "formula_well_formed alph (Conn c fs) =
      (length fs = arity alph c \<and> (\<forall>g \<in> set fs. formula_well_formed alph g))"
 
+lemma sub_formula_well_formed:
+  assumes "formula_well_formed alph g"
+    and "\<And>v. formula_well_formed alph (sub v)"
+  shows "formula_well_formed alph (sub_formula sub g)"
+  using assms by (induction g) auto
+
 locale frege_system =
   fixes F :: "'c frege"
   assumes sound: "\<forall> r \<in> rules F. sound_rule F r"
   and impl_complete:
     "\<forall> fs th.
+       (\<forall> f \<in> fs. formula_well_formed (alphabet F) f) \<longrightarrow>
+       formula_well_formed (alphabet F) th \<longrightarrow>
        (\<forall> val. (\<forall> f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th)
        \<longrightarrow> (\<exists> pr. valid_proof F pr
                  \<and> assumptions pr = fs
