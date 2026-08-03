@@ -23,7 +23,8 @@ definition derives_balanced where
            \<and> thesis pr = B
            \<and> length (steps pr) \<le> lines
            \<and> (\<forall>s \<in> set (steps pr). len_formula s \<le> sz)
-           \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> dep))"
+           \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> dep)
+           \<and> (\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s))"
 
 subsection \<open>Eliminating a proven equivalence: the modus ponens converter\<close>
 
@@ -42,7 +43,8 @@ lemma mp_base_proof_spec:
   "valid_proof F mp_base_proof
    \<and> assumptions mp_base_proof
        = {Atom sym_atom_x, iff_form (Atom sym_atom_x) (Atom sym_atom_y)}
-   \<and> thesis mp_base_proof = Atom sym_atom_y"
+   \<and> thesis mp_base_proof = Atom sym_atom_y
+   \<and> (\<forall>st \<in> set (steps mp_base_proof). formula_well_formed (alphabet F) st)"
 proof -
   have sem: "\<forall>val. (\<forall>f \<in> {Atom sym_atom_x, iff_form (Atom sym_atom_x) (Atom sym_atom_y)}.
                 eval (alphabet F) val f)
@@ -72,6 +74,8 @@ definition mp_step_depth where
 *)
 lemma iff_elimination:
   assumes "provable_balanced_iff A B l s d"
+      and wfA: "formula_well_formed (alphabet F) A"
+      and wfB: "formula_well_formed (alphabet F) B"
   shows "\<exists>cv. valid_proof F cv \<and> assumptions cv \<subseteq> {A}
             \<and> frege_proof.thesis cv = B
             \<and> length (steps cv) \<le> l + mp_lines
@@ -81,19 +85,21 @@ lemma iff_elimination:
             \<and> (\<forall>st \<in> set (steps cv).
                  depth_formula st
                    \<le> max d (mp_step_depth
-                        + max (depth_formula A) (depth_formula B)))"
+                        + max (depth_formula A) (depth_formula B)))
+            \<and> (\<forall>st \<in> set (steps cv). formula_well_formed (alphabet F) st)"
 proof -
   have fs_F: "frege_system F"
     by (meson frege_balancing_axioms frege_balancing_def)
   let ?x = "sym_atom_x" and ?y = "sym_atom_y"
   let ?sub = "\<lambda>w. if w = ?x then A else if w = ?y then B else Atom w"
   have neq: "?x \<noteq> ?y" using sym_atoms_spec by blast
-  from assms obtain pAB where pAB:
+  from assms(1) obtain pAB where pAB:
     "valid_proof F pAB" "assumptions pAB = {}"
     "frege_proof.thesis pAB = iff_form A B"
     "length (steps pAB) \<le> l"
     "\<forall>st \<in> set (steps pAB). len_formula st \<le> s"
     "\<forall>st \<in> set (steps pAB). depth_formula st \<le> d"
+    "\<forall>st \<in> set (steps pAB). formula_well_formed (alphabet F) st"
     unfolding provable_balanced_iff_def by blast
   have sub_conn_iff:
     "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
@@ -256,8 +262,27 @@ proof -
       finally show ?thesis by simp
     qed
   qed
+  have sub_wf: "\<And>w. formula_well_formed (alphabet F) (?sub w)"
+    using wfA wfB by simp
+  have mi_wf: "\<forall>st \<in> set (steps mi). formula_well_formed (alphabet F) st"
+  proof
+    fix st assume "st \<in> set (steps mi)"
+    then obtain st0 where st0_in: "st0 \<in> set (steps mp_base_proof)"
+      and st_eq: "st = sub_formula ?sub st0" using mi_steps by auto
+    have "formula_well_formed (alphabet F) st0"
+      using mp_base_proof_spec st0_in by blast
+    thus "formula_well_formed (alphabet F) st"
+      unfolding st_eq by (rule sub_formula_well_formed[OF _ sub_wf])
+  qed
+  have cv_wf: "\<forall>st \<in> set (steps cv). formula_well_formed (alphabet F) st"
+  proof
+    fix st assume "st \<in> set (steps cv)"
+    hence "st \<in> set (steps pAB) \<or> st \<in> set (steps mi)" using cv_steps by auto
+    thus "formula_well_formed (alphabet F) st"
+      using pAB(7) mi_wf by (elim disjE) blast+
+  qed
   show ?thesis
-    using valid_cv cv_asm cv_thesis cv_lines cv_len cv_dep by blast
+    using valid_cv cv_asm cv_thesis cv_lines cv_len cv_dep cv_wf by blast
 qed
 
 subsection \<open>Folding derivations that carry assumptions\<close>
@@ -879,10 +904,16 @@ proof -
            \<and> frege_proof.thesis cv = ?BB q
            \<and> length (steps cv) \<le> ?PB + mp_lines
            \<and> (\<forall>st \<in> set (steps cv). len_formula st \<le> ?SZB)
-           \<and> (\<forall>st \<in> set (steps cv). real (depth_formula st) \<le> ?RD)"
+           \<and> (\<forall>st \<in> set (steps cv). real (depth_formula st) \<le> ?RD)
+           \<and> (\<forall>st \<in> set (steps cv). formula_well_formed (alphabet F) st)"
     proof -
       fix q assume qpin: "q \<in> set (prems r)"
       have qin: "q \<in> ?RFs" using qpin by simp
+      have wfq: "formula_well_formed (alphabet F) q" using wfprems qpin by blast
+      have wf_AAq: "formula_well_formed (alphabet F) (?AA q)"
+        by (rule spira_trans_wf[OF sub_formula_well_formed[OF wfq wfsubv]])
+      have wf_BBq: "formula_well_formed (alphabet F) (?BB q)"
+        by (rule sub_formula_well_formed[OF wfq]) (rule spira_trans_wf[OF wfsubv])
       obtain l s d where pbi: "provable_balanced_iff (?AA q) (?BB q) l s d"
           and lb: "l \<le> ?PB" and sbd: "s \<le> ?PB"
           and db: "real d \<le> real DR + \<bar>c64\<bar> * ?LG"
@@ -896,7 +927,8 @@ proof -
         "\<forall>st \<in> set (steps cv). depth_formula st
            \<le> max d (mp_step_depth
                 + max (depth_formula (?AA q)) (depth_formula (?BB q)))"
-        using iff_elimination[OF pbi] by blast
+        "\<forall>st \<in> set (steps cv). formula_well_formed (alphabet F) st"
+        using iff_elimination[OF pbi wf_AAq wf_BBq] by blast
       have l': "length (steps cv) \<le> ?PB + mp_lines" using cv(4) lb by linarith
       have ab: "len_formula (?AA q) + len_formula (?BB q) \<le> ?LL"
         using AAlen[OF qin] BBlen[OF qin] by (rule add_mono)
@@ -938,30 +970,37 @@ proof -
               \<and> frege_proof.thesis cv = ?BB q
               \<and> length (steps cv) \<le> ?PB + mp_lines
               \<and> (\<forall>st \<in> set (steps cv). len_formula st \<le> ?SZB)
-              \<and> (\<forall>st \<in> set (steps cv). real (depth_formula st) \<le> ?RD)"
-        using cv(1,2,3) l' s' d' by blast
+              \<and> (\<forall>st \<in> set (steps cv). real (depth_formula st) \<le> ?RD)
+              \<and> (\<forall>st \<in> set (steps cv). formula_well_formed (alphabet F) st)"
+        using cv(1,2,3,7) l' s' d' by blast
     qed
     have "\<forall>q. \<exists>cv. q \<in> set (prems r) \<longrightarrow>
         (valid_proof F cv \<and> assumptions cv \<subseteq> {?AA q}
          \<and> frege_proof.thesis cv = ?BB q
          \<and> length (steps cv) \<le> ?PB + mp_lines
          \<and> (\<forall>st \<in> set (steps cv). len_formula st \<le> ?SZB)
-         \<and> (\<forall>st \<in> set (steps cv). real (depth_formula st) \<le> ?RD))"
+         \<and> (\<forall>st \<in> set (steps cv). real (depth_formula st) \<le> ?RD)
+         \<and> (\<forall>st \<in> set (steps cv). formula_well_formed (alphabet F) st))"
       using conv_prem by blast
     then have "\<exists>cvf. \<forall>q. q \<in> set (prems r) \<longrightarrow>
         (valid_proof F (cvf q) \<and> assumptions (cvf q) \<subseteq> {?AA q}
          \<and> frege_proof.thesis (cvf q) = ?BB q
          \<and> length (steps (cvf q)) \<le> ?PB + mp_lines
          \<and> (\<forall>st \<in> set (steps (cvf q)). len_formula st \<le> ?SZB)
-         \<and> (\<forall>st \<in> set (steps (cvf q)). real (depth_formula st) \<le> ?RD))"
+         \<and> (\<forall>st \<in> set (steps (cvf q)). real (depth_formula st) \<le> ?RD)
+         \<and> (\<forall>st \<in> set (steps (cvf q)). formula_well_formed (alphabet F) st))"
       by (rule choice)
     then obtain cvf where cvf: "\<forall>q. q \<in> set (prems r) \<longrightarrow>
         (valid_proof F (cvf q) \<and> assumptions (cvf q) \<subseteq> {?AA q}
          \<and> frege_proof.thesis (cvf q) = ?BB q
          \<and> length (steps (cvf q)) \<le> ?PB + mp_lines
          \<and> (\<forall>st \<in> set (steps (cvf q)). len_formula st \<le> ?SZB)
-         \<and> (\<forall>st \<in> set (steps (cvf q)). real (depth_formula st) \<le> ?RD))"
+         \<and> (\<forall>st \<in> set (steps (cvf q)). real (depth_formula st) \<le> ?RD)
+         \<and> (\<forall>st \<in> set (steps (cvf q)). formula_well_formed (alphabet F) st))"
       by blast
+    have cvf_wf: "\<And>q. q \<in> set (prems r) \<Longrightarrow>
+        \<forall>st \<in> set (steps (cvf q)). formula_well_formed (alphabet F) st"
+      using cvf by blast
     have cvf_valid: "\<And>q. q \<in> set (prems r) \<Longrightarrow> valid_proof F (cvf q)"
       using cvf by blast
     have cvf_asm: "\<And>q. q \<in> set (prems r) \<Longrightarrow> assumptions (cvf q) \<subseteq> {?AA q}"
@@ -994,13 +1033,17 @@ proof -
         and lQb: "lQ \<le> ?PB" and sQb: "sQ \<le> ?PB"
         and dQb: "real dQ \<le> real DR + \<bar>c64\<bar> * ?LG"
       using PBIq[OF cin] by blast
+    have wf_AA_concl: "formula_well_formed (alphabet F) (?AA (concl r))"
+      by (rule spira_trans_wf[OF sub_formula_well_formed[OF wfconcl wfsubv]])
+    have wf_BB_concl: "formula_well_formed (alphabet F) (?BB (concl r))"
+      by (rule sub_formula_well_formed[OF wfconcl]) (rule spira_trans_wf[OF wfsubv])
     have pbiQ': "provable_balanced_iff (?BB (concl r)) (?AA (concl r))
         (lQ + sym_lines)
         (sQ + sym_step_len
            * (len_formula (?AA (concl r)) + len_formula (?BB (concl r))))
         (max dQ (sym_step_depth
            + max (depth_formula (?AA (concl r))) (depth_formula (?BB (concl r)))))"
-      by (rule iff_sym[OF pbiQ])
+      by (rule iff_sym[OF pbiQ wf_AA_concl wf_BB_concl])
     obtain cvQ where cvQ:
       "valid_proof F cvQ" "assumptions cvQ \<subseteq> {?BB (concl r)}"
       "frege_proof.thesis cvQ = ?AA (concl r)"
@@ -1015,7 +1058,8 @@ proof -
               + max (depth_formula (?AA (concl r))) (depth_formula (?BB (concl r)))))
             (mp_step_depth
               + max (depth_formula (?BB (concl r))) (depth_formula (?AA (concl r))))"
-      using iff_elimination[OF pbiQ'] by blast
+      "\<forall>st \<in> set (steps cvQ). formula_well_formed (alphabet F) st"
+      using iff_elimination[OF pbiQ' wf_BB_concl wf_AA_concl] by blast
     have cvQlines: "length (steps cvQ) \<le> ?PB + sym_lines + mp_lines"
       using cvQ(4) lQb by linarith
     have abQ: "len_formula (?AA (concl r)) + len_formula (?BB (concl r)) \<le> ?LL"
@@ -1329,11 +1373,41 @@ proof -
       qed
       finally show ?thesis .
     qed
+    have prule_wf: "\<forall>st \<in> set (steps prule). formula_well_formed (alphabet F) st"
+    proof
+      fix st assume "st \<in> set (steps prule)"
+      hence "st \<in> ?BB ` ?RFs" using prule(4) by auto
+      then obtain q where qin: "q \<in> ?RFs" and steq: "st = ?BB q" by auto
+      have wfq: "formula_well_formed (alphabet F) q"
+        using qin wfprems wfconcl by auto
+      show "formula_well_formed (alphabet F) st"
+        unfolding steq
+        by (rule sub_formula_well_formed[OF wfq]) (rule spira_trans_wf[OF wfsubv])
+    qed
+    have FPwf: "\<forall>st \<in> set (steps FP). formula_well_formed (alphabet F) st"
+    proof
+      fix st assume "st \<in> set (steps FP)"
+      hence "st \<in> set (concat (map steps cvs)) \<or> st \<in> set (steps prule)
+             \<or> st \<in> set (steps cvQ)"
+        using FPsteps by auto
+      thus "formula_well_formed (alphabet F) st"
+      proof (elim disjE)
+        assume "st \<in> set (concat (map steps cvs))"
+        then obtain p where pin: "p \<in> set cvs" and stp: "st \<in> set (steps p)" by auto
+        obtain q where qin: "q \<in> set (prems r)" and pq: "p = cvf q"
+          using pin unfolding cvs_def by auto
+        show ?thesis using cvf_wf[OF qin] stp pq by blast
+      next
+        assume "st \<in> set (steps prule)" thus ?thesis using prule_wf by blast
+      next
+        assume "st \<in> set (steps cvQ)" thus ?thesis using cvQ(7) by blast
+      qed
+    qed
     have db: "derives_balanced ((\<lambda> p. spira_trans (sub_formula sub p)) ` set (prems r))
                 (spira_trans (sub_formula sub (concl r)))
                 (poly BNDF M) (poly BNDF M) DEP"
       unfolding derives_balanced_def
-      using FPvalid FPasm FPthesis FPlines FPlen DEPst by blast
+      using FPvalid FPasm FPthesis FPlines FPlen DEPst FPwf by blast
     have triv: "poly BNDF M \<le> poly BNDF M" by simp
     show "let M = sum_list (map len_formula (prems r)) + len_formula (concl r)
                   + (\<Sum> v \<in> var_set_rule r. len_formula (sub v))
@@ -1623,7 +1697,8 @@ lemma per_line_simulation:
                 \<and> length (steps D) \<le> poly bnd (len_proof pr)
                 \<and> (\<forall>s \<in> set (steps D). len_formula s \<le> poly bnd (len_proof pr))
                 \<and> (\<forall>s \<in> set (steps D). real (depth_formula s)
-                      \<le> cc * log 2 (real (len_proof pr) + 1))))"
+                      \<le> cc * log 2 (real (len_proof pr) + 1))
+                \<and> (\<forall>s \<in> set (steps D). formula_well_formed (alphabet F) s)))"
 proof -
   have fs_F: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
   obtain B71 C71 where T71:
@@ -1679,7 +1754,8 @@ proof -
                \<and> length (steps D) \<le> poly bndfin (len_proof pr)
                \<and> (\<forall>s \<in> set (steps D). len_formula s \<le> poly bndfin (len_proof pr))
                \<and> (\<forall>s \<in> set (steps D). real (depth_formula s)
-                     \<le> ccfin * log 2 (real (len_proof pr) + 1)))"
+                     \<le> ccfin * log 2 (real (len_proof pr) + 1))
+               \<and> (\<forall>s \<in> set (steps D). formula_well_formed (alphabet F) s))"
     proof (intro allI impI)
       fix pr i
       assume A: "valid_proof F pr \<and> assumptions pr = {}
@@ -1996,6 +2072,7 @@ proof -
         and Dlen: "length (steps D) \<le> lines"
         and Dsz: "\<forall>s \<in> set (steps D). len_formula s \<le> sz"
         and Ddep: "\<forall>s \<in> set (steps D). depth_formula s \<le> dep"
+        and Dwf: "\<forall>s \<in> set (steps D). formula_well_formed (alphabet F) s"
       using db unfolding derives_balanced_def by blast
     have asm_sub: "assumptions D \<subseteq> spira_trans ` set (take i (steps pr))"
     proof -
@@ -2046,16 +2123,18 @@ proof -
             \<and> length (steps D) \<le> poly bndfin (len_proof pr)
             \<and> (\<forall>s \<in> set (steps D). len_formula s \<le> poly bndfin (len_proof pr))
             \<and> (\<forall>s \<in> set (steps D). real (depth_formula s)
-                  \<le> ccfin * log 2 (real (len_proof pr) + 1))"
+                  \<le> ccfin * log 2 (real (len_proof pr) + 1))
+            \<and> (\<forall>s \<in> set (steps D). formula_well_formed (alphabet F) s)"
       by (rule conjI[OF Dvalid conjI[OF asm_sub conjI[OF Dth'
-            conjI[OF Dlen' conjI[OF Dsz' Ddep']]]]])
+            conjI[OF Dlen' conjI[OF Dsz' conjI[OF Ddep' Dwf]]]]]])
     show "\<exists>D. valid_proof F D
             \<and> assumptions D \<subseteq> spira_trans ` set (take i (steps pr))
             \<and> frege_proof.thesis D = spira_trans (steps pr ! i)
             \<and> length (steps D) \<le> poly bndfin (len_proof pr)
             \<and> (\<forall>s \<in> set (steps D). len_formula s \<le> poly bndfin (len_proof pr))
             \<and> (\<forall>s \<in> set (steps D). real (depth_formula s)
-                  \<le> ccfin * log 2 (real (len_proof pr) + 1))"
+                  \<le> ccfin * log 2 (real (len_proof pr) + 1))
+            \<and> (\<forall>s \<in> set (steps D). formula_well_formed (alphabet F) s)"
       using Dconj by (rule exI)
     qed
   qed
@@ -2078,7 +2157,8 @@ lemma final_conversion:
                  \<and> (\<forall>s \<in> set (steps cv). len_formula s \<le> poly bnd (len_formula phi))
                  \<and> (\<forall>s \<in> set (steps cv). real (depth_formula s)
                        \<le> real (depth_formula phi)
-                         + c * log 2 (real (len_formula phi) + 1))))"
+                         + c * log 2 (real (len_formula phi) + 1))
+                 \<and> (\<forall>s \<in> set (steps cv). formula_well_formed (alphabet F) s)))"
 proof -
   obtain bnd64 c64 where TCF:
     "\<forall>f sub. formula_well_formed (alphabet F) f
@@ -2117,7 +2197,8 @@ proof -
                 \<and> (\<forall>s \<in> set (steps cv). len_formula s \<le> poly bndfin (len_formula phi))
                 \<and> (\<forall>s \<in> set (steps cv). real (depth_formula s)
                       \<le> real (depth_formula phi)
-                        + cfin * log 2 (real (len_formula phi) + 1)))"
+                        + cfin * log 2 (real (len_formula phi) + 1))
+                \<and> (\<forall>s \<in> set (steps cv). formula_well_formed (alphabet F) s))"
     proof (intro allI impI)
       fix phi assume wfphi: "formula_well_formed (alphabet F) phi"
       have lenphi1: "1 \<le> len_formula phi" by (rule len_formula_positive)
@@ -2189,6 +2270,8 @@ proof -
     finally show ?thesis unfolding Mphi_def by simp
   qed
   \<comment> \<open>The modus ponens converter.\<close>
+  have wf_sphi: "formula_well_formed (alphabet F) (spira_trans phi)"
+    by (rule spira_trans_wf[OF wfphi])
   obtain cv where cv:
       "valid_proof F cv" "assumptions cv \<subseteq> {spira_trans phi}"
       "frege_proof.thesis cv = phi"
@@ -2198,7 +2281,8 @@ proof -
       "\<forall>st \<in> set (steps cv). depth_formula st
          \<le> max dep (mp_step_depth
               + max (depth_formula (spira_trans phi)) (depth_formula phi))"
-    using iff_elimination[OF pbi] by blast
+      "\<forall>st \<in> set (steps cv). formula_well_formed (alphabet F) st"
+    using iff_elimination[OF pbi wf_sphi wfphi] by blast
   \<comment> \<open>Size envelope.\<close>
   have lsp: "len_formula (spira_trans phi) \<le> poly rebal_tb (len_formula phi)"
     using spira_trans_len_le_tb[OF wfphi order_refl] .
@@ -2356,8 +2440,9 @@ proof -
               \<and> (\<forall>s \<in> set (steps cv). len_formula s \<le> poly bndfin (len_formula phi))
               \<and> (\<forall>s \<in> set (steps cv). real (depth_formula s)
                     \<le> real (depth_formula phi)
-                      + cfin * log 2 (real (len_formula phi) + 1))"
-        using cv(1,2,3) cv_lines cv_len cv_dep by blast
+                      + cfin * log 2 (real (len_formula phi) + 1))
+              \<and> (\<forall>s \<in> set (steps cv). formula_well_formed (alphabet F) s)"
+        using cv(1,2,3,7) cv_lines cv_len cv_dep by blast
     qed
   qed
 qed
@@ -2376,7 +2461,8 @@ theorem proof_balancing:
                    \<and> (\<forall> line \<in> set (steps pr').
                         real (depth_formula line)
                         \<le> real (depth_formula (thesis pr))
-                          + c * log 2 (real (len_proof pr) + 1)))"
+                          + c * log 2 (real (len_proof pr) + 1))
+                   \<and> (\<forall> line \<in> set (steps pr'). formula_well_formed (alphabet F) line))"
 proof -
   have fs_F: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
   obtain Bpl ccpl where ccpl0: "0 \<le> ccpl" and PL:
@@ -2388,7 +2474,8 @@ proof -
           \<and> length (steps D) \<le> poly Bpl (len_proof pr)
           \<and> (\<forall>s \<in> set (steps D). len_formula s \<le> poly Bpl (len_proof pr))
           \<and> (\<forall>s \<in> set (steps D). real (depth_formula s)
-                \<le> ccpl * log 2 (real (len_proof pr) + 1)))"
+                \<le> ccpl * log 2 (real (len_proof pr) + 1))
+          \<and> (\<forall>s \<in> set (steps D). formula_well_formed (alphabet F) s))"
     using per_line_simulation by blast
   obtain Bfc cfc where cfc0: "0 \<le> cfc" and FC:
     "\<forall>phi. formula_well_formed (alphabet F) phi \<longrightarrow>
@@ -2397,7 +2484,8 @@ proof -
           \<and> length (steps cv) \<le> poly Bfc (len_formula phi)
           \<and> (\<forall>s \<in> set (steps cv). len_formula s \<le> poly Bfc (len_formula phi))
           \<and> (\<forall>s \<in> set (steps cv). real (depth_formula s)
-                \<le> real (depth_formula phi) + cfc * log 2 (real (len_formula phi) + 1)))"
+                \<le> real (depth_formula phi) + cfc * log 2 (real (len_formula phi) + 1))
+          \<and> (\<forall>s \<in> set (steps cv). formula_well_formed (alphabet F) s))"
     using final_conversion by blast
   define boundfin where "boundfin = (monom 1 1 * Bpl + Bfc) * (Bpl + Bfc)"
   define cfin where "cfin = max ccpl cfc"
@@ -2440,15 +2528,19 @@ proof -
           \<and> frege_proof.thesis D = spira_trans (steps pr ! i)
           \<and> length (steps D) \<le> poly Bpl S
           \<and> (\<forall>s \<in> set (steps D). len_formula s \<le> poly Bpl S)
-          \<and> (\<forall>s \<in> set (steps D). real (depth_formula s) \<le> ccpl * log 2 (real S + 1))"
+          \<and> (\<forall>s \<in> set (steps D). real (depth_formula s) \<le> ccpl * log 2 (real S + 1))
+          \<and> (\<forall>s \<in> set (steps D). formula_well_formed (alphabet F) s)"
       using PL A unfolding m_def S_def by simp
     obtain DD where DD: "\<forall>i \<in> {0..<m}. valid_proof F (DD i)
           \<and> assumptions (DD i) \<subseteq> spira_trans ` set (take i (steps pr))
           \<and> frege_proof.thesis (DD i) = spira_trans (steps pr ! i)
           \<and> length (steps (DD i)) \<le> poly Bpl S
           \<and> (\<forall>s \<in> set (steps (DD i)). len_formula s \<le> poly Bpl S)
-          \<and> (\<forall>s \<in> set (steps (DD i)). real (depth_formula s) \<le> ccpl * log 2 (real S + 1))"
+          \<and> (\<forall>s \<in> set (steps (DD i)). real (depth_formula s) \<le> ccpl * log 2 (real S + 1))
+          \<and> (\<forall>s \<in> set (steps (DD i)). formula_well_formed (alphabet F) s)"
       using bchoice[OF plpr] by blast
+    have wf_DD: "\<And>k. k < m \<Longrightarrow> \<forall>s \<in> set (steps (DD k)). formula_well_formed (alphabet F) s"
+      using DD by simp
     have valid_DD: "\<And>k. k < m \<Longrightarrow> valid_proof F (DD k)" using DD by simp
     have thesis_DD: "\<And>k. k < m \<Longrightarrow> frege_proof.thesis (DD k) = spira_trans (steps pr ! k)"
       using DD by simp
@@ -2563,7 +2655,8 @@ proof -
           \<and> (\<forall>s \<in> set (steps cv). len_formula s \<le> poly Bfc (len_formula (thesis pr)))
           \<and> (\<forall>s \<in> set (steps cv). real (depth_formula s)
                 \<le> real (depth_formula (thesis pr))
-                  + cfc * log 2 (real (len_formula (thesis pr)) + 1))"
+                  + cfc * log 2 (real (len_formula (thesis pr)) + 1))
+          \<and> (\<forall>s \<in> set (steps cv). formula_well_formed (alphabet F) s)"
       using FC[THEN spec, of "thesis pr"] wfthesis by (rule mp)
     define cvf where "cvf =
         (SOME cv. valid_proof F cv \<and> assumptions cv \<subseteq> {spira_trans (thesis pr)}
@@ -2572,21 +2665,24 @@ proof -
          \<and> (\<forall>s \<in> set (steps cv). len_formula s \<le> poly Bfc (len_formula (thesis pr)))
          \<and> (\<forall>s \<in> set (steps cv). real (depth_formula s)
                \<le> real (depth_formula (thesis pr))
-                 + cfc * log 2 (real (len_formula (thesis pr)) + 1)))"
+                 + cfc * log 2 (real (len_formula (thesis pr)) + 1))
+         \<and> (\<forall>s \<in> set (steps cv). formula_well_formed (alphabet F) s))"
     have cvfC: "valid_proof F cvf \<and> assumptions cvf \<subseteq> {spira_trans (thesis pr)}
          \<and> frege_proof.thesis cvf = thesis pr
          \<and> length (steps cvf) \<le> poly Bfc (len_formula (thesis pr))
          \<and> (\<forall>s \<in> set (steps cvf). len_formula s \<le> poly Bfc (len_formula (thesis pr)))
          \<and> (\<forall>s \<in> set (steps cvf). real (depth_formula s)
                \<le> real (depth_formula (thesis pr))
-                 + cfc * log 2 (real (len_formula (thesis pr)) + 1))"
+                 + cfc * log 2 (real (len_formula (thesis pr)) + 1))
+         \<and> (\<forall>s \<in> set (steps cvf). formula_well_formed (alphabet F) s)"
       unfolding cvf_def by (rule someI_ex[OF fcthesis])
     note cvf = cvfC[THEN conjunct1]
                cvfC[THEN conjunct2, THEN conjunct1]
                cvfC[THEN conjunct2, THEN conjunct2, THEN conjunct1]
                cvfC[THEN conjunct2, THEN conjunct2, THEN conjunct2, THEN conjunct1]
                cvfC[THEN conjunct2, THEN conjunct2, THEN conjunct2, THEN conjunct2, THEN conjunct1]
-               cvfC[THEN conjunct2, THEN conjunct2, THEN conjunct2, THEN conjunct2, THEN conjunct2]
+               cvfC[THEN conjunct2, THEN conjunct2, THEN conjunct2, THEN conjunct2, THEN conjunct2, THEN conjunct1]
+               cvfC[THEN conjunct2, THEN conjunct2, THEN conjunct2, THEN conjunct2, THEN conjunct2, THEN conjunct2]
     define pbal where "pbal = combine_proofs G cvf"
     have pbal_valid: "valid_proof F pbal"
       unfolding pbal_def
@@ -2595,6 +2691,25 @@ proof -
     have pbal_thesis: "frege_proof.thesis pbal = thesis pr"
       unfolding pbal_def using cvf(3) by simp
     have pbal_steps: "steps pbal = steps G @ steps cvf" unfolding pbal_def by simp
+    have G_wf: "\<forall>s \<in> set (steps G). formula_well_formed (alphabet F) s"
+    proof
+      fix s assume "s \<in> set (steps G)"
+      hence "s \<in> set (concat (map steps cvs)) \<or> s \<in> set (steps base)"
+        using Gsteps by auto
+      thus "formula_well_formed (alphabet F) s"
+      proof
+        assume "s \<in> set (concat (map steps cvs))"
+        then obtain p where pin: "p \<in> set cvs" and sp: "s \<in> set (steps p)" by auto
+        obtain k where kk: "k \<in> {0..<(m - 1)}" and pk: "p = DD k" using cvs_set pin by auto
+        have "k < m" using kk by auto
+        thus ?thesis using wf_DD sp pk by blast
+      next
+        assume "s \<in> set (steps base)"
+        thus ?thesis using wf_DD[of "m - 1"] m1 unfolding base_def by simp
+      qed
+    qed
+    have pbal_wf: "\<forall>line \<in> set (steps pbal). formula_well_formed (alphabet F) line"
+      using pbal_steps G_wf cvf(7) by auto
     have pbal_asm: "assumptions pbal = {}"
     proof -
       have xin: "spira_trans (thesis pr) \<in> set (steps G)"
@@ -2757,13 +2872,16 @@ proof -
           \<and> len_proof pbal \<le> poly boundfin (len_proof pr)
           \<and> (\<forall>line \<in> set (steps pbal). real (depth_formula line)
                \<le> real (depth_formula (thesis pr))
-                 + cfin * log 2 (real (len_proof pr) + 1))"
-      using pbal_valid pbal_asm pbal_thesis pbal_size line_dep unfolding S_def by simp
+                 + cfin * log 2 (real (len_proof pr) + 1))
+          \<and> (\<forall>line \<in> set (steps pbal). formula_well_formed (alphabet F) line)"
+      using pbal_valid pbal_asm pbal_thesis pbal_size line_dep pbal_wf
+      unfolding S_def by simp
     show "\<exists>pr'. valid_proof F pr' \<and> assumptions pr' = {} \<and> thesis pr' = thesis pr
             \<and> len_proof pr' \<le> poly boundfin (len_proof pr)
             \<and> (\<forall>line \<in> set (steps pr'). real (depth_formula line)
                  \<le> real (depth_formula (thesis pr))
-                   + cfin * log 2 (real (len_proof pr) + 1))"
+                   + cfin * log 2 (real (len_proof pr) + 1))
+            \<and> (\<forall>line \<in> set (steps pr'). formula_well_formed (alphabet F) line)"
       using pbalBC by (rule exI)
   qed
 qed

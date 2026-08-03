@@ -383,7 +383,8 @@ lemma iff_congruent_base:
                      else if v = ''b''
                        then Conn c ((map Atom (canonical_atoms c))[i := Atom ''b''])
                      else Atom v)
-                conn_iff"
+                conn_iff \<and>
+              (\<forall>st \<in> set (steps pr). formula_well_formed (alphabet F) st)"
 proof -
   let ?atoms = "canonical_atoms c"
   let ?children_a = "(map Atom ?atoms)[i := Atom ''a'']"
@@ -553,11 +554,13 @@ proof -
               (\<forall>val. (\<forall>f\<in>{conn_iff}. eval (alphabet F) val f) \<longrightarrow>
                      eval (alphabet F) val (sub_formula ?sub' conn_iff)) \<longrightarrow>
               (\<exists>pr. valid_proof F pr \<and> assumptions pr = {conn_iff} \<and>
-                    thesis pr = sub_formula ?sub' conn_iff)"
+                    thesis pr = sub_formula ?sub' conn_iff \<and>
+                    (\<forall>st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
     using frege_system.impl_complete[OF fs_F] by blast
   show "\<exists>pr. valid_proof F pr \<and>
              assumptions pr = {conn_iff} \<and>
-             thesis pr = sub_formula ?sub' conn_iff"
+             thesis pr = sub_formula ?sub' conn_iff \<and>
+             (\<forall>st \<in> set (steps pr). formula_well_formed (alphabet F) st)"
     using inst fs_wf th_wf one_premise by blast
 qed
 
@@ -577,7 +580,8 @@ definition base_proof :: "'c \<Rightarrow> nat \<Rightarrow> 'c frege_proof" whe
               else if v = ''b''
                 then Conn c ((map Atom (canonical_atoms c))[i := Atom ''b''])
               else Atom v)
-         conn_iff)"
+         conn_iff \<and>
+       (\<forall>st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
 
 lemma base_proof_spec:
   assumes "i < arity (alphabet F) c"
@@ -589,7 +593,8 @@ lemma base_proof_spec:
                 else if v = ''b''
                   then Conn c ((map Atom (canonical_atoms c))[i := Atom ''b''])
                 else Atom v)
-           conn_iff"
+           conn_iff \<and>
+         (\<forall>st \<in> set (steps (base_proof c i)). formula_well_formed (alphabet F) st)"
   unfolding base_proof_def using someI_ex[OF iff_congruent_base[OF assms]] .
 
 definition base_index_set :: "('c \<times> nat) set" where
@@ -799,6 +804,8 @@ lemma iff_congruent_inductive:
   fixes \<phi> \<psi> \<chi> :: "'c formula" and h :: string
   assumes "distinguished \<chi> h" "contains_atom \<chi> h"
   assumes "formula_well_formed (alphabet F) \<chi>"
+  assumes "formula_well_formed (alphabet F) \<phi>"
+  assumes "formula_well_formed (alphabet F) \<psi>"
   shows "\<exists>pr. valid_proof F pr \<and>
               assumptions pr = {sub_formula
                                   (\<lambda>v. if v = ''a'' then \<phi>
@@ -815,7 +822,8 @@ lemma iff_congruent_inductive:
                  len_formula step \<le>
                    base_max_step_len * (1 + 2 * len_formula \<chi> * max (len_formula \<phi>) (len_formula \<psi>) + len_formula \<chi>) \<and>
                  depth_formula step \<le>
-                   max (depth_formula \<phi>) (depth_formula \<psi>) + depth_formula \<chi> + base_max_step_depth)"
+                   max (depth_formula \<phi>) (depth_formula \<psi>) + depth_formula \<chi> + base_max_step_depth) \<and>
+              (\<forall>step \<in> set (steps pr). formula_well_formed (alphabet F) step)"
   using assms
 proof (induction \<chi>)
   case (Atom a)
@@ -928,8 +936,17 @@ proof (induction \<chi>)
     unfolding pr_def
     using stmt_len_final stmt_depth_final by simp
 
+  have step_wf: "\<forall>step \<in> set (steps pr). formula_well_formed (alphabet F) step"
+  proof -
+    have sub_wf: "formula_well_formed (alphabet F) (?sub v)" for v :: string
+      using Atom.prems(4) Atom.prems(5) by simp
+    have "formula_well_formed (alphabet F) ?stmt"
+      by (rule sub_formula_well_formed[OF conn_iff_wf sub_wf])
+    thus ?thesis unfolding pr_def by simp
+  qed
+
   show ?case
-    using valid asm thes len_pr step_bnd by blast
+    using valid asm thes len_pr step_bnd step_wf by blast
 next
   case (Conn c' fs)
   let ?sub  = "\<lambda>v. if v = ''a'' then \<phi> else if v = ''b'' then \<psi> else Atom v"
@@ -978,8 +995,10 @@ next
           (\<forall>step \<in> set (steps pr).
              len_formula step \<le>
                base_max_step_len * (1 + 2 * len_formula ?\<sigma> * ?s1 + len_formula ?\<sigma>) \<and>
-             depth_formula step \<le> ?d1 + depth_formula ?\<sigma> + base_max_step_depth)"
-    using Conn.IH[OF nth_mem[OF i_0_props(1)] dist_i0 i_0_props(2) lm_i0] .
+             depth_formula step \<le> ?d1 + depth_formula ?\<sigma> + base_max_step_depth) \<and>
+          (\<forall>step \<in> set (steps pr). formula_well_formed (alphabet F) step)"
+    using Conn.IH[OF nth_mem[OF i_0_props(1)] dist_i0 i_0_props(2) lm_i0
+                     Conn.prems(4) Conn.prems(5)] .
 
   let ?sub_inner = "\<lambda>v. if v = ''a'' then plug h \<phi> ?\<sigma>
                        else if v = ''b'' then plug h \<psi> ?\<sigma> else Atom v"
@@ -991,7 +1010,8 @@ next
      (\<forall>step \<in> set (steps pr_sigma).
         len_formula step \<le>
           base_max_step_len * (1 + 2 * len_formula ?\<sigma> * ?s1 + len_formula ?\<sigma>) \<and>
-        depth_formula step \<le> ?d1 + depth_formula ?\<sigma> + base_max_step_depth)"
+        depth_formula step \<le> ?d1 + depth_formula ?\<sigma> + base_max_step_depth) \<and>
+     (\<forall>step \<in> set (steps pr_sigma). formula_well_formed (alphabet F) step)"
     by blast
 
   (* Base proof for (c', i_0) *)
@@ -1006,7 +1026,8 @@ next
   have b_props:
     "valid_proof F ?pr_b \<and>
      assumptions ?pr_b = {conn_iff} \<and>
-     frege_proof.thesis ?pr_b = sub_formula ?base_sub conn_iff"
+     frege_proof.thesis ?pr_b = sub_formula ?base_sub conn_iff \<and>
+     (\<forall>st \<in> set (steps ?pr_b). formula_well_formed (alphabet F) st)"
     using base_proof_spec[OF i_0_lt_arity] by simp
 
   have canon_len: "length ?canon = length fs"
@@ -1687,8 +1708,62 @@ next
     qed
   qed
 
+  have plug_phi_sigma_wf: "formula_well_formed ?al (plug h \<phi> ?\<sigma>)"
+    unfolding plug_def
+    by (rule sub_formula_well_formed[OF lm_i0]) (simp add: Conn.prems(4))
+  have plug_psi_sigma_wf: "formula_well_formed ?al (plug h \<psi> ?\<sigma>)"
+    unfolding plug_def
+    by (rule sub_formula_well_formed[OF lm_i0]) (simp add: Conn.prems(5))
+  have sub_lift_wf: "formula_well_formed ?al (?sub_lift v)" for v :: string
+  proof (cases "v = ''a''")
+    case True thus ?thesis using plug_phi_sigma_wf by simp
+  next
+    case va: False
+    show ?thesis
+    proof (cases "v = ''b''")
+      case True thus ?thesis using va plug_psi_sigma_wf by simp
+    next
+      case vb: False
+      show ?thesis
+      proof (cases "map_of (zip ?canon fs) v")
+        case None thus ?thesis using va vb by simp
+      next
+        case (Some f')
+        have "(v, f') \<in> set (zip ?canon fs)" using Some by (rule map_of_SomeD)
+        hence "f' \<in> set fs" by (rule set_zip_rightD)
+        hence "formula_well_formed ?al f'" using lm by auto
+        thus ?thesis using va vb Some by simp
+      qed
+    qed
+  qed
+
+  have step_wf: "\<forall>step \<in> set (steps ?pr_combined). formula_well_formed ?al step"
+  proof
+    fix step assume step_in: "step \<in> set (steps ?pr_combined)"
+    have steps_split: "set (steps ?pr_combined) = set (steps pr_sigma) \<union> set (steps ?sub_pr_b)"
+      using c_steps by simp
+    from step_in steps_split consider
+        (sigma) "step \<in> set (steps pr_sigma)"
+      | (base) "step \<in> set (steps ?sub_pr_b)" by auto
+    thus "formula_well_formed ?al step"
+    proof cases
+      case sigma
+      thus ?thesis using pr_sigma_props by blast
+    next
+      case base
+      then obtain orig where orig_in: "orig \<in> set (steps ?pr_b)"
+        and step_eq: "step = sub_formula ?sub_lift orig"
+        using spr_steps by auto
+      have orig_wf: "formula_well_formed ?al orig"
+        using b_props orig_in by blast
+      show ?thesis
+        unfolding step_eq
+        by (rule sub_formula_well_formed[OF orig_wf sub_lift_wf])
+    qed
+  qed
+
   show ?case
-    using c_valid c_assms c_thesis c_len_bound step_bnd by blast
+    using c_valid c_assms c_thesis c_len_bound step_bnd step_wf by blast
 qed
 
 (* lemma 3.2: *)
@@ -1701,13 +1776,15 @@ lemma iff_congruent:
                s2 = len_formula \<chi>;
                d1 = max (depth_formula \<phi>) (depth_formula \<psi>);
                d2 = depth_formula \<chi>
-           in distinguished \<chi> h \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi> \<longrightarrow>
+           in distinguished \<chi> h \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi>
+                \<and> formula_well_formed (alphabet F) \<phi> \<and> formula_well_formed (alphabet F) \<psi> \<longrightarrow>
            (\<exists> pr. valid_proof F pr \<and>
               assumptions pr = {sub_formula sub conn_iff} \<and>
               thesis pr = (sub_formula sub' conn_iff) \<and>
               length (steps pr) \<le> poly bound s2 \<and>
               (\<forall> step \<in> set (steps pr). len_formula step \<le> poly bound (s1 + s2) \<and>
-                                        depth_formula step \<le> d1 + d2 + c))"
+                                        depth_formula step \<le> d1 + d2 + c) \<and>
+              (\<forall> step \<in> set (steps pr). formula_well_formed (alphabet F) step))"
 proof -
   let ?N = "base_max_steps"
   let ?M = "base_max_step_len"
@@ -1740,18 +1817,23 @@ proof -
               s2 = len_formula \<chi>;
               d1 = max (depth_formula \<phi>) (depth_formula \<psi>);
               d2 = depth_formula \<chi>
-          in distinguished \<chi> h \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi> \<longrightarrow>
+          in distinguished \<chi> h \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi>
+               \<and> formula_well_formed (alphabet F) \<phi> \<and> formula_well_formed (alphabet F) \<psi> \<longrightarrow>
           (\<exists> pr. valid_proof F pr \<and>
               assumptions pr = {sub_formula sub conn_iff} \<and>
               thesis pr = (sub_formula sub' conn_iff) \<and>
               length (steps pr) \<le> poly bnd s2 \<and>
               (\<forall> step \<in> set (steps pr). len_formula step \<le> poly bnd (s1 + s2) \<and>
-                                        depth_formula step \<le> d1 + d2 + ?D))"
+                                        depth_formula step \<le> d1 + d2 + ?D) \<and>
+              (\<forall> step \<in> set (steps pr). formula_well_formed (alphabet F) step))"
       unfolding Let_def
     proof (intro impI)
-      assume preconds: "distinguished \<chi> h \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi>"
+      assume preconds: "distinguished \<chi> h \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi>
+                          \<and> formula_well_formed (alphabet F) \<phi> \<and> formula_well_formed (alphabet F) \<psi>"
       hence dist: "distinguished \<chi> h" and contains: "contains_atom \<chi> h"
-        and lm: "formula_well_formed (alphabet F) \<chi>" by simp_all
+        and lm: "formula_well_formed (alphabet F) \<chi>"
+        and wfphi: "formula_well_formed (alphabet F) \<phi>"
+        and wfpsi: "formula_well_formed (alphabet F) \<psi>" by simp_all
 
       have ind: "\<exists>pr. valid_proof F pr \<and>
          assumptions pr = {sub_formula ?sub conn_iff} \<and>
@@ -1759,8 +1841,9 @@ proof -
          length (steps pr) \<le> ?N * hole_depth \<chi> h + 1 \<and>
          (\<forall>step \<in> set (steps pr).
             len_formula step \<le> ?M * (1 + 2 * ?s2 * ?s1 + ?s2) \<and>
-            depth_formula step \<le> ?d1 + ?d2 + ?D)"
-        using iff_congruent_inductive[OF dist contains lm, of \<phi> \<psi>] by simp
+            depth_formula step \<le> ?d1 + ?d2 + ?D) \<and>
+         (\<forall>step \<in> set (steps pr). formula_well_formed (alphabet F) step)"
+        using iff_congruent_inductive[OF dist contains lm wfphi wfpsi] by simp
       from ind obtain pr where pr_props:
         "valid_proof F pr \<and>
          assumptions pr = {sub_formula ?sub conn_iff} \<and>
@@ -1768,7 +1851,8 @@ proof -
          length (steps pr) \<le> ?N * hole_depth \<chi> h + 1 \<and>
          (\<forall>step \<in> set (steps pr).
             len_formula step \<le> ?M * (1 + 2 * ?s2 * ?s1 + ?s2) \<and>
-            depth_formula step \<le> ?d1 + ?d2 + ?D)"
+            depth_formula step \<le> ?d1 + ?d2 + ?D) \<and>
+         (\<forall>step \<in> set (steps pr). formula_well_formed (alphabet F) step)"
         by blast
       have pr_valid: "valid_proof F pr" using pr_props by simp
       have pr_assms: "assumptions pr = {sub_formula ?sub conn_iff}" using pr_props by simp
@@ -1778,6 +1862,9 @@ proof -
         "\<forall>step \<in> set (steps pr).
            len_formula step \<le> ?M * (1 + 2 * ?s2 * ?s1 + ?s2) \<and>
            depth_formula step \<le> ?d1 + ?d2 + ?D"
+        using pr_props by simp
+      have pr_step_wf:
+        "\<forall>step \<in> set (steps pr). formula_well_formed (alphabet F) step"
         using pr_props by simp
 
       have hole_le_len: "hole_depth \<chi> h \<le> len_formula \<chi>"
@@ -1851,8 +1938,9 @@ proof -
               thesis pr = sub_formula ?sub' conn_iff \<and>
               length (steps pr) \<le> poly bnd ?s2 \<and>
               (\<forall> step \<in> set (steps pr). len_formula step \<le> poly bnd (?s1 + ?s2) \<and>
-                                        depth_formula step \<le> ?d1 + ?d2 + ?D)"
-        using pr_valid pr_assms pr_thesis len_pr_bound step_bound by blast
+                                        depth_formula step \<le> ?d1 + ?d2 + ?D) \<and>
+              (\<forall> step \<in> set (steps pr). formula_well_formed (alphabet F) step)"
+        using pr_valid pr_assms pr_thesis len_pr_bound step_bound pr_step_wf by blast
     qed
   qed
 qed

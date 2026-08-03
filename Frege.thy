@@ -536,7 +536,8 @@ locale frege_system =
        (\<forall> val. (\<forall> f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th)
        \<longrightarrow> (\<exists> pr. valid_proof F pr
                  \<and> assumptions pr = fs
-                 \<and> thesis pr = th)"
+                 \<and> thesis pr = th
+                 \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
   and finite: "finite (rules F)"
   and finite_alphabet: "finite (UNIV :: 'c set)"
   and func_complete:
@@ -787,10 +788,11 @@ definition equiv_proofs :: "'c1 frege_proof \<Rightarrow> 'c1 frege \<Rightarrow
                                    formulas_equiv (thesis pr1) (alphabet F1) (thesis pr2) (alphabet F2))"
 
 
-definition simulates :: "'c frege \<Rightarrow> 'c frege \<Rightarrow> bool" where
+definition simulates :: "'c1 frege \<Rightarrow> 'c2 frege \<Rightarrow> bool" where
   "simulates F1 F2 \<longleftrightarrow>
      (\<exists> f g p q. \<forall> w \<tau>.
-        (thesis w = g \<tau> \<and> valid_proof F1 w \<and> assumptions w = {})
+        (thesis w = g \<tau> \<and> valid_proof F1 w \<and> assumptions w = {}
+         \<and> (\<forall> s \<in> set (steps w). formula_well_formed (alphabet F1) s))
         \<longrightarrow> valid_proof F2 (f w \<tau>)
             \<and> thesis (f w \<tau>) = \<tau>
             \<and> assumptions (f w \<tau>) = {}

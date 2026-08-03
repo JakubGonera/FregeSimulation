@@ -202,4 +202,171 @@ proof -
   finally show ?thesis by linarith
 qed
 
+text \<open>Bridging powers, ceilings and logarithms.  These convert the balancing
+      depth bound  a + c * log 2 (n + 1)  into polynomial size bounds for the
+      connective-template translation between Frege systems.\<close>
+
+lemma nat_le_nat_ceiling:
+  fixes m :: nat and x :: real
+  assumes "real m \<le> x"
+  shows "m \<le> nat \<lceil>x\<rceil>"
+proof -
+  have "\<lceil>real m\<rceil> \<le> \<lceil>x\<rceil>" using assms by (rule ceiling_mono)
+  hence "int m \<le> \<lceil>x\<rceil>" by simp
+  hence "nat (int m) \<le> nat \<lceil>x\<rceil>" by (rule nat_mono)
+  thus ?thesis by simp
+qed
+
+lemma ceiling_nat_real_lower:
+  fixes x :: real
+  assumes "0 \<le> x"
+  shows "x \<le> real (nat \<lceil>x\<rceil>)"
+proof -
+  have nn: "0 \<le> \<lceil>x\<rceil>" using assms by linarith
+  have "real (nat \<lceil>x\<rceil>) = of_int \<lceil>x\<rceil>" using nn by simp
+  moreover have "x \<le> of_int \<lceil>x\<rceil>" by linarith
+  ultimately show ?thesis by linarith
+qed
+
+lemma ceiling_nat_real_upper:
+  fixes x :: real
+  assumes "0 \<le> x"
+  shows "real (nat \<lceil>x\<rceil>) \<le> x + 1"
+proof -
+  have nn: "0 \<le> \<lceil>x\<rceil>" using assms by linarith
+  have "real (nat \<lceil>x\<rceil>) = of_int \<lceil>x\<rceil>" using nn by simp
+  moreover have "of_int \<lceil>x\<rceil> \<le> x + 1" by linarith
+  ultimately show ?thesis by linarith
+qed
+
+lemma powr_log_swap:
+  fixes base other c :: real
+  assumes "0 < base" and "0 < other"
+  shows "base powr (c * log 2 other) = other powr (c * log 2 base)"
+proof -
+  have "c * log 2 other * ln base = c * log 2 base * ln other"
+    unfolding log_def by simp
+  thus ?thesis
+    using assms by (simp add: powr_def)
+qed
+
+lemma nat_power_le_powr:
+  fixes T :: nat and x :: real
+  assumes "1 \<le> T" and "0 \<le> x"
+  shows "real (T ^ nat \<lceil>x\<rceil>) \<le> real T * real T powr x"
+proof -
+  have T1: "(1::real) \<le> real T" using assms(1) by simp
+  have Tpos: "(0::real) < real T" using assms(1) by simp
+  have "real (T ^ nat \<lceil>x\<rceil>) = real T ^ nat \<lceil>x\<rceil>" by simp
+  also have "\<dots> = real T powr real (nat \<lceil>x\<rceil>)"
+    using Tpos by (simp add: powr_realpow)
+  also have "\<dots> \<le> real T powr (x + 1)"
+    using ceiling_nat_real_upper[OF assms(2)] T1 by (simp add: powr_mono)
+  also have "\<dots> = real T powr x * real T powr 1"
+    by (simp add: powr_add)
+  also have "\<dots> = real T * real T powr x"
+    using Tpos by (simp add: algebra_simps)
+  finally show ?thesis .
+qed
+
+lemma powr_le_nat_power:
+  fixes y :: nat and r :: real
+  assumes "1 \<le> y" and "0 \<le> r"
+  shows "real y powr r \<le> real (y ^ nat \<lceil>r\<rceil>)"
+proof -
+  have y1: "(1::real) \<le> real y" using assms(1) by simp
+  have ypos: "(0::real) < real y" using assms(1) by simp
+  have "real y powr r \<le> real y powr real (nat \<lceil>r\<rceil>)"
+    using ceiling_nat_real_lower[OF assms(2)] y1 by (simp add: powr_mono)
+  also have "\<dots> = real y ^ nat \<lceil>r\<rceil>"
+    using ypos by (simp add: powr_realpow)
+  also have "\<dots> = real (y ^ nat \<lceil>r\<rceil>)" by simp
+  finally show ?thesis .
+qed
+
+lemma power_nat_exact_poly:
+  fixes expo :: nat
+  shows "\<exists> p :: nat poly. \<forall> n. poly p n = (n + 1) ^ expo"
+proof
+  show "\<forall> n. poly ((monom 1 1 + 1) ^ expo) n = (n + 1) ^ expo"
+    by (simp add: poly_monom)
+qed
+
+lemma power_ceiling_log_poly_bound:
+  fixes T :: nat and a c :: real
+  assumes "1 \<le> T" and "0 \<le> a" and "0 \<le> c"
+  shows "\<exists> p :: nat poly. \<forall> n :: nat.
+           T ^ (nat \<lceil>a + c * log 2 (real n + 1)\<rceil>) \<le> T ^ (nat \<lceil>a\<rceil> + 1) * poly p n"
+proof -
+  have T1: "(1::real) \<le> real T" using assms(1) by simp
+  have Tpos: "(0::real) < real T" using assms(1) by simp
+  have logT_nn: "0 \<le> log 2 (real T)" using T1 by simp
+  have cT_nn: "0 \<le> c * log 2 (real T)"
+    using assms(3) logT_nn by (rule mult_nonneg_nonneg)
+  obtain p :: "nat poly" where p_val: "\<forall> n. poly p n = (n + 1) ^ nat \<lceil>c * log 2 (real T)\<rceil>"
+    using power_nat_exact_poly by blast
+  show ?thesis
+  proof (rule exI, rule allI)
+    fix n :: nat
+    have yconv: "real n + 1 = real (n + 1)" by simp
+    have y1: "(1::nat) \<le> n + 1" by simp
+    have ypos: "(0::real) < real (n + 1)" by simp
+    have logy_nn: "0 \<le> log 2 (real (n + 1))"
+      using ypos by simp
+    have cy_nn: "0 \<le> c * log 2 (real (n + 1))"
+      using assms(3) logy_nn by (rule mult_nonneg_nonneg)
+    have xnn: "0 \<le> a + c * log 2 (real (n + 1))"
+      using assms(2) cy_nn by linarith
+    have powr_a_nn: "0 \<le> real T powr a" by simp
+    have first: "real (T ^ nat \<lceil>a + c * log 2 (real (n + 1))\<rceil>)
+                   \<le> real T * real T powr (a + c * log 2 (real (n + 1)))"
+      using nat_power_le_powr[OF assms(1) xnn] .
+    have split: "real T powr (a + c * log 2 (real (n + 1)))
+               = real T powr a * real T powr (c * log 2 (real (n + 1)))"
+      by (simp add: powr_add)
+    have swap: "real T powr (c * log 2 (real (n + 1)))
+              = real (n + 1) powr (c * log 2 (real T))"
+      using powr_log_swap[OF Tpos ypos] .
+    have second: "real T powr a \<le> real (T ^ nat \<lceil>a\<rceil>)"
+      using powr_le_nat_power[OF assms(1) assms(2)] .
+    have third: "real (n + 1) powr (c * log 2 (real T))
+                   \<le> real ((n + 1) ^ nat \<lceil>c * log 2 (real T)\<rceil>)"
+      using powr_le_nat_power[OF y1 cT_nn] .
+    have prod_le: "real T powr a * real (n + 1) powr (c * log 2 (real T))
+                 \<le> real (T ^ nat \<lceil>a\<rceil>) * real ((n + 1) ^ nat \<lceil>c * log 2 (real T)\<rceil>)"
+      using second third powr_a_nn by (intro mult_mono) simp_all
+    have "real (T ^ nat \<lceil>a + c * log 2 (real (n + 1))\<rceil>)
+        \<le> real T * (real (T ^ nat \<lceil>a\<rceil>) * real ((n + 1) ^ nat \<lceil>c * log 2 (real T)\<rceil>))"
+    proof -
+      have "real (T ^ nat \<lceil>a + c * log 2 (real (n + 1))\<rceil>)
+          \<le> real T * (real T powr a * real (n + 1) powr (c * log 2 (real T)))"
+        using first split swap by simp
+      also have "\<dots> \<le> real T * (real (T ^ nat \<lceil>a\<rceil>) * real ((n + 1) ^ nat \<lceil>c * log 2 (real T)\<rceil>))"
+        using prod_le Tpos by (intro mult_left_mono) simp_all
+      finally show ?thesis .
+    qed
+    hence real_chain: "real (T ^ nat \<lceil>a + c * log 2 (real (n + 1))\<rceil>)
+        \<le> real (T * (T ^ nat \<lceil>a\<rceil> * (n + 1) ^ nat \<lceil>c * log 2 (real T)\<rceil>))"
+      by simp
+    have nat_chain: "T ^ nat \<lceil>a + c * log 2 (real (n + 1))\<rceil>
+        \<le> T * (T ^ nat \<lceil>a\<rceil> * (n + 1) ^ nat \<lceil>c * log 2 (real T)\<rceil>)"
+      using real_chain by (simp only: of_nat_le_iff)
+    have rhs_eq: "T * (T ^ nat \<lceil>a\<rceil> * (n + 1) ^ nat \<lceil>c * log 2 (real T)\<rceil>)
+        = T ^ (nat \<lceil>a\<rceil> + 1) * poly p n"
+      using p_val by (simp add: algebra_simps)
+    show "T ^ nat \<lceil>a + c * log 2 (real n + 1)\<rceil> \<le> T ^ (nat \<lceil>a\<rceil> + 1) * poly p n"
+    proof -
+      have "T ^ nat \<lceil>a + c * log 2 (real n + 1)\<rceil>
+          = T ^ nat \<lceil>a + c * log 2 (real (n + 1))\<rceil>"
+        by (simp only: yconv)
+      also have "\<dots> \<le> T * (T ^ nat \<lceil>a\<rceil> * (n + 1) ^ nat \<lceil>c * log 2 (real T)\<rceil>)"
+        using nat_chain .
+      also have "\<dots> = T ^ (nat \<lceil>a\<rceil> + 1) * poly p n"
+        using rhs_eq .
+      finally show ?thesis .
+    qed
+  qed
+qed
+
+
 end

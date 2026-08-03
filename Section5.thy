@@ -113,23 +113,27 @@ qed
 *)
 definition taut_proof :: "'c formula \<Rightarrow> 'c frege_proof" where
   "taut_proof taut =
-     (SOME pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut)"
+     (SOME pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut
+             \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
 
 lemma taut_proof_spec:
   assumes "formula_well_formed (alphabet F) taut"
     and "\<forall>val. eval (alphabet F) val taut"
   shows "valid_proof F (taut_proof taut)
        \<and> assumptions (taut_proof taut) = {}
-       \<and> thesis (taut_proof taut) = taut"
+       \<and> thesis (taut_proof taut) = taut
+       \<and> (\<forall> st \<in> set (steps (taut_proof taut)). formula_well_formed (alphabet F) st)"
 proof -
   have fs_F: "frege_system F"
     by (meson frege_balancing_axioms frege_balancing_def)
   have "(\<forall>f \<in> {}. formula_well_formed (alphabet F) f) \<longrightarrow>
         formula_well_formed (alphabet F) taut \<longrightarrow>
         (\<forall>val. (\<forall>f \<in> {}. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val taut) \<longrightarrow>
-        (\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut)"
+        (\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut
+            \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
     using frege_system.impl_complete[OF fs_F] by blast
-  hence "\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut"
+  hence "\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut
+            \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st)"
     using assms by simp
   thus ?thesis unfolding taut_proof_def by (rule someI_ex)
 qed
@@ -147,7 +151,8 @@ definition provable_balanced_iff ::
            \<and> thesis pr = iff_form A B
            \<and> length (steps pr) \<le> lines
            \<and> (\<forall>s \<in> set (steps pr). len_formula s \<le> sz)
-           \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> dep))"
+           \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> dep)
+           \<and> (\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s))"
 
 lemma provable_balanced_iff_weaken:
   assumes "provable_balanced_iff A B lines sz dep"
@@ -253,6 +258,7 @@ lemma provable_balanced_iff_subst:
       and "\<forall>v. v \<notin> var_set \<longrightarrow> sub v = Atom v"
       and "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
                  \<Longrightarrow> sub w = Atom w"
+      and sub_wf: "\<And>v. v \<in> var_set \<Longrightarrow> formula_well_formed (alphabet F) (sub v)"
     shows "provable_balanced_iff (sub_formula sub A) (sub_formula sub B)
              lines (sz * len_sub var_set sub) (dep + depth_sub var_set sub)"
 proof -
@@ -263,7 +269,14 @@ proof -
     "length (steps pr) \<le> lines"
     "\<forall>s \<in> set (steps pr). len_formula s \<le> sz"
     "\<forall>s \<in> set (steps pr). depth_formula s \<le> dep"
+    "\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s"
     unfolding provable_balanced_iff_def by blast
+  have sub_values_wf: "formula_well_formed (alphabet F) (sub v)" for v
+  proof (cases "v \<in> var_set")
+    case True thus ?thesis by (rule sub_wf)
+  next
+    case False thus ?thesis using assms(3) by simp
+  qed
   let ?pr' = "sub_proof sub pr"
   have valid': "valid_proof F ?pr'"
     using frege_system.proof_substitution[OF fs_F] pr(1) by blast
@@ -302,9 +315,19 @@ proof -
     ultimately show "depth_formula s' \<le> dep + depth_sub var_set sub"
       using add_le_mono1 le_trans by blast
   qed
+  have step_wf': "\<forall>s' \<in> set (steps ?pr'). formula_well_formed (alphabet F) s'"
+  proof
+    fix s' assume "s' \<in> set (steps ?pr')"
+    then obtain s where s_in: "s \<in> set (steps pr)"
+                    and s'_eq: "s' = sub_formula sub s"  by auto
+    have "formula_well_formed (alphabet F) s"
+      using pr(7) s_in by blast
+    thus "formula_well_formed (alphabet F) s'"
+      unfolding s'_eq using sub_values_wf by (rule sub_formula_well_formed)
+  qed
   show ?thesis
     unfolding provable_balanced_iff_def
-    using valid' asm' thesis' len' step_len' step_dep' by blast
+    using valid' asm' thesis' len' step_len' step_dep' step_wf' by blast
 qed
 
 (*
@@ -323,7 +346,8 @@ lemma iff_from_taut:
 proof -
   let ?pr = "taut_proof (iff_form A B)"
   have spec: "valid_proof F ?pr \<and> assumptions ?pr = {}
-            \<and> thesis ?pr = iff_form A B"
+            \<and> thesis ?pr = iff_form A B
+            \<and> (\<forall> st \<in> set (steps ?pr). formula_well_formed (alphabet F) st)"
     using taut_proof_spec[OF iff_form_wf[OF wfA wfB] taut] .
   have fin_l: "finite (insert 1 (len_formula ` set (steps ?pr)))" by simp
   have fin_d: "finite (insert 1 (depth_formula ` set (steps ?pr)))" by simp
@@ -349,7 +373,8 @@ proof -
 qed
 
 lemma iff_refl:
-  "provable_balanced_iff A A
+  assumes wfA: "formula_well_formed (alphabet F) A"
+  shows "provable_balanced_iff A A
       refl_lines (refl_step_len * len_formula A) (refl_step_depth + depth_formula A)"
 proof -
   let ?z = "refl_atom"
@@ -367,12 +392,14 @@ proof -
   have sub_ci: "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
                  \<Longrightarrow> ?sub w = Atom w"
     using refl_atom_not_conn_iff by auto
+  have sub_wf: "\<And>v. v \<in> {?z} \<Longrightarrow> formula_well_formed (alphabet F) (?sub v)"
+    using wfA by simp
   have len_sub_eq: "len_sub {?z} ?sub = len_formula A"
     using len_formula_positive[of A] by (simp add: len_sub_def)
   have depth_sub_eq: "depth_sub {?z} ?sub = depth_formula A"
     using depth_formula_ge_1[of A] by (simp add: depth_sub_def)
   show ?thesis
-    using provable_balanced_iff_subst[OF base fin sub_id sub_ci]
+    using provable_balanced_iff_subst[OF base fin sub_id sub_ci sub_wf]
     by (simp add: len_sub_eq depth_sub_eq)
 qed
 
@@ -385,7 +412,8 @@ subsection \<open>Transitivity of balanced equivalence\<close>
 
 definition entails_proof :: "'c formula set \<Rightarrow> 'c formula \<Rightarrow> 'c frege_proof" where
   "entails_proof fs th =
-     (SOME pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th)"
+     (SOME pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th
+             \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
 
 lemma entails_proof_spec:
   assumes "\<forall>f \<in> fs. formula_well_formed (alphabet F) f"
@@ -393,16 +421,19 @@ lemma entails_proof_spec:
     and "\<forall>val. (\<forall>f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th"
   shows "valid_proof F (entails_proof fs th)
        \<and> assumptions (entails_proof fs th) = fs
-       \<and> thesis (entails_proof fs th) = th"
+       \<and> thesis (entails_proof fs th) = th
+       \<and> (\<forall> st \<in> set (steps (entails_proof fs th)). formula_well_formed (alphabet F) st)"
 proof -
   have fs_F: "frege_system F"
     by (meson frege_balancing_axioms frege_balancing_def)
   have "(\<forall>f \<in> fs. formula_well_formed (alphabet F) f) \<longrightarrow>
         formula_well_formed (alphabet F) th \<longrightarrow>
         (\<forall>val. (\<forall>f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th) \<longrightarrow>
-        (\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th)"
+        (\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th
+            \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
     using frege_system.impl_complete[OF fs_F] by blast
-  hence "\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th"
+  hence "\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th
+            \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st)"
     using assms by simp
   thus ?thesis unfolding entails_proof_def by (rule someI_ex)
 qed
@@ -457,7 +488,8 @@ lemma trans_base_proof_spec:
    \<and> assumptions trans_base_proof =
        {iff_form (Atom trans_atom_x) (Atom trans_atom_y),
         iff_form (Atom trans_atom_y) (Atom trans_atom_z)}
-   \<and> thesis trans_base_proof = iff_form (Atom trans_atom_x) (Atom trans_atom_z)"
+   \<and> thesis trans_base_proof = iff_form (Atom trans_atom_x) (Atom trans_atom_z)
+   \<and> (\<forall> st \<in> set (steps trans_base_proof). formula_well_formed (alphabet F) st)"
 proof -
   have sem: "\<forall>val. (\<forall>f \<in> {iff_form (Atom trans_atom_x) (Atom trans_atom_y),
                      iff_form (Atom trans_atom_y) (Atom trans_atom_z)}.
@@ -489,6 +521,9 @@ definition trans_step_depth :: nat where
 lemma iff_trans:
   assumes "provable_balanced_iff A B l1 s1 d1"
       and "provable_balanced_iff B C l2 s2 d2"
+      and wfA: "formula_well_formed (alphabet F) A"
+      and wfB: "formula_well_formed (alphabet F) B"
+      and wfC: "formula_well_formed (alphabet F) C"
     shows "provable_balanced_iff A C
              (l1 + l2 + trans_lines)
              (s1 + s2 + trans_step_len
@@ -517,6 +552,7 @@ proof -
     "length (steps pAB) \<le> l1"
     "\<forall>s \<in> set (steps pAB). len_formula s \<le> s1"
     "\<forall>s \<in> set (steps pAB). depth_formula s \<le> d1"
+    "\<forall>s \<in> set (steps pAB). formula_well_formed (alphabet F) s"
     unfolding provable_balanced_iff_def by blast
   from assms(2) obtain pBC where pBC:
     "valid_proof F pBC" "assumptions pBC = {}"
@@ -524,6 +560,7 @@ proof -
     "length (steps pBC) \<le> l2"
     "\<forall>s \<in> set (steps pBC). len_formula s \<le> s2"
     "\<forall>s \<in> set (steps pBC). depth_formula s \<le> d2"
+    "\<forall>s \<in> set (steps pBC). formula_well_formed (alphabet F) s"
     unfolding provable_balanced_iff_def by blast
 
   \<comment> \<open>sub leaves conn_iff's own variables alone.\<close>
@@ -587,6 +624,19 @@ proof -
   qed
   have ti_lines: "length (steps ti) = trans_lines"
     using ti_steps by (simp add: trans_lines_def)
+  have ti_wf: "\<forall>s \<in> set (steps ti). formula_well_formed (alphabet F) s"
+  proof
+    fix s assume "s \<in> set (steps ti)"
+    then obtain s0 where s0_in: "s0 \<in> set (steps trans_base_proof)"
+      and s_eq: "s = sub_formula ?sub s0"
+      using ti_steps by auto
+    have vals_wf: "formula_well_formed (alphabet F) (?sub v)" for v
+      using wfA wfB wfC by simp
+    have "formula_well_formed (alphabet F) s0"
+      using trans_base_proof_spec s0_in by blast
+    thus "formula_well_formed (alphabet F) s"
+      unfolding s_eq using vals_wf by (rule sub_formula_well_formed)
+  qed
 
   \<comment> \<open>Substitution-size facts for the transitivity proof's lines.\<close>
   have len_sub_eq: "len_sub {?x, ?y, ?z} ?sub
@@ -769,6 +819,15 @@ proof -
     qed
   qed
 
+  have step_wf: "\<forall>s \<in> set (steps cb). formula_well_formed (alphabet F) s"
+  proof
+    fix s assume "s \<in> set (steps cb)"
+    hence "s \<in> set (steps pAB) \<or> s \<in> set (steps pBC) \<or> s \<in> set (steps ti)"
+      using cb_steps by auto
+    thus "formula_well_formed (alphabet F) s"
+      using pAB(7) pBC(7) ti_wf by blast
+  qed
+
   show ?thesis
     unfolding provable_balanced_iff_def
   proof (intro exI[where x = cb] conjI)
@@ -778,6 +837,7 @@ proof -
     show "length (steps cb) \<le> ?lines_t" using cb_lines .
     show "\<forall>s \<in> set (steps cb). len_formula s \<le> ?sz_t" using step_len .
     show "\<forall>s \<in> set (steps cb). depth_formula s \<le> ?dep_t" using step_depth .
+    show "\<forall>s \<in> set (steps cb). formula_well_formed (alphabet F) s" using step_wf .
   qed
 qed
 
@@ -870,7 +930,8 @@ lemma balance_cong_base_proof_spec:
          (balance (Atom (cong_atoms ! 0)) (Atom (cong_atoms ! 2))
                   (Atom (cong_atoms ! 4)))
          (balance (Atom (cong_atoms ! 1)) (Atom (cong_atoms ! 3))
-                  (Atom (cong_atoms ! 5)))"
+                  (Atom (cong_atoms ! 5)))
+   \<and> (\<forall> st \<in> set (steps balance_cong_base_proof). formula_well_formed (alphabet F) st)"
 proof -
   let ?a0 = "cong_atoms ! 0" and ?a1 = "cong_atoms ! 1"
   and ?a2 = "cong_atoms ! 2" and ?a3 = "cong_atoms ! 3"
@@ -945,6 +1006,12 @@ lemma balance_cong:
   assumes "provable_balanced_iff X X' lx sx dx"
       and "provable_balanced_iff Y Y' ly sy dy"
       and "provable_balanced_iff Z Z' lz sz dz"
+      and wfX: "formula_well_formed (alphabet F) X"
+      and wfX': "formula_well_formed (alphabet F) X'"
+      and wfY: "formula_well_formed (alphabet F) Y"
+      and wfY': "formula_well_formed (alphabet F) Y'"
+      and wfZ: "formula_well_formed (alphabet F) Z"
+      and wfZ': "formula_well_formed (alphabet F) Z'"
     shows "provable_balanced_iff (balance X Y Z) (balance X' Y' Z')
              (lx + ly + lz + balance_cong_lines)
              (sx + sy + sz + balance_cong_step_len
@@ -1067,6 +1134,7 @@ proof -
     "length (steps pX) \<le> lx"
     "\<forall>s \<in> set (steps pX). len_formula s \<le> sx"
     "\<forall>s \<in> set (steps pX). depth_formula s \<le> dx"
+    "\<forall>s \<in> set (steps pX). formula_well_formed (alphabet F) s"
     unfolding provable_balanced_iff_def by blast
   from assms(2) obtain pY where pY:
     "valid_proof F pY" "assumptions pY = {}"
@@ -1074,6 +1142,7 @@ proof -
     "length (steps pY) \<le> ly"
     "\<forall>s \<in> set (steps pY). len_formula s \<le> sy"
     "\<forall>s \<in> set (steps pY). depth_formula s \<le> dy"
+    "\<forall>s \<in> set (steps pY). formula_well_formed (alphabet F) s"
     unfolding provable_balanced_iff_def by blast
   from assms(3) obtain pZ where pZ:
     "valid_proof F pZ" "assumptions pZ = {}"
@@ -1081,6 +1150,7 @@ proof -
     "length (steps pZ) \<le> lz"
     "\<forall>s \<in> set (steps pZ). len_formula s \<le> sz"
     "\<forall>s \<in> set (steps pZ). depth_formula s \<le> dz"
+    "\<forall>s \<in> set (steps pZ). formula_well_formed (alphabet F) s"
     unfolding provable_balanced_iff_def by blast
 
   \<comment> \<open>The substituted congruence proof.\<close>
@@ -1093,6 +1163,29 @@ proof -
     unfolding ci_def by simp
   have ci_lines: "length (steps ci) = balance_cong_lines"
     using ci_steps by (simp add: balance_cong_lines_def)
+  have csub_wf: "formula_well_formed (alphabet F) (?csub v)" for v
+  proof (cases "map_of (zip cong_atoms [X, X', Y, Y', Z, Z']) v")
+    case None
+    thus ?thesis by simp
+  next
+    case (Some f)
+    have "(v, f) \<in> set (zip cong_atoms [X, X', Y, Y', Z, Z'])"
+      by (rule map_of_SomeD[OF Some])
+    hence "f \<in> set [X, X', Y, Y', Z, Z']"
+      by (rule set_zip_rightD)
+    thus ?thesis using Some wfX wfX' wfY wfY' wfZ wfZ' by auto
+  qed
+  have ci_wf: "\<forall>s \<in> set (steps ci). formula_well_formed (alphabet F) s"
+  proof
+    fix s assume "s \<in> set (steps ci)"
+    then obtain s0 where s0_in: "s0 \<in> set (steps balance_cong_base_proof)"
+      and s_eq: "s = sub_formula ?csub s0"
+      using ci_steps by auto
+    have "formula_well_formed (alphabet F) s0"
+      using balance_cong_base_proof_spec s0_in by blast
+    thus "formula_well_formed (alphabet F) s"
+      unfolding s_eq using csub_wf by (rule sub_formula_well_formed)
+  qed
   have ci_thesis: "frege_proof.thesis ci = iff_form (balance X Y Z) (balance X' Y' Z')"
   proof -
     have bXYZ: "sub_formula ?csub (balance (Atom ?a0) (Atom ?a2) (Atom ?a4))
@@ -1360,6 +1453,16 @@ proof -
     qed
   qed
 
+  have step_wf: "\<forall>s \<in> set (steps cb). formula_well_formed (alphabet F) s"
+  proof
+    fix s assume "s \<in> set (steps cb)"
+    hence "s \<in> set (steps pX) \<or> s \<in> set (steps pY) \<or> s \<in> set (steps pZ)
+         \<or> s \<in> set (steps ci)"
+      using cb_steps by auto
+    thus "formula_well_formed (alphabet F) s"
+      using pX(7) pY(7) pZ(7) ci_wf by blast
+  qed
+
   show ?thesis
     unfolding provable_balanced_iff_def
   proof (intro exI[where x = cb] conjI)
@@ -1370,6 +1473,7 @@ proof -
     show "length (steps cb) \<le> ?lines_t" using cb_lines .
     show "\<forall>s \<in> set (steps cb). len_formula s \<le> ?sz_t" using step_len .
     show "\<forall>s \<in> set (steps cb). depth_formula s \<le> ?dep_t" using step_depth .
+    show "\<forall>s \<in> set (steps cb). formula_well_formed (alphabet F) s" using step_wf .
   qed
 qed
 
@@ -1526,7 +1630,8 @@ definition sym_base_proof :: "'c frege_proof" where
 lemma sym_base_proof_spec:
   "valid_proof F sym_base_proof
    \<and> assumptions sym_base_proof = {iff_form (Atom sym_atom_x) (Atom sym_atom_y)}
-   \<and> thesis sym_base_proof = iff_form (Atom sym_atom_y) (Atom sym_atom_x)"
+   \<and> thesis sym_base_proof = iff_form (Atom sym_atom_y) (Atom sym_atom_x)
+   \<and> (\<forall> st \<in> set (steps sym_base_proof). formula_well_formed (alphabet F) st)"
 proof -
   have sem: "\<forall>val. (\<forall>f \<in> {iff_form (Atom sym_atom_x) (Atom sym_atom_y)}.
                 eval (alphabet F) val f)
@@ -1555,6 +1660,8 @@ definition sym_step_depth :: nat where
 
 lemma iff_sym:
   assumes "provable_balanced_iff A B l s d"
+      and wfA: "formula_well_formed (alphabet F) A"
+      and wfB: "formula_well_formed (alphabet F) B"
     shows "provable_balanced_iff B A
              (l + sym_lines)
              (s + sym_step_len * (len_formula A + len_formula B))
@@ -1572,12 +1679,13 @@ proof -
 
   have neq: "?x \<noteq> ?y" using sym_atoms_spec by blast
 
-  from assms obtain pAB where pAB:
+  from assms(1) obtain pAB where pAB:
     "valid_proof F pAB" "assumptions pAB = {}"
     "frege_proof.thesis pAB = iff_form A B"
     "length (steps pAB) \<le> l"
     "\<forall>t \<in> set (steps pAB). len_formula t \<le> s"
     "\<forall>t \<in> set (steps pAB). depth_formula t \<le> d"
+    "\<forall>t \<in> set (steps pAB). formula_well_formed (alphabet F) t"
     unfolding provable_balanced_iff_def by blast
 
   have sub_conn_iff:
@@ -1599,6 +1707,19 @@ proof -
     using frege_system.proof_substitution[OF fs_F] sym_base_proof_spec by blast
   have si_steps: "steps si = map (sub_formula ?sub) (steps sym_base_proof)"
     unfolding si_def by simp
+  have si_wf: "\<forall>t \<in> set (steps si). formula_well_formed (alphabet F) t"
+  proof
+    fix t assume "t \<in> set (steps si)"
+    then obtain t0 where t0_in: "t0 \<in> set (steps sym_base_proof)"
+      and t_eq: "t = sub_formula ?sub t0"
+      using si_steps by auto
+    have vals_wf: "formula_well_formed (alphabet F) (?sub v)" for v
+      using wfA wfB by simp
+    have "formula_well_formed (alphabet F) t0"
+      using sym_base_proof_spec t0_in by blast
+    thus "formula_well_formed (alphabet F) t"
+      unfolding t_eq using vals_wf by (rule sub_formula_well_formed)
+  qed
   have si_thesis: "frege_proof.thesis si = iff_form B A"
   proof -
     have "frege_proof.thesis si
@@ -1764,6 +1885,15 @@ proof -
     qed
   qed
 
+  have step_wf: "\<forall>t \<in> set (steps cb). formula_well_formed (alphabet F) t"
+  proof
+    fix t assume "t \<in> set (steps cb)"
+    hence "t \<in> set (steps pAB) \<or> t \<in> set (steps si)"
+      using cb_steps by auto
+    thus "formula_well_formed (alphabet F) t"
+      using pAB(7) si_wf by blast
+  qed
+
   show ?thesis
     unfolding provable_balanced_iff_def
   proof (intro exI[where x = cb] conjI)
@@ -1773,6 +1903,7 @@ proof -
     show "length (steps cb) \<le> ?lines_t" using cb_lines .
     show "\<forall>t \<in> set (steps cb). len_formula t \<le> ?sz_t" using step_len .
     show "\<forall>t \<in> set (steps cb). depth_formula t \<le> ?dep_t" using step_depth .
+    show "\<forall>t \<in> set (steps cb). formula_well_formed (alphabet F) t" using step_wf .
   qed
 qed
 
@@ -2051,9 +2182,11 @@ lemma iff_sym_bnd:
       and sS: "s \<le> S" and dD: "d \<le> D"
       and lp: "len_formula A + len_formula B \<le> SL"
       and pp: "max (depth_formula A) (depth_formula B) \<le> SD"
+      and wfA: "formula_well_formed (alphabet F) A"
+      and wfB: "formula_well_formed (alphabet F) B"
     shows "provable_balanced_iff B A (l + sym_lines)
              (S + sym_step_len * SL) (max D (sym_step_depth + SD))"
-proof (rule provable_balanced_iff_weaken[OF iff_sym[OF a] order_refl _ _])
+proof (rule provable_balanced_iff_weaken[OF iff_sym[OF a wfA wfB] order_refl _ _])
   have "sym_step_len * (len_formula A + len_formula B) \<le> sym_step_len * SL"
     by (rule mult_le_mono[OF order_refl lp])
   thus "s + sym_step_len * (len_formula A + len_formula B)
@@ -2076,12 +2209,18 @@ lemma balance_cong_bnd:
       and pp: "max (depth_formula X) (max (depth_formula X')
                  (max (depth_formula Y) (max (depth_formula Y')
                    (max (depth_formula Z) (depth_formula Z'))))) \<le> SD"
+      and wfX: "formula_well_formed (alphabet F) X"
+      and wfX': "formula_well_formed (alphabet F) X'"
+      and wfY: "formula_well_formed (alphabet F) Y"
+      and wfY': "formula_well_formed (alphabet F) Y'"
+      and wfZ: "formula_well_formed (alphabet F) Z"
+      and wfZ': "formula_well_formed (alphabet F) Z'"
     shows "provable_balanced_iff (balance X Y Z) (balance X' Y' Z')
              (lx + ly + lz + balance_cong_lines)
              (S + balance_cong_step_len * (6 * SL))
              (max D (balance_cong_step_depth + SD))"
 proof (rule provable_balanced_iff_weaken
-         [OF balance_cong[OF a1 a2 a3] order_refl _ _])
+         [OF balance_cong[OF a1 a2 a3 wfX wfX' wfY wfY' wfZ wfZ'] order_refl _ _])
   have "balance_cong_step_len * (6 * (len_formula X + len_formula X'
           + len_formula Y + len_formula Y' + len_formula Z + len_formula Z'))
         \<le> balance_cong_step_len * (6 * SL)"
@@ -2109,11 +2248,14 @@ lemma iff_trans_bnd:
       and lp: "len_formula A + len_formula B + len_formula C \<le> SL"
       and pp: "max (depth_formula A)
                  (max (depth_formula B) (depth_formula C)) \<le> SD"
+      and wfA: "formula_well_formed (alphabet F) A"
+      and wfB: "formula_well_formed (alphabet F) B"
+      and wfC: "formula_well_formed (alphabet F) C"
     shows "provable_balanced_iff A C (l1 + l2 + trans_lines)
              (s1 + s2 + trans_step_len * SL)
              (max D (trans_step_depth + SD))"
 proof (rule provable_balanced_iff_weaken
-         [OF iff_trans[OF a1 a2] order_refl _ _])
+         [OF iff_trans[OF a1 a2 wfA wfB wfC] order_refl _ _])
   have "trans_step_len * (len_formula A + len_formula B + len_formula C)
         \<le> trans_step_len * SL"
     by (rule mult_le_mono[OF order_refl lp])
@@ -2263,7 +2405,12 @@ proof -
 qed
 
 lemma reassoc_subst_step:
-  "provable_balanced_iff
+  assumes wfA0: "formula_well_formed (alphabet F) A0"
+      and wfA1: "formula_well_formed (alphabet F) A1"
+      and wfA2: "formula_well_formed (alphabet F) A2"
+      and wfA3: "formula_well_formed (alphabet F) A3"
+      and wfA4: "formula_well_formed (alphabet F) A4"
+  shows "provable_balanced_iff
      (balance A1 A0 (balance A3 A2 A4))
      (balance (balance A1 A0 A3) (balance A1 A0 A2) A4)
      case_one_lines
@@ -2276,6 +2423,22 @@ proof -
   have ra_disj: "set reassoc_atoms \<inter> avoid_atoms = {}" using reassoc_atoms_spec by simp
   have sig_id: "\<forall>v. v \<notin> set reassoc_atoms \<longrightarrow> ?sub v = Atom v"
     using reassoc_sigma_off by blast
+  have sig_wf: "\<And>v. v \<in> set reassoc_atoms \<Longrightarrow> formula_well_formed (alphabet F) (?sub v)"
+  proof -
+    fix v assume v_in: "v \<in> set reassoc_atoms"
+    have len5: "length reassoc_atoms = 5" using reassoc_atoms_spec by simp
+    from v_in have "\<exists> k < length reassoc_atoms. reassoc_atoms ! k = v"
+      by (simp add: in_set_conv_nth)
+    then obtain k where k_len: "k < length reassoc_atoms"
+      and kv: "reassoc_atoms ! k = v" by blast
+    have k_lt: "k < 5" using k_len len5 by simp
+    have "?sub v = [A0, A1, A2, A3, A4] ! k"
+      using reassoc_sigma_val[OF k_lt] kv by simp
+    moreover have "formula_well_formed (alphabet F) ([A0, A1, A2, A3, A4] ! k)"
+      using k_lt wfA0 wfA1 wfA2 wfA3 wfA4
+      by (auto simp add: nth_Cons' numeral_eq_Suc less_Suc_eq)
+    ultimately show "formula_well_formed (alphabet F) (?sub v)" by simp
+  qed
   note sig_conn = fresh_sub_conn[OF ra_disj sig_id]
   note sig_cb = fresh_sub_cb[OF ra_disj sig_id]
   have sv0: "?sub (reassoc_atoms ! 0) = A0" using reassoc_sigma_val[of 0] by simp
@@ -2351,7 +2514,7 @@ proof -
     thus ?thesis by (simp only: sub_formula.simps inL inR sv4)
   qed
   show ?thesis
-    using provable_balanced_iff_subst[OF case_one finite_set sig_id sig_conn,
+    using provable_balanced_iff_subst[OF case_one finite_set sig_id sig_conn sig_wf,
                                       unfolded subL subR] .
 qed
 
@@ -2413,6 +2576,41 @@ proof -
   have split: "valid_position P ?q \<and> valid_position ?Q s"
     using vp by (simp only: pos_eq valid_position_append)
   have vpq: "valid_position P ?q" using split by simp
+
+  \<comment> \<open>Well-formedness of every glued formula, from wfP.\<close>
+  have wfQ: "formula_well_formed (alphabet F) ?Q"
+    by (rule subterm_at_wf[OF wfP vpq])
+  have wfXT: "formula_well_formed (alphabet F) ?XT"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfXF: "formula_well_formed (alphabet F) ?XF"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfRT: "formula_well_formed (alphabet F) ?RT"
+    by (intro spira_trans_wf fix_at_wf wfQ)
+  have wfRF: "formula_well_formed (alphabet F) ?RF"
+    by (intro spira_trans_wf fix_at_wf wfQ)
+  have wfTR: "formula_well_formed (alphabet F) ?TR"
+    by (intro spira_trans_wf subterm_at_wf[OF wfP vp])
+  have wfSQ: "formula_well_formed (alphabet F) (spira_trans ?Q)"
+    by (rule spira_trans_wf[OF wfQ])
+  have wfPT: "formula_well_formed (alphabet F) (spira_trans (fix_at pos True P))"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfPF: "formula_well_formed (alphabet F) (spira_trans (fix_at pos False P))"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfSP: "formula_well_formed (alphabet F) (spira_trans P)"
+    by (rule spira_trans_wf[OF wfP])
+  have wfBQ: "formula_well_formed (alphabet F) (balance ?RT ?RF ?TR)"
+    by (intro balance_wf wfRT wfRF wfTR)
+  have wfBT: "formula_well_formed (alphabet F) (balance ?XT ?XF ?RT)"
+    by (intro balance_wf wfXT wfXF wfRT)
+  have wfBF: "formula_well_formed (alphabet F) (balance ?XT ?XF ?RF)"
+    by (intro balance_wf wfXT wfXF wfRF)
+  have wfB1: "formula_well_formed (alphabet F) (balance ?XT ?XF (balance ?RT ?RF ?TR))"
+    by (intro balance_wf wfXT wfXF wfBQ)
+  have wfB2: "formula_well_formed (alphabet F)
+                (balance (balance ?XT ?XF ?RT) (balance ?XT ?XF ?RF) ?TR)"
+    by (intro balance_wf wfBT wfBF wfTR)
+  have wfRB: "formula_well_formed (alphabet F) (rebalancing P pos)"
+    unfolding rebalancing_def by (intro balance_wf wfPT wfPF wfTR)
 
   \<comment> \<open>spira_trans P opens at the spira node into a balance.\<close>
   have F2: "spira_trans P = balance ?XT ?XF (spira_trans ?Q)"
@@ -2604,8 +2802,9 @@ proof -
                    (depth_formula (balance ?RT ?RF ?TR)))))) \<le> SDB"
     using SDleafSDB le_trans[OF pRTRF SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note step1 = balance_cong_bnd[OF iff_refl[where A = "?XT"]
-      iff_refl[where A = "?XF"] IHQ sp1 dp1 lp1 pp1, folded F2]
+  note step1 = balance_cong_bnd[OF iff_refl[OF wfXT]
+      iff_refl[OF wfXF] IHQ sp1 dp1 lp1 pp1
+      wfXT wfXT wfXF wfXF wfSQ wfBQ, folded F2]
 
   \<comment> \<open>Step 3: the rebalancing P pos folding, via balance_cong on the IHs.\<close>
   have lpT: "len_formula (spira_trans (fix_at pos True P))
@@ -2622,8 +2821,8 @@ proof -
                (depth_formula (balance ?XT ?XF ?RF)) \<le> SDB"
     using SDleafSDB(8) le_trans[OF pXTRF SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note isT = iff_sym_bnd[OF IHT order_refl order_refl lpT ppT]
-  note isF = iff_sym_bnd[OF IHF order_refl order_refl lpF ppF]
+  note isT = iff_sym_bnd[OF IHT order_refl order_refl lpT ppT wfPT wfBT]
+  note isF = iff_sym_bnd[OF IHF order_refl order_refl lpF ppF wfPF wfBF]
   have sp3: "(szT + sym_step_len * (2 * NN)) + (szF + sym_step_len * (2 * NN))
            + refl_step_len * len_formula ?TR
            \<le> (szT + sym_step_len * (2 * NN))
@@ -2648,8 +2847,9 @@ proof -
                        (depth_formula ?TR))))) \<le> SDB"
     using SDleafSDB le_trans[OF pXTRT SDB1_SDB] le_trans[OF pXTRF SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note step3 = balance_cong_bnd[OF isT isF iff_refl[where A = "?TR"]
-      sp3 dp3 lp3 pp3, folded F5]
+  note step3 = balance_cong_bnd[OF isT isF iff_refl[OF wfTR]
+      sp3 dp3 lp3 pp3
+      wfBT wfPT wfBF wfPF wfTR wfTR, folded F5]
 
   \<comment> \<open>Step 2: the reassociation, with len_sub bounded by 5 * LS.\<close>
   have sz2: "case_one_step_len * len_sub (set reassoc_atoms) ?sigma
@@ -2663,7 +2863,7 @@ proof -
     unfolding DBXdef using dsub DS_SDB by linarith
   have dep2: "case_one_step_depth + depth_sub (set reassoc_atoms) ?sigma \<le> DB"
     by (rule le_trans[OF dep2X DBX_DB])
-  note step2 = reassoc_subst_step[of ?XT ?XF ?RT ?RF ?TR]
+  note step2 = reassoc_subst_step[OF wfXF wfXT wfRF wfRT wfTR]
   note step2' = provable_balanced_iff_weaken[OF step2 order_refl sz2 dep2]
 
   \<comment> \<open>Composition by iff_trans_bnd.\<close>
@@ -2680,7 +2880,7 @@ proof -
                                          (balance ?XT ?XF ?RF) ?TR))) \<le> SDB"
     using le_trans[OF pP SDB1_SDB] pM1 pM2
     by (intro max.boundedI) simp_all
-  note inner = iff_trans_bnd[OF step1 step2' dpA lpA ppA]
+  note inner = iff_trans_bnd[OF step1 step2' dpA lpA ppA wfSP wfB1 wfB2]
   have dpB: "max (max DB (trans_step_depth + SDB))
                (max DB (balance_cong_step_depth + SDB)) \<le> DB"
     by (intro max.boundedI order_refl le_trans[OF transX DBX_DB]
@@ -2696,7 +2896,7 @@ proof -
                  (depth_formula (rebalancing P pos))) \<le> SDB"
     using le_trans[OF pP SDB1_SDB] pM2 le_trans[OF preb SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note chain = iff_trans_bnd[OF inner step3 dpB lpB ppB]
+  note chain = iff_trans_bnd[OF inner step3 dpB lpB ppB wfSP wfB2 wfRB]
 
   \<comment> \<open>The glue size sums to at most rebal_glue_coeff * (LS + 1).\<close>
   note NN1_lin = NN1_linear[OF NN1def]
@@ -2947,6 +3147,48 @@ proof -
   have F5: "rebalancing P pos = balance ?PRT ?PRF (spira_trans ?R)"
     unfolding rebalancing_def by simp
 
+  \<comment> \<open>Well-formedness of every glued formula, from wfP.\<close>
+  have ge2: "len_formula P \<ge> 2" using geP unfolding spira_threshold_def by simp
+  have vpq: "valid_position P ?q"
+    using spiras_sel_position_spec[OF wfP ge2] by simp
+  have wfQ: "formula_well_formed (alphabet F) ?Q"
+    by (rule subterm_at_wf[OF wfP vpq])
+  have wfR: "formula_well_formed (alphabet F) ?R"
+    by (rule subterm_at_wf[OF wfP vp])
+  have wfQT: "formula_well_formed (alphabet F) ?QT"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfQF: "formula_well_formed (alphabet F) ?QF"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfPRT: "formula_well_formed (alphabet F) ?PRT"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfPRF: "formula_well_formed (alphabet F) ?PRF"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfRsT: "formula_well_formed (alphabet F) ?RsT"
+    by (intro spira_trans_wf fix_at_wf wfR)
+  have wfRsF: "formula_well_formed (alphabet F) ?RsF"
+    by (intro spira_trans_wf fix_at_wf wfR)
+  have wfSQ: "formula_well_formed (alphabet F) (spira_trans ?Q)"
+    by (rule spira_trans_wf[OF wfQ])
+  have wfSR: "formula_well_formed (alphabet F) (spira_trans ?R)"
+    by (rule spira_trans_wf[OF wfR])
+  have wfSP: "formula_well_formed (alphabet F) (spira_trans P)"
+    by (rule spira_trans_wf[OF wfP])
+  have wfBT2: "formula_well_formed (alphabet F) (balance ?PRT ?PRF ?RsT)"
+    by (intro balance_wf wfPRT wfPRF wfRsT)
+  have wfBF2: "formula_well_formed (alphabet F) (balance ?PRT ?PRF ?RsF)"
+    by (intro balance_wf wfPRT wfPRF wfRsF)
+  have wfBRQ: "formula_well_formed (alphabet F) (balance ?RsT ?RsF (spira_trans ?Q))"
+    by (intro balance_wf wfRsT wfRsF wfSQ)
+  have wfB1c: "formula_well_formed (alphabet F)
+                 (balance ?PRT ?PRF (balance ?RsT ?RsF (spira_trans ?Q)))"
+    by (intro balance_wf wfPRT wfPRF wfBRQ)
+  have wfB2c: "formula_well_formed (alphabet F)
+                 (balance (balance ?PRT ?PRF ?RsT) (balance ?PRT ?PRF ?RsF)
+                          (spira_trans ?Q))"
+    by (intro balance_wf wfBT2 wfBF2 wfSQ)
+  have wfRB: "formula_well_formed (alphabet F) (rebalancing P pos)"
+    unfolding rebalancing_def by (intro balance_wf wfPRT wfPRF wfSR)
+
   \<comment> \<open>The three recursive equivalences, rewritten through F_R/F_Q.\<close>
   from IH_T have IHQT:
     "provable_balanced_iff ?QT (balance ?PRT ?PRF ?RsT) lT szT depT"
@@ -3095,8 +3337,9 @@ proof -
                        (depth_formula (spira_trans ?Q)))))) \<le> SDB"
     using SDleafSDB le_trans[OF pPPRsT SDB1_SDB] le_trans[OF pPPRsF SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note step1 = balance_cong_bnd[OF IHQT IHQF iff_refl[where A = "spira_trans ?Q"]
-      sp1 dp1 lp1 pp1, folded F2]
+  note step1 = balance_cong_bnd[OF IHQT IHQF iff_refl[OF wfSQ]
+      sp1 dp1 lp1 pp1
+      wfQT wfBT2 wfQF wfBF2 wfSQ wfSQ, folded F2]
 
   \<comment> \<open>Step 3: the rebalancing P pos folding, via balance_cong on the R IH.\<close>
   have lpR: "len_formula (spira_trans ?R)
@@ -3106,7 +3349,7 @@ proof -
                (depth_formula (balance ?RsT ?RsF (spira_trans ?Q))) \<le> SDB"
     using SDleafSDB(8) le_trans[OF pRsRsQ SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note isR = iff_sym_bnd[OF IHR order_refl order_refl lpR ppR]
+  note isR = iff_sym_bnd[OF IHR order_refl order_refl lpR ppR wfSR wfBRQ]
   have sp3: "refl_step_len * len_formula ?PRT + refl_step_len * len_formula ?PRF
            + (szR + sym_step_len * (2 * NN))
            \<le> refl_step_len * NN + refl_step_len * NN
@@ -3128,8 +3371,9 @@ proof -
                    (depth_formula (spira_trans ?R)))))) \<le> SDB"
     using SDleafSDB le_trans[OF pRsRsQ SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note step3 = balance_cong_bnd[OF iff_refl[where A = "?PRT"]
-      iff_refl[where A = "?PRF"] isR sp3 dp3 lp3 pp3, folded F5]
+  note step3 = balance_cong_bnd[OF iff_refl[OF wfPRT]
+      iff_refl[OF wfPRF] isR sp3 dp3 lp3 pp3
+      wfPRT wfPRT wfPRF wfPRF wfBRQ wfSR, folded F5]
 
   \<comment> \<open>Step 2: the reassociation, run backwards (iff_sym of case_one).\<close>
   have sz2: "case_one_step_len * len_sub (set reassoc_atoms) ?sigma
@@ -3143,7 +3387,7 @@ proof -
     unfolding DBXdef using dsub DS_SDB by linarith
   have dep2: "case_one_step_depth + depth_sub (set reassoc_atoms) ?sigma \<le> DB"
     by (rule le_trans[OF dep2X DBX_DB])
-  note step2sub = reassoc_subst_step[of ?PRT ?PRF ?RsT ?RsF "spira_trans ?Q"]
+  note step2sub = reassoc_subst_step[OF wfPRF wfPRT wfRsF wfRsT wfSQ]
   note step2sub' = provable_balanced_iff_weaken[OF step2sub order_refl sz2 dep2]
   have lp2: "len_formula (balance ?PRT ?PRF (balance ?RsT ?RsF (spira_trans ?Q)))
            + len_formula (balance (balance ?PRT ?PRF ?RsT)
@@ -3154,7 +3398,7 @@ proof -
                (depth_formula (balance (balance ?PRT ?PRF ?RsT)
                  (balance ?PRT ?PRF ?RsF) (spira_trans ?Q))) \<le> SDB"
     using pB1 pB2 by (intro max.boundedI) simp_all
-  note step2 = iff_sym_bnd[OF step2sub' order_refl order_refl lp2 pp2]
+  note step2 = iff_sym_bnd[OF step2sub' order_refl order_refl lp2 pp2 wfB1c wfB2c]
 
   \<comment> \<open>Composition by iff_trans_bnd.\<close>
   have dpAB: "max (max DB (balance_cong_step_depth + SDB))
@@ -3173,7 +3417,7 @@ proof -
                  (depth_formula (balance ?PRT ?PRF
                        (balance ?RsT ?RsF (spira_trans ?Q))))) \<le> SDB"
     using le_trans[OF pP SDB1_SDB] pB1 pB2 by (intro max.boundedI) simp_all
-  note inner = iff_trans_bnd[OF step1 step2 dpAB lpAB ppAB]
+  note inner = iff_trans_bnd[OF step1 step2 dpAB lpAB ppAB wfSP wfB2c wfB1c]
   have dpBC: "max (max DB (trans_step_depth + SDB))
                (max DB (balance_cong_step_depth + SDB)) \<le> DB"
     by (intro max.boundedI order_refl le_trans[OF transX DBX_DB]
@@ -3189,7 +3433,7 @@ proof -
                  (depth_formula (rebalancing P pos))) \<le> SDB"
     using le_trans[OF pP SDB1_SDB] pB2 le_trans[OF preb SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note chain = iff_trans_bnd[OF inner step3 dpBC lpBC ppBC]
+  note chain = iff_trans_bnd[OF inner step3 dpBC lpBC ppBC wfSP wfB1c wfRB]
 
   \<comment> \<open>The glue size sums to at most rebal_glue_coeff * (LS + 1).\<close>
   note NN1_lin = NN1_linear[OF NN1def]
@@ -3456,6 +3700,7 @@ lemma case_three_construction:
   assumes wfP: "formula_well_formed (alphabet F) P"
       and geP: "len_formula P \<ge> spira_threshold"
       and disj_pos: "positions_disjoint (spiras_sel_position P) pos"
+      and vp: "valid_position P pos"
       and IH_QT: "provable_balanced_iff
                     (spira_trans (fix_at (spiras_sel_position P) True P))
                     (rebalancing (fix_at (spiras_sel_position P) True P) pos)
@@ -3525,6 +3770,80 @@ proof -
 
   have dpq: "positions_disjoint pos ?q"
     by (subst positions_disjoint_sym, rule disj_pos)
+
+  \<comment> \<open>Well-formedness of every glued formula, from wfP.\<close>
+  have ge2: "len_formula P \<ge> 2" using geP unfolding spira_threshold_def by simp
+  have vpq: "valid_position P ?q"
+    using spiras_sel_position_spec[OF wfP ge2] by simp
+  have wfQ: "formula_well_formed (alphabet F) ?Q"
+    by (rule subterm_at_wf[OF wfP vpq])
+  have wfR: "formula_well_formed (alphabet F) ?R"
+    by (rule subterm_at_wf[OF wfP vp])
+  have wfQT: "formula_well_formed (alphabet F) ?QT"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfQF: "formula_well_formed (alphabet F) ?QF"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfPRT: "formula_well_formed (alphabet F) ?PRT"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfPRF: "formula_well_formed (alphabet F) ?PRF"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfgtt: "formula_well_formed (alphabet F) (spira_trans ?gtt)"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfgtf: "formula_well_formed (alphabet F) (spira_trans ?gtf)"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfgft: "formula_well_formed (alphabet F) (spira_trans ?gft)"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfgff: "formula_well_formed (alphabet F) (spira_trans ?gff)"
+    by (intro spira_trans_wf fix_at_wf wfP)
+  have wfSQ: "formula_well_formed (alphabet F) (spira_trans ?Q)"
+    by (rule spira_trans_wf[OF wfQ])
+  have wfSR: "formula_well_formed (alphabet F) (spira_trans ?R)"
+    by (rule spira_trans_wf[OF wfR])
+  have wfSP: "formula_well_formed (alphabet F) (spira_trans P)"
+    by (rule spira_trans_wf[OF wfP])
+  have wfBqt: "formula_well_formed (alphabet F)
+                 (balance (spira_trans ?gtt) (spira_trans ?gtf) (spira_trans ?R))"
+    by (intro balance_wf wfgtt wfgtf wfSR)
+  have wfBqf: "formula_well_formed (alphabet F)
+                 (balance (spira_trans ?gft) (spira_trans ?gff) (spira_trans ?R))"
+    by (intro balance_wf wfgft wfgff wfSR)
+  have wfBrt: "formula_well_formed (alphabet F)
+                 (balance (spira_trans ?gtt) (spira_trans ?gft) (spira_trans ?Q))"
+    by (intro balance_wf wfgtt wfgft wfSQ)
+  have wfBrf: "formula_well_formed (alphabet F)
+                 (balance (spira_trans ?gtf) (spira_trans ?gff) (spira_trans ?Q))"
+    by (intro balance_wf wfgtf wfgff wfSQ)
+  have wfBig1: "formula_well_formed (alphabet F)
+                 (balance
+                   (balance (spira_trans ?gtt) (spira_trans ?gtf) (spira_trans ?R))
+                   (balance (spira_trans ?gft) (spira_trans ?gff) (spira_trans ?R))
+                   (spira_trans ?Q))"
+    by (intro balance_wf wfBqt wfBqf wfSQ)
+  have wfBig2: "formula_well_formed (alphabet F)
+                 (balance
+                   (balance (spira_trans ?gtt) (spira_trans ?gft) (spira_trans ?Q))
+                   (balance (spira_trans ?gtf) (spira_trans ?gff) (spira_trans ?Q))
+                   (spira_trans ?R))"
+    by (intro balance_wf wfBrt wfBrf wfSR)
+  have wfRB: "formula_well_formed (alphabet F) (rebalancing P pos)"
+    unfolding rebalancing_def by (intro balance_wf wfPRT wfPRF wfSR)
+  have sig_wf: "\<And>v. v \<in> set cong_atoms \<Longrightarrow> formula_well_formed (alphabet F) (?sigma v)"
+  proof -
+    fix v assume "v \<in> set cong_atoms"
+    show "formula_well_formed (alphabet F) (?sigma v)"
+    proof (cases "map_of (zip cong_atoms ?vals) v")
+      case None
+      thus ?thesis by simp
+    next
+      case (Some f)
+      have "(v, f) \<in> set (zip cong_atoms ?vals)"
+        by (rule map_of_SomeD[OF Some])
+      hence "f \<in> set ?vals"
+        by (rule set_zip_rightD)
+      thus ?thesis
+        using Some wfgff wfgft wfgtf wfgtt wfSQ wfSR by auto
+    qed
+  qed
 
   \<comment> \<open>spira_trans P opens at the spira node Q.\<close>
   have F2: "spira_trans P = balance ?QT ?QF (spira_trans ?Q)"
@@ -3936,8 +4255,9 @@ proof -
                        (depth_formula (spira_trans ?Q)))))) \<le> SDB"
     using SDleafSDB le_trans[OF p_ttfR SDB1_SDB] le_trans[OF p_ftfR SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note step1 = balance_cong_bnd[OF IHQT IHQF iff_refl[where A = "spira_trans ?Q"]
-      sp1 dp1 lp1 pp1, folded F2]
+  note step1 = balance_cong_bnd[OF IHQT IHQF iff_refl[OF wfSQ]
+      sp1 dp1 lp1 pp1
+      wfQT wfBqt wfQF wfBqf wfSQ wfSQ, folded F2]
 
   \<comment> \<open>Step 3: the rebalancing P pos folding, via balance_cong on the R IHs.\<close>
   have lpRT: "len_formula ?PRT
@@ -3949,7 +4269,7 @@ proof -
                  (spira_trans ?Q))) \<le> SDB"
     using SDleafSDB(3) le_trans[OF p_ttQ SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note isRT = iff_sym_bnd[OF IHRT order_refl order_refl lpRT ppRT]
+  note isRT = iff_sym_bnd[OF IHRT order_refl order_refl lpRT ppRT wfPRT wfBrt]
   have lpRF: "len_formula ?PRF
            + len_formula (balance (spira_trans ?gtf) (spira_trans ?gff)
                (spira_trans ?Q)) \<le> 2 * NN"
@@ -3959,7 +4279,7 @@ proof -
                  (spira_trans ?Q))) \<le> SDB"
     using SDleafSDB(4) le_trans[OF p_tfQ SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note isRF = iff_sym_bnd[OF IHRF order_refl order_refl lpRF ppRF]
+  note isRF = iff_sym_bnd[OF IHRF order_refl order_refl lpRF ppRF wfPRF wfBrf]
   have sp3: "(szRT + sym_step_len * (2 * NN)) + (szRF + sym_step_len * (2 * NN))
            + refl_step_len * len_formula (spira_trans ?R)
            \<le> (szRT + sym_step_len * (2 * NN))
@@ -3989,8 +4309,9 @@ proof -
                        (depth_formula (spira_trans ?R)))))) \<le> SDB"
     using SDleafSDB le_trans[OF p_ttQ SDB1_SDB] le_trans[OF p_tfQ SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note step3 = balance_cong_bnd[OF isRT isRF iff_refl[where A = "spira_trans ?R"]
-      sp3 dp3 lp3 pp3, folded F5]
+  note step3 = balance_cong_bnd[OF isRT isRF iff_refl[OF wfSR]
+      sp3 dp3 lp3 pp3
+      wfBrt wfPRT wfBrf wfPRF wfSR wfSR, folded F5]
 
   \<comment> \<open>Step 2: the selector-commutation reassociation (case_three).\<close>
   have sz2: "case_three_step_len * len_sub (set cong_atoms) ?sigma
@@ -4005,7 +4326,7 @@ proof -
   have dep2: "case_three_step_depth + depth_sub (set cong_atoms) ?sigma \<le> DB"
     by (rule le_trans[OF dep2X DBX_DB])
   note step2 = provable_balanced_iff_subst[OF case_three finite_set sig_id
-                                              sig_conn, unfolded subL subR]
+                                              sig_conn sig_wf, unfolded subL subR]
   note step2' = provable_balanced_iff_weaken[OF step2 order_refl sz2 dep2]
 
   \<comment> \<open>Composition by iff_trans_bnd.\<close>
@@ -4033,7 +4354,7 @@ proof -
                        (balance (spira_trans ?gtf) (spira_trans ?gff)
                          (spira_trans ?Q)) (spira_trans ?R)))) \<le> SDB"
     using le_trans[OF pP SDB1_SDB] pB1 pB2 by (intro max.boundedI) simp_all
-  note inner = iff_trans_bnd[OF step1 step2' dpAB lpAB ppAB]
+  note inner = iff_trans_bnd[OF step1 step2' dpAB lpAB ppAB wfSP wfBig1 wfBig2]
   have dpBC: "max (max DB (trans_step_depth + SDB))
                (max DB (balance_cong_step_depth + SDB)) \<le> DB"
     by (intro max.boundedI order_refl le_trans[OF transX DBX_DB]
@@ -4054,7 +4375,7 @@ proof -
                  (depth_formula (rebalancing P pos))) \<le> SDB"
     using le_trans[OF pP SDB1_SDB] pB2 le_trans[OF preb SDB1_SDB]
     by (intro max.boundedI) simp_all
-  note chain = iff_trans_bnd[OF inner step3 dpBC lpBC ppBC]
+  note chain = iff_trans_bnd[OF inner step3 dpBC lpBC ppBC wfSP wfBig2 wfRB]
 
   \<comment> \<open>The glue size sums to at most rebal_glue_coeff3 * (LS + 1).\<close>
   note NN1_lin = NN1_linear[OF NN1def]
@@ -4190,12 +4511,14 @@ proof -
             (szQT + szQF + szRT + szRF + rebal_glue_coeff3 * (LS + 1))
             (max depQT (max depQF (max depRT (max depRF
               (rebal_dep_coeff3 * (DS + 1))))))"
-      \<comment> \<open>chain carries three trivially-true side premises (the premises
-          of sig_conn's three-premise statement); simp discharges each.\<close>
+      \<comment> \<open>chain carries four trivially-true side premises (the premises of
+          sig_conn's three-premise statement plus sig_wf's); simp discharges
+          each.\<close>
       apply (rule provable_balanced_iff_weaken[OF chain])
+            apply simp
            apply simp
           apply simp
-         apply simp
+         apply (simp add: sig_wf)
         apply (simp add: case_three_glue_lines_def)
        apply (rule sz_le)
       apply (rule chain_dep_le)
@@ -4505,13 +4828,16 @@ definition pos_empty_step_depth :: nat where
   base case (pos = []) of the rebalancing equivalence.
 *)
 lemma mux_collapse_iff:
-  "provable_balanced_iff G (balance true_const false_const G)
+  assumes wfG: "formula_well_formed (alphabet F) G"
+  shows "provable_balanced_iff G (balance true_const false_const G)
      pos_empty_lines
      (pos_empty_step_len * len_formula G)
      (pos_empty_step_depth + 1 + depth_formula G)"
 proof -
   let ?z = "refl_atom"
   let ?sub = "\<lambda>w. if w = ?z then G else Atom w"
+  have sig_wf: "\<And>v. v \<in> {?z} \<Longrightarrow> formula_well_formed (alphabet F) (?sub v)"
+    using wfG by simp
   have wf_lhs: "formula_well_formed (alphabet F) pos_empty_lhs"
     unfolding pos_empty_lhs_def by simp
   have wf_rhs: "formula_well_formed (alphabet F) pos_empty_rhs"
@@ -4546,7 +4872,7 @@ proof -
   have pbi: "provable_balanced_iff G (balance true_const false_const G)
                pos_empty_lines (pos_empty_step_len * len_formula G)
                (pos_empty_step_depth + depth_sub {?z} ?sub)"
-    using provable_balanced_iff_subst[OF base fin sig_id sig_conn]
+    using provable_balanced_iff_subst[OF base fin sig_id sig_conn sig_wf]
     by (simp add: subL subR lensub)
   show ?thesis
   proof (rule provable_balanced_iff_weaken[OF pbi order_refl order_refl])
@@ -4562,11 +4888,12 @@ qed
   balance true_const false_const (spira_trans P).
 *)
 lemma case_pos_empty_construction:
-  "provable_balanced_iff (spira_trans P) (rebalancing P [])
+  assumes wfP: "formula_well_formed (alphabet F) P"
+  shows "provable_balanced_iff (spira_trans P) (rebalancing P [])
      pos_empty_lines
      (pos_empty_step_len * len_formula (spira_trans P))
      (pos_empty_step_depth + 1 + depth_formula (spira_trans P))"
-  using mux_collapse_iff[of "spira_trans P"]
+  using mux_collapse_iff[OF spira_trans_wf[OF wfP]]
   unfolding rebalancing_at_root[symmetric] .
 
 (*
@@ -4583,7 +4910,10 @@ subsection \<open>Connective (slot) congruence\<close>
 lemma plug_cong_exists:
   "\<exists> (congbnd :: nat poly) (congc :: nat).
      \<forall> \<phi> \<psi> \<chi> h l s d.
-       provable_balanced_iff \<phi> \<psi> l s d \<and> distinguished \<chi> h
+       provable_balanced_iff \<phi> \<psi> l s d
+         \<and> formula_well_formed (alphabet F) \<phi>
+         \<and> formula_well_formed (alphabet F) \<psi>
+         \<and> distinguished \<chi> h
          \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi>
        \<longrightarrow> provable_balanced_iff (plug h \<phi> \<chi>) (plug h \<psi> \<chi>)
              (l + poly congbnd (len_formula \<chi>))
@@ -4604,20 +4934,28 @@ proof -
             d1 = max (depth_formula \<phi>) (depth_formula \<psi>);
             d2 = depth_formula \<chi>
         in distinguished \<chi> h \<and> contains_atom \<chi> h
-             \<and> formula_well_formed (alphabet F) \<chi> \<longrightarrow>
+             \<and> formula_well_formed (alphabet F) \<chi>
+             \<and> formula_well_formed (alphabet F) \<phi>
+             \<and> formula_well_formed (alphabet F) \<psi> \<longrightarrow>
         (\<exists> pr. valid_proof F pr \<and>
            assumptions pr = {sub_formula sub conn_iff} \<and>
            frege_proof.thesis pr = (sub_formula sub' conn_iff) \<and>
            length (steps pr) \<le> poly congbnd s2 \<and>
            (\<forall> step \<in> set (steps pr). len_formula step \<le> poly congbnd (s1 + s2) \<and>
-                                     depth_formula step \<le> d1 + d2 + congc)))"
+                                     depth_formula step \<le> d1 + d2 + congc) \<and>
+           (\<forall> step \<in> set (steps pr). formula_well_formed (alphabet F) step)))"
     by blast
   show ?thesis
   proof (intro exI[where x = congbnd] exI[where x = congc] allI impI)
     fix \<phi> \<psi> \<chi> :: "'c formula" and h :: string and l s d :: nat
-    assume A: "provable_balanced_iff \<phi> \<psi> l s d \<and> distinguished \<chi> h
+    assume A: "provable_balanced_iff \<phi> \<psi> l s d
+                 \<and> formula_well_formed (alphabet F) \<phi>
+                 \<and> formula_well_formed (alphabet F) \<psi>
+                 \<and> distinguished \<chi> h
                  \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi>"
     hence prem: "provable_balanced_iff \<phi> \<psi> l s d"
+      and wfphi: "formula_well_formed (alphabet F) \<phi>"
+      and wfpsi: "formula_well_formed (alphabet F) \<psi>"
       and dist: "distinguished \<chi> h" and cont: "contains_atom \<chi> h"
       and wfc: "formula_well_formed (alphabet F) \<chi>" by simp_all
 
@@ -4627,6 +4965,7 @@ proof -
       "length (steps p1) \<le> l"
       "\<forall>x \<in> set (steps p1). len_formula x \<le> s"
       "\<forall>x \<in> set (steps p1). depth_formula x \<le> d"
+      "\<forall>x \<in> set (steps p1). formula_well_formed (alphabet F) x"
       unfolding provable_balanced_iff_def by blast
 
     have eqL: "sub_formula (\<lambda>v. if v = ''a'' then \<phi> else if v = ''b'' then \<psi>
@@ -4647,8 +4986,9 @@ proof -
            len_formula step \<le> poly congbnd
              (max (len_formula \<phi>) (len_formula \<psi>) + len_formula \<chi>) \<and>
            depth_formula step \<le> max (depth_formula \<phi>) (depth_formula \<psi>)
-             + depth_formula \<chi> + congc)"
-      using IC[unfolded Let_def] dist cont wfc by blast
+             + depth_formula \<chi> + congc) \<and>
+        (\<forall> step \<in> set (steps pr). formula_well_formed (alphabet F) step)"
+      using IC[unfolded Let_def] dist cont wfc wfphi wfpsi by blast
     note raw' = raw[unfolded eqL eqR]
     from raw' obtain pc where pc:
       "valid_proof F pc"
@@ -4659,6 +4999,7 @@ proof -
           (max (len_formula \<phi>) (len_formula \<psi>) + len_formula \<chi>)"
       "\<forall>x \<in> set (steps pc). depth_formula x \<le>
           max (depth_formula \<phi>) (depth_formula \<psi>) + depth_formula \<chi> + congc"
+      "\<forall>x \<in> set (steps pc). formula_well_formed (alphabet F) x"
       by blast
 
     have phipsi_in: "iff_form \<phi> \<psi> \<in> set (steps p1)"
@@ -4730,6 +5071,13 @@ proof -
       qed
     qed
 
+    have cb_wf: "\<forall>x \<in> set (steps cb). formula_well_formed (alphabet F) x"
+    proof
+      fix x assume "x \<in> set (steps cb)"
+      hence "x \<in> set (steps p1) \<or> x \<in> set (steps pc)" using cb_steps by auto
+      thus "formula_well_formed (alphabet F) x" using p1(7) pc(7) by blast
+    qed
+
     show "provable_balanced_iff (plug h \<phi> \<chi>) (plug h \<psi> \<chi>)
             (l + poly congbnd (len_formula \<chi>))
             (max s (poly congbnd
@@ -4737,7 +5085,7 @@ proof -
             (max d (max (depth_formula \<phi>) (depth_formula \<psi>)
                     + depth_formula \<chi> + congc))"
       unfolding provable_balanced_iff_def
-      using valid_cb cb_asm cb_thesis cb_lines cb_len cb_dep by blast
+      using valid_cb cb_asm cb_thesis cb_lines cb_len cb_dep cb_wf by blast
   qed
 qed
 
@@ -4750,7 +5098,10 @@ qed
 definition cong_body :: "nat \<Rightarrow> nat poly \<Rightarrow> bool" where
   "cong_body congc congbnd \<longleftrightarrow>
      (\<forall> \<phi> \<psi> \<chi> h l s d.
-        provable_balanced_iff \<phi> \<psi> l s d \<and> distinguished \<chi> h
+        provable_balanced_iff \<phi> \<psi> l s d
+          \<and> formula_well_formed (alphabet F) \<phi>
+          \<and> formula_well_formed (alphabet F) \<psi>
+          \<and> distinguished \<chi> h
           \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi>
         \<longrightarrow> provable_balanced_iff (plug h \<phi> \<chi>) (plug h \<psi> \<chi>)
               (l + poly congbnd (len_formula \<chi>))
@@ -4778,6 +5129,8 @@ qed
 
 lemma plug_cong:
   assumes "provable_balanced_iff \<phi> \<psi> l s d"
+      and "formula_well_formed (alphabet F) \<phi>"
+      and "formula_well_formed (alphabet F) \<psi>"
       and "distinguished \<chi> h" and "contains_atom \<chi> h"
       and "formula_well_formed (alphabet F) \<chi>"
     shows "provable_balanced_iff (plug h \<phi> \<chi>) (plug h \<psi> \<chi>)
@@ -4935,6 +5288,10 @@ definition reassoc_conn_sub ::
 
 lemma reassoc_conn_subst:
   assumes len_gs: "length gs = arity (alphabet F) c"
+      and wf_gs: "\<And>g. g \<in> set gs \<Longrightarrow> formula_well_formed (alphabet F) g"
+      and wfE: "formula_well_formed (alphabet F) E"
+      and wfG: "formula_well_formed (alphabet F) G"
+      and wfZ: "formula_well_formed (alphabet F) Z"
   shows "provable_balanced_iff
            (Conn c (gs[i := balance E G Z]))
            (balance (Conn c (gs[i := E])) (Conn c (gs[i := G])) Z)
@@ -5010,8 +5367,22 @@ proof -
   note sig_conn = fresh_sub_conn[OF adisj sig_id]
   note sig_cb = fresh_sub_cb[OF adisj sig_id]
 
+  have sig_wf: "\<And>v. v \<in> set ?atoms \<Longrightarrow> formula_well_formed (alphabet F) (?sub v)"
+  proof -
+    fix v assume v_in: "v \<in> set ?atoms"
+    hence "\<exists>j. j < length ?atoms \<and> ?atoms ! j = v" by (simp add: in_set_conv_nth)
+    then obtain j where j_lt: "j < length ?atoms" and jv: "?atoms ! j = v" by blast
+    have subv: "?sub v = ?vals ! j"
+      using sub_nth[of j] j_lt alen jv by simp
+    have j_lt_vals: "j < length ?vals" using j_lt lveq by simp
+    have "?vals ! j \<in> set ?vals" using j_lt_vals by (rule nth_mem)
+    hence "?vals ! j \<in> set gs \<union> {E, G, Z}" by auto
+    thus "formula_well_formed (alphabet F) (?sub v)"
+      using wf_gs wfE wfG wfZ by (auto simp: subv)
+  qed
+
   note subst_pbi = provable_balanced_iff_subst[OF reassoc_conn_proof[of c i] finVS
-                                                  sig_id sig_conn]
+                                                  sig_id sig_conn sig_wf]
 
   have mapslots: "map (sub_formula ?sub) (map Atom ?slots) = gs"
     using sub_slots by (simp add: comp_def)
@@ -5386,6 +5757,8 @@ qed
 *)
 lemma conn_slot_cong:
   assumes prem: "provable_balanced_iff A B l s d"
+      and wfA: "formula_well_formed (alphabet F) A"
+      and wfB: "formula_well_formed (alphabet F) B"
       and wfgs: "formula_well_formed (alphabet F) (Conn c gs)"
       and i_lt: "i < length gs"
     shows "\<exists> lines sz dep.
@@ -5498,7 +5871,7 @@ proof -
                         (max (len_formula A) (len_formula B) + len_formula ?chi)))
               (max d (max (depth_formula A) (depth_formula B)
                       + depth_formula ?chi + cong_const))"
-    using plug_cong[OF prem dist_chi contains_chi wf_chi]
+    using plug_cong[OF prem wfA wfB dist_chi contains_chi wf_chi]
     unfolding plugA plugB .
   have lc: "len_formula ?chi \<le> len_formula (Conn c gs)"
     using len_formula_conn_hole_le[OF i_lt] len_formula_positive[of "gs ! i"]
@@ -5700,6 +6073,9 @@ proof -
     using IH reb_child by simp
 
   \<comment> \<open>Congruence: Conn c fs \<leftrightarrow> Conn c (fs[i := ?bal]).\<close>
+  have wf_bal: "formula_well_formed (alphabet F) ?bal"
+    by (rule balance_wf[OF fix_at_wf[OF wf_child] fix_at_wf[OF wf_child]
+                           subterm_at_wf[OF wf_child vp_child]])
   obtain l1 s1 d1 where csc:
       "provable_balanced_iff (Conn c (fs[i := fs ! i])) ?mid l1 s1 d1"
     and csc_l: "l1 \<le> lQ + poly cong_poly (len_formula (Conn c fs))"
@@ -5708,13 +6084,21 @@ proof -
                    + len_formula (Conn c fs)))"
     and csc_d: "d1 \<le> max depQ (max (depth_formula (fs ! i)) (depth_formula ?bal)
                   + depth_formula (Conn c fs) + cong_const)"
-    using conn_slot_cong[OF IH' wfP i_lt] by blast
+    using conn_slot_cong[OF IH' wf_child wf_bal wfP i_lt] by blast
   have csc': "provable_balanced_iff (Conn c fs) ?mid l1 s1 d1"
     using csc i_lt by simp
 
   \<comment> \<open>Reassociation: Conn c (fs[i := ?bal]) \<leftrightarrow> rebalancing (Conn c fs) (i#rest).\<close>
   have reb_cons: "?reb = balance (Conn c (fs[i := ?A])) (Conn c (fs[i := ?B])) ?Z"
     by (rule rebalancing_below_cons[OF wfP small vp])
+  have wf_fs_elem: "\<And>g. g \<in> set fs \<Longrightarrow> formula_well_formed (alphabet F) g"
+    using wfP by auto
+  have wf_A: "formula_well_formed (alphabet F) ?A"
+    by (rule fix_at_wf[OF wf_child])
+  have wf_B: "formula_well_formed (alphabet F) ?B"
+    by (rule fix_at_wf[OF wf_child])
+  have wf_Z: "formula_well_formed (alphabet F) ?Z"
+    by (rule subterm_at_wf[OF wf_child vp_child])
   have reassoc: "provable_balanced_iff ?mid ?reb
                    (reassoc_conn_lines c i)
                    (reassoc_conn_step_len c i
@@ -5723,9 +6107,20 @@ proof -
                    (reassoc_conn_step_depth c i
                       + depth_sub (set (reassoc_conn_atoms c))
                                   (reassoc_conn_sub c fs ?A ?B ?Z))"
-    using reassoc_conn_subst[OF lenfs, of i ?A ?B ?Z] reb_cons by simp
+    using reassoc_conn_subst[OF lenfs wf_fs_elem wf_A wf_B wf_Z, of i] reb_cons by simp
 
-  note chain = iff_trans[OF csc' reassoc]
+  have wf_mid: "formula_well_formed (alphabet F) ?mid"
+  proof -
+    have "\<forall>f \<in> set (fs[i := ?bal]). formula_well_formed (alphabet F) f"
+      using wfP wf_bal set_update_subset_insert[of fs i ?bal] by fastforce
+    moreover have "length (fs[i := ?bal]) = arity (alphabet F) c"
+      using lenfs by simp
+    ultimately show ?thesis by auto
+  qed
+  have wf_reb: "formula_well_formed (alphabet F) ?reb"
+    by (rule rebalancing_wf[OF wfP vp])
+
+  note chain = iff_trans[OF csc' reassoc wfP wf_mid wf_reb]
 
   \<comment> \<open>Size bounds: every formula is bounded by shannon_bigarg / shannon_balmax.\<close>
   have lenA: "len_formula ?A \<le> len_formula (fs ! i)" by (rule fix_at_len_le)
@@ -5972,7 +6367,7 @@ proof -
       have mc: "provable_balanced_iff (spira_trans P) (rebalancing P [])
                   pos_empty_lines (pos_empty_step_len * len_formula (spira_trans P))
                   (pos_empty_step_depth + 1 + depth_formula (spira_trans P))"
-        using case_pos_empty_construction[of P] .
+        using case_pos_empty_construction[OF wfP] .
       have lp: "len_formula (spira_trans P) < spira_threshold"
         using st small by simp
       have dp: "depth_formula (spira_trans P) < spira_threshold"
@@ -6858,7 +7253,7 @@ proof -
       have pbi: "provable_balanced_iff (spira_trans P) (rebalancing P pos)
                    refl_lines (refl_step_len * len_formula (spira_trans P))
                    (refl_step_depth + depth_formula (spira_trans P))"
-        using iff_refl[of "spira_trans P"] reb_eq by simp
+        using iff_refl[OF spira_trans_wf[OF wfP]] reb_eq by simp
       have lb: "refl_lines \<le> rebal_L (len_formula P) (rebal_m P pos)"
         by (rule rebal_L_dom_const[OF _ lP1]) (simp add: rebal_base_K_def)
       have sb: "refl_step_len * len_formula (spira_trans P)
@@ -7309,7 +7704,7 @@ proof -
                          pos_empty_lines
                          (pos_empty_step_len * len_formula (spira_trans P))
                          (pos_empty_step_depth + 1 + depth_formula (spira_trans P))"
-              using case_pos_empty_construction[of P] True by simp
+              using case_pos_empty_construction[OF wfP] True by simp
             have lb: "pos_empty_lines \<le> rebal_L (len_formula P) (rebal_m P pos)"
               by (rule rebal_L_dom_const[OF _ lP1]) (simp add: rebal_base_K_def)
             have sb: "pos_empty_step_len * len_formula (spira_trans P)
@@ -7873,7 +8268,7 @@ proof -
                              + rebal_glue_coeff3 * (?llsum3 + 1)"
             and conD3: "dep \<le> max depQT (max depQF (max depRT (max depRF
                                 (rebal_dep_coeff3 * (?dlsum3 + 1)))))"
-            using case_three_construction[OF wfP geST disj IH_QT IH_QF IH_RT IH_RF]
+            using case_three_construction[OF wfP geST disj vpP IH_QT IH_QF IH_RT IH_RF]
             by blast
           \<comment> \<open>Size inequalities.\<close>
           have Q_eq: "?Q = spiras_sel P"

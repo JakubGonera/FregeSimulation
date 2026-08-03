@@ -585,7 +585,8 @@ proof -
     show "\<forall>fs th. (\<forall>f\<in>fs. formula_well_formed (alphabet F2) f) \<longrightarrow>
             formula_well_formed (alphabet F2) th \<longrightarrow>
             (\<forall>val. (\<forall>f\<in>fs. eval (alphabet F2) val f) \<longrightarrow> eval (alphabet F2) val th) \<longrightarrow>
-            (\<exists>pr. valid_proof F2 pr \<and> assumptions pr = fs \<and> thesis pr = th)"
+            (\<exists>pr. valid_proof F2 pr \<and> assumptions pr = fs \<and> thesis pr = th
+                \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F2) st))"
     proof (intro allI impI)
       fix fs th
       assume wf_fs: "\<forall>f\<in>fs. formula_well_formed (alphabet F2) f"
@@ -597,11 +598,19 @@ proof -
         using wf_fs by (simp add: alphF2 fc_alph)
       have wf_thFc: "formula_well_formed (alphabet Fc) th"
         using wf_th by (simp add: alphF2 fc_alph)
-      have exFc: "\<exists>pr. valid_proof Fc pr \<and> assumptions pr = fs \<and> thesis pr = th"
+      have exFc: "\<exists>pr. valid_proof Fc pr \<and> assumptions pr = fs \<and> thesis pr = th
+                    \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet Fc) st)"
         using frege_system.impl_complete[OF fc, THEN spec[where x = fs], THEN spec[where x = th]]
               wf_fsFc wf_thFc semFc by blast
-      show "\<exists>pr. valid_proof F2 pr \<and> assumptions pr = fs \<and> thesis pr = th"
-        using exFc valid_proof_mono_rules[OF rulesFc_sub] by blast
+      then obtain pr where prFc: "valid_proof Fc pr" "assumptions pr = fs"
+        "frege_proof.thesis pr = th"
+        "\<forall> st \<in> set (steps pr). formula_well_formed (alphabet Fc) st"
+        by blast
+      have "valid_proof F2 pr"
+        using prFc(1) valid_proof_mono_rules[OF rulesFc_sub] by blast
+      thus "\<exists>pr. valid_proof F2 pr \<and> assumptions pr = fs \<and> thesis pr = th
+               \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F2) st)"
+        using prFc(2,3,4) by (auto simp add: alphF2 fc_alph)
     qed
   next
     show "finite (rules F2)"
@@ -792,6 +801,7 @@ definition reduce_sub where
 lemma reduce_subst:
   assumes ar: "arity (alphabet F) c \<ge> 1"
       and len_qs: "length qs = arity (alphabet F) c - 1"
+      and wf_qs: "\<And>q. q \<in> set qs \<Longrightarrow> formula_well_formed (alphabet F) q"
   shows "provable_balanced_iff
            (Conn c ((if b then true_const else false_const) # qs))
            (Conn (conn_fix c 0 b) qs)
@@ -827,8 +837,19 @@ proof -
   qed
   have finVS: "finite (set ?atoms)" by simp
   note sig_conn = fresh_sub_conn[OF adisj sig_id]
+  have sig_wf: "\<And>v. v \<in> set ?atoms \<Longrightarrow> formula_well_formed (alphabet F) (?sub v)"
+  proof -
+    fix v assume v_in: "v \<in> set ?atoms"
+    hence "\<exists>j. j < length ?atoms \<and> ?atoms ! j = v" by (simp add: in_set_conv_nth)
+    then obtain j where j_lt: "j < length ?atoms" and jv: "?atoms ! j = v" by blast
+    have subv: "?sub v = qs ! j" using sub_nth[OF j_lt] jv by simp
+    have j_lt_qs: "j < length qs" using j_lt lveq by simp
+    have "qs ! j \<in> set qs" using j_lt_qs by (rule nth_mem)
+    thus "formula_well_formed (alphabet F) (?sub v)"
+      using wf_qs by (simp add: subv)
+  qed
   note subst_pbi =
-    provable_balanced_iff_subst[OF reduce_proof[where b = b, OF ar] finVS sig_id sig_conn]
+    provable_balanced_iff_subst[OF reduce_proof[where b = b, OF ar] finVS sig_id sig_conn sig_wf]
   have mapslots: "map (sub_formula ?sub) (map Atom ?atoms) = qs"
     using sub_slots by (simp add: comp_def)
   have cb_sub: "sub_formula ?sub (if b then true_const else false_const)
@@ -950,6 +971,8 @@ definition shc_sub where
 lemma shc_subst:
   assumes ar: "i < arity (alphabet F) d"
       and len_gs: "length gs = arity (alphabet F) d"
+      and wf_gs: "\<And>g. g \<in> set gs \<Longrightarrow> formula_well_formed (alphabet F) g"
+      and wfZ: "formula_well_formed (alphabet F) Z"
   shows "provable_balanced_iff
            (balance (Conn d (gs[i := true_const])) (Conn d (gs[i := false_const])) Z)
            (Conn d (gs[i := Z]))
@@ -1002,8 +1025,20 @@ proof -
   have finVS: "finite (set ?atoms)" by simp
   note sig_conn = fresh_sub_conn[OF adisj sig_id]
   note sig_cb = fresh_sub_cb[OF adisj sig_id]
+  have sig_wf: "\<And>v. v \<in> set ?atoms \<Longrightarrow> formula_well_formed (alphabet F) (?sub v)"
+  proof -
+    fix v assume v_in: "v \<in> set ?atoms"
+    hence "\<exists>j. j < length ?atoms \<and> ?atoms ! j = v" by (simp add: in_set_conv_nth)
+    then obtain j where j_lt: "j < length ?atoms" and jv: "?atoms ! j = v" by blast
+    have subv: "?sub v = ?vals ! j" using sub_nth[of j] j_lt alen jv by simp
+    have j_lt_vals: "j < length ?vals" using j_lt lveq by simp
+    have "?vals ! j \<in> set ?vals" using j_lt_vals by (rule nth_mem)
+    hence "?vals ! j \<in> set gs \<union> {Z}" by auto
+    thus "formula_well_formed (alphabet F) (?sub v)"
+      using wf_gs wfZ by (auto simp: subv)
+  qed
   note subst_pbi =
-    provable_balanced_iff_subst[OF shc_proof[OF ar] finVS sig_id sig_conn]
+    provable_balanced_iff_subst[OF shc_proof[OF ar] finVS sig_id sig_conn sig_wf]
   have mapslots: "map (sub_formula ?sub) (map Atom ?slots) = gs"
     using sub_slots by (simp add: comp_def)
   have tc: "sub_formula ?sub true_const = true_const" by (simp add: true_const_def)
@@ -1568,12 +1603,14 @@ proof -
           qed
           have sumle: "sum_list (map len_formula qs) \<le> N"
             using lenN by (simp add: len_true_false_const)
+          have wfq': "\<And>q. q \<in> set qs \<Longrightarrow> formula_well_formed (alphabet F) q"
+            using wfqs by blast
           have pbi: "provable_balanced_iff (spira_trans ?N1)
                   (Conn (conn_fix c 0 b) (map spira_trans qs))
                   (reduce_lines c b)
                   (reduce_step_len c b * len_sub (set (reduce_atoms c)) (reduce_sub c qs))
                   (reduce_step_depth c b + depth_sub (set (reduce_atoms c)) (reduce_sub c qs))"
-            unfolding idN1 idqs using reduce_subst[OF ar lenqs] .
+            unfolding idN1 idqs using reduce_subst[OF ar lenqs wfq'] .
           \<comment> \<open>lines bound\<close>
           have BL: "reduce_lines c b \<le> poly SL N * 4 ^ count_big qs"
             using order_trans[OF reduce_lines_le Cc_red_l] order_trans[OF CcSL SLpow]
@@ -1750,14 +1787,77 @@ proof -
             and PFl: "lF \<le> poly SL N * 4 ^ m" and PFs: "sF \<le> poly SL N * 4 ^ m"
             and PFd: "real dF \<le> DD * log 2 (real N + 1) + DDC" by auto
           \<comment> \<open>assemble: substitute the arms into the rebalanced selector, then collapse\<close>
-          note PB = balance_cong[OF PT PF iff_refl[of "spira_trans (qs ! j)"]]
-          note PB' = PB[folded rebeq]
           have gbar_len_c: "length ?gbar = arity (alphabet F) (conn_fix c 0 b)"
             using gbar_len cf_ar by simp
-          note shc = shc_subst[OF jc gbar_len_c, where Z = "spira_trans (qs ! j)"]
+          have wf_qsj: "formula_well_formed (alphabet F) (qs ! j)"
+            using wfqs j_lt by (simp add: nth_mem)
+          have wf_stqsj: "formula_well_formed (alphabet F) (spira_trans (qs ! j))"
+            by (rule spira_trans_wf[OF wf_qsj])
+          have wf_gbar: "\<And>g. g \<in> set ?gbar \<Longrightarrow> formula_well_formed (alphabet F) g"
+          proof -
+            fix g assume "g \<in> set ?gbar"
+            then obtain q where q: "q \<in> set qs" and geq: "g = spira_trans q" by auto
+            from q wfqs have "formula_well_formed (alphabet F) q" by blast
+            thus "formula_well_formed (alphabet F) g" unfolding geq by (rule spira_trans_wf)
+          qed
+          have wf_arm_lhs: "formula_well_formed (alphabet F)
+                (spira_trans (Conn c (?cb # qs[j := bc])))"
+            if bcwf: "formula_well_formed (alphabet F) bc" for bc
+          proof (rule spira_trans_wf)
+            have L: "length (?cb # qs[j := bc]) = arity (alphabet F) c"
+              using lenqs ar by simp
+            have "\<And>f. f \<in> set (?cb # qs[j := bc]) \<Longrightarrow> formula_well_formed (alphabet F) f"
+            proof -
+              fix f assume "f \<in> set (?cb # qs[j := bc])"
+              hence "f = ?cb \<or> f \<in> set (qs[j := bc])" by auto
+              thus "formula_well_formed (alphabet F) f"
+              proof
+                assume "f = ?cb" thus ?thesis using cb_wf by simp
+              next
+                assume "f \<in> set (qs[j := bc])"
+                hence "f \<in> insert bc (set qs)" using set_update_subset_insert by fastforce
+                thus ?thesis using wfqs bcwf by auto
+              qed
+            qed
+            with L show "formula_well_formed (alphabet F) (Conn c (?cb # qs[j := bc]))"
+              by auto
+          qed
+          have wf_arm_rhs: "formula_well_formed (alphabet F)
+                (Conn (conn_fix c 0 b) (?gbar[j := bc]))"
+            if bcwf: "formula_well_formed (alphabet F) bc" for bc
+          proof -
+            have L: "length (?gbar[j := bc]) = arity (alphabet F) (conn_fix c 0 b)"
+              using gbar_len_c by simp
+            have "\<And>f. f \<in> set (?gbar[j := bc]) \<Longrightarrow> formula_well_formed (alphabet F) f"
+            proof -
+              fix f assume "f \<in> set (?gbar[j := bc])"
+              hence "f \<in> insert bc (set ?gbar)" using set_update_subset_insert by fastforce
+              thus "formula_well_formed (alphabet F) f" using wf_gbar bcwf by auto
+            qed
+            with L show ?thesis by auto
+          qed
+          have wf_stN1: "formula_well_formed (alphabet F) (spira_trans ?N1)"
+            by (rule spira_trans_wf[OF wfN1])
+          have wf_reb: "formula_well_formed (alphabet F) (rebalancing ?N1 [Suc j])"
+            by (rule rebalancing_wf[OF wfN1 validpos])
+          have wf_balC: "formula_well_formed (alphabet F)
+                (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
+                         (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                         (spira_trans (qs ! j)))"
+            by (rule balance_wf[OF wf_arm_rhs[OF true_const_wf]
+                                   wf_arm_rhs[OF false_const_wf] wf_stqsj])
+          have wf_conn_gbar: "formula_well_formed (alphabet F) (Conn (conn_fix c 0 b) ?gbar)"
+            using gbar_len_c wf_gbar by auto
+          note PB = balance_cong[OF PT PF iff_refl[OF wf_stqsj]
+                       wf_arm_lhs[OF true_const_wf] wf_arm_rhs[OF true_const_wf]
+                       wf_arm_lhs[OF false_const_wf] wf_arm_rhs[OF false_const_wf]
+                       wf_stqsj wf_stqsj]
+          note PB' = PB[folded rebeq]
+          note shc = shc_subst[OF jc gbar_len_c wf_gbar wf_stqsj]
           have gupd: "?gbar[j := spira_trans (qs ! j)] = ?gbar" using gbar_j[symmetric] by simp
           note shc' = shc[unfolded gupd]
-          note comp = iff_trans[OF iff_trans[OF P0 PB'] shc']
+          note comp = iff_trans[OF iff_trans[OF P0 PB' wf_stN1 wf_reb wf_balC]
+                                   shc' wf_stN1 wf_balC wf_conn_gbar]
           \<comment> \<open>--- bounds ---\<close>
           have ASLB: "poly SL N \<le> poly SL N * 4 ^ m" by (rule SLpow)
           have Teq: "poly SL N * 4 ^ count_big qs = 4 * (poly SL N * 4 ^ m)"
@@ -2416,7 +2516,8 @@ proof -
           \<comment> \<open>assemble the witness from comp and discharge the three bounds\<close>
           show ?thesis
             apply (intro exI conjI)
-                apply (rule comp)
+                 apply (rule comp)
+                apply blast
                apply (use l0SL PTl PFl Lconst ASLB Teq in linarith)
               apply (use P1 P2 P3 P4 P5 SZclean s0SL PTs PFs ASLB Teq in linarith)
              apply (rule real_of_nat_max_le DL1 DL2 DL3 DL4 DL5 DL6 DL7 DL8)+
@@ -2433,6 +2534,8 @@ subsection \<open>Bounded collapse\<close>
 lemma collapse:
   shows "\<exists> Kc :: nat. \<forall> c gbar z.
            1 \<le> arity (alphabet F) c \<and> length gbar = arity (alphabet F) c - 1
+           \<and> (\<forall>g\<in>set gbar. formula_well_formed (alphabet F) g)
+           \<and> formula_well_formed (alphabet F) z
          \<longrightarrow> (\<exists> lines sz dep. provable_balanced_iff
                 (balance (Conn (conn_fix c 0 True) gbar) (Conn (conn_fix c 0 False) gbar) z)
                 (Conn c (z # gbar)) lines sz dep
@@ -2497,6 +2600,8 @@ proof -
   qed
   have main: "\<And> c gbar z. 1 \<le> arity (alphabet F) c \<Longrightarrow>
        length gbar = arity (alphabet F) c - 1 \<Longrightarrow>
+       (\<forall>g\<in>set gbar. formula_well_formed (alphabet F) g) \<Longrightarrow>
+       formula_well_formed (alphabet F) z \<Longrightarrow>
        (\<exists> lines sz dep. provable_balanced_iff
           (balance (Conn (conn_fix c 0 True) gbar) (Conn (conn_fix c 0 False) gbar) z)
           (Conn c (z # gbar)) lines sz dep
@@ -2507,6 +2612,12 @@ proof -
     fix c :: 'a and gbar :: "'a formula list" and z :: "'a formula"
     assume ar: "1 \<le> arity (alphabet F) c"
       and len: "length gbar = arity (alphabet F) c - 1"
+      and wfgbar: "\<forall>g\<in>set gbar. formula_well_formed (alphabet F) g"
+      and wfz: "formula_well_formed (alphabet F) z"
+    have wfgbar': "\<And>g. g \<in> set gbar \<Longrightarrow> formula_well_formed (alphabet F) g"
+      using wfgbar by blast
+    have wfzgbar: "\<And>g. g \<in> set (z # gbar) \<Longrightarrow> formula_well_formed (alphabet F) g"
+      using wfz wfgbar by auto
     have ar0: "0 < arity (alphabet F) c" using ar by simp
     have lenz: "length (z # gbar) = arity (alphabet F) c" using len ar by simp
     let ?LL = "len_formula (Conn c (z # gbar))"
@@ -2618,26 +2729,50 @@ proof -
       finally show ?thesis .
     qed
     \<comment> \<open>the construction, kept explicit for bounds\<close>
+    have cfT_ar: "arity (alphabet F) (conn_fix c 0 True) = arity (alphabet F) c - 1"
+      using conn_fix_spec[of 0 c True] ar0 by simp
+    have cfF_ar: "arity (alphabet F) (conn_fix c 0 False) = arity (alphabet F) c - 1"
+      using conn_fix_spec[of 0 c False] ar0 by simp
+    have lenTg: "length (true_const # gbar) = arity (alphabet F) c" using len ar by simp
+    have lenFg: "length (false_const # gbar) = arity (alphabet F) c" using len ar by simp
+    have wf_Ttg: "formula_well_formed (alphabet F) (Conn c (true_const # gbar))"
+      using lenTg true_const_wf wfgbar by auto
+    have wf_Ffg: "formula_well_formed (alphabet F) (Conn c (false_const # gbar))"
+      using lenFg false_const_wf wfgbar by auto
+    have wf_cfT: "formula_well_formed (alphabet F) (Conn (conn_fix c 0 True) gbar)"
+      using cfT_ar len wfgbar by auto
+    have wf_cfF: "formula_well_formed (alphabet F) (Conn (conn_fix c 0 False) gbar)"
+      using cfF_ar len wfgbar by auto
     have redT: "provable_balanced_iff (Conn c (true_const # gbar))
         (Conn (conn_fix c 0 True) gbar) (reduce_lines c True)
         (reduce_step_len c True * len_sub (set (reduce_atoms c)) (reduce_sub c gbar))
         (reduce_step_depth c True + depth_sub (set (reduce_atoms c)) (reduce_sub c gbar))"
-      using reduce_subst[where b = True, OF ar len] by simp
+      using reduce_subst[where b = True, OF ar len wfgbar'] by simp
     have redF: "provable_balanced_iff (Conn c (false_const # gbar))
         (Conn (conn_fix c 0 False) gbar) (reduce_lines c False)
         (reduce_step_len c False * len_sub (set (reduce_atoms c)) (reduce_sub c gbar))
         (reduce_step_depth c False + depth_sub (set (reduce_atoms c)) (reduce_sub c gbar))"
-      using reduce_subst[where b = False, OF ar len] by simp
-    note rT = iff_sym[OF redT]
-    note rF = iff_sym[OF redF]
-    note PB2 = balance_cong[OF rT rF iff_refl[of z]]
+      using reduce_subst[where b = False, OF ar len wfgbar'] by simp
+    note rT = iff_sym[OF redT wf_Ttg wf_cfT]
+    note rF = iff_sym[OF redF wf_Ffg wf_cfF]
+    note PB2 = balance_cong[OF rT rF iff_refl[OF wfz]
+                 wf_cfT wf_Ttg wf_cfF wf_Ffg wfz wfz]
     have shc': "provable_balanced_iff
         (balance (Conn c (true_const # gbar)) (Conn c (false_const # gbar)) z)
         (Conn c (z # gbar)) (shc_lines c 0)
         (shc_step_len c 0 * len_sub (set (shc_atoms c)) (shc_sub c (z # gbar) z))
         (shc_step_depth c 0 + depth_sub (set (shc_atoms c)) (shc_sub c (z # gbar) z))"
-      using shc_subst[where d = c and i = 0 and gs = "z # gbar" and Z = z] ar0 lenz by simp
-    note COL = iff_trans[OF PB2 shc']
+      using shc_subst[where d = c and i = 0 and gs = "z # gbar" and Z = z,
+                      OF ar0 lenz wfzgbar wfz] by simp
+    have wf_balT: "formula_well_formed (alphabet F)
+        (balance (Conn c (true_const # gbar)) (Conn c (false_const # gbar)) z)"
+      by (rule balance_wf[OF wf_Ttg wf_Ffg wfz])
+    have wf_balCF: "formula_well_formed (alphabet F)
+        (balance (Conn (conn_fix c 0 True) gbar) (Conn (conn_fix c 0 False) gbar) z)"
+      by (rule balance_wf[OF wf_cfT wf_cfF wfz])
+    have wf_zgbar: "formula_well_formed (alphabet F) (Conn c (z # gbar))"
+      using lenz wfzgbar by auto
+    note COL = iff_trans[OF PB2 shc' wf_balCF wf_balT wf_zgbar]
     \<comment> \<open>budget facts\<close>
     have WKc: "288 * W \<le> Kc * (?LL + 1)"
     proof -
@@ -2993,6 +3128,8 @@ proof -
     using commutes_aux by blast
   obtain Kc where coll:
     "\<forall> c gbar z. 1 \<le> arity (alphabet F) c \<and> length gbar = arity (alphabet F) c - 1
+           \<and> (\<forall>g\<in>set gbar. formula_well_formed (alphabet F) g)
+           \<and> formula_well_formed (alphabet F) z
          \<longrightarrow> (\<exists> lines sz dep. provable_balanced_iff
                 (balance (Conn (conn_fix c 0 True) gbar) (Conn (conn_fix c 0 False) gbar) z)
                 (Conn c (z # gbar)) lines sz dep
@@ -3097,7 +3234,7 @@ proof -
         show "provable_balanced_iff (spira_trans (Conn conn ps)) (Conn conn (map spira_trans ps))
                 refl_lines (refl_step_len * len_formula (Conn conn []))
                 (refl_step_depth + depth_formula (Conn conn []))"
-          using iff_refl[of "Conn conn []"] id0 pnil by simp
+          using iff_refl[OF wf0] id0 pnil by simp
         show "refl_lines \<le> poly bnd (len_formula (Conn conn ps))"
         proof -
           have "refl_lines \<le> Cc" unfolding Cc_def by simp
@@ -3200,6 +3337,44 @@ proof -
         and AFs: "sF \<le> poly SL (len_formula (Conn conn (false_const # rest))) * 4 ^ count_big rest"
         and AFd: "real dF \<le> DD * log 2 (real (len_formula (Conn conn (false_const # rest))) + 1) + DDC"
         using AFex by blast
+      \<comment> \<open>well-formedness facts for the assembly\<close>
+      have ar0c: "0 < arity (alphabet F) conn" using ar by simp
+      have wf_stQ1: "formula_well_formed (alphabet F) (spira_trans Q1)"
+        by (rule spira_trans_wf[OF wfQ1])
+      have wf_strest: "\<forall>g\<in>set (map spira_trans rest). formula_well_formed (alphabet F) g"
+      proof
+        fix g assume "g \<in> set (map spira_trans rest)"
+        then obtain r where r: "r \<in> set rest" and geq: "g = spira_trans r" by auto
+        from r wfrest have "formula_well_formed (alphabet F) r" by blast
+        thus "formula_well_formed (alphabet F) g" unfolding geq by (rule spira_trans_wf)
+      qed
+      have cfTr_ar: "arity (alphabet F) (conn_fix conn 0 True) = arity (alphabet F) conn - 1"
+        using conn_fix_spec[of 0 conn True] ar0c by simp
+      have cfFr_ar: "arity (alphabet F) (conn_fix conn 0 False) = arity (alphabet F) conn - 1"
+        using conn_fix_spec[of 0 conn False] ar0c by simp
+      have wf_cfTr: "formula_well_formed (alphabet F)
+            (Conn (conn_fix conn 0 True) (map spira_trans rest))"
+        using cfTr_ar lenrest wf_strest by auto
+      have wf_cfFr: "formula_well_formed (alphabet F)
+            (Conn (conn_fix conn 0 False) (map spira_trans rest))"
+        using cfFr_ar lenrest wf_strest by auto
+      have wfstT: "formula_well_formed (alphabet F)
+            (spira_trans (Conn conn (true_const # rest)))"
+        by (rule spira_trans_wf) (use true_const_wf wfrest lenrest ar in auto)
+      have wfstF: "formula_well_formed (alphabet F)
+            (spira_trans (Conn conn (false_const # rest)))"
+        by (rule spira_trans_wf) (use false_const_wf wfrest lenrest ar in auto)
+      have wf_stN: "formula_well_formed (alphabet F) (spira_trans (Conn conn ps))"
+        by (rule spira_trans_wf[OF wfN])
+      have wf_rebN: "formula_well_formed (alphabet F) (rebalancing (Conn conn ps) [0])"
+        by (rule rebalancing_wf[OF wfN validpos])
+      have wf_balR: "formula_well_formed (alphabet F)
+          (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
+                   (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1))"
+        by (rule balance_wf[OF wf_cfTr wf_cfFr wf_stQ1])
+      have wf_result: "formula_well_formed (alphabet F)
+          (Conn conn (spira_trans Q1 # map spira_trans rest))"
+        using lenrest ar wf_stQ1 wf_strest by auto
       \<comment> \<open>the collapse step\<close>
       obtain l4 s4 d4 where COL:
           "provable_balanced_iff
@@ -3211,14 +3386,19 @@ proof -
         and COLs: "s4 \<le> Kc * (len_formula (Conn conn (spira_trans Q1 # map spira_trans rest)) + 1)"
         and COLd: "real d4 \<le> real Kc * (real (depth_formula (Conn conn (spira_trans Q1 # map spira_trans rest))) + 1)"
       proof -
-        have "1 \<le> arity (alphabet F) conn \<and> length (map spira_trans rest) = arity (alphabet F) conn - 1"
-          using ar lenrest by simp
-        from coll[rule_format, OF this, of "spira_trans Q1"] show thesis
+        have "1 \<le> arity (alphabet F) conn
+              \<and> length (map spira_trans rest) = arity (alphabet F) conn - 1
+              \<and> (\<forall>g\<in>set (map spira_trans rest). formula_well_formed (alphabet F) g)
+              \<and> formula_well_formed (alphabet F) (spira_trans Q1)"
+          using ar lenrest wf_strest wf_stQ1 by simp
+        from coll[rule_format, OF this] show thesis
           using that by blast
       qed
-      note PB = balance_cong[OF AT AF iff_refl[of "spira_trans Q1"]]
+      note PB = balance_cong[OF AT AF iff_refl[OF wf_stQ1]
+                   wfstT wf_cfTr wfstF wf_cfFr wf_stQ1 wf_stQ1]
       note PB' = PB[folded rebeq]
-      note final = iff_trans[OF iff_trans[OF P0 PB'] COL]
+      note final = iff_trans[OF iff_trans[OF P0 PB' wf_stN wf_rebN wf_balR]
+                               COL wf_stN wf_balR wf_result]
       have mapeq: "map spira_trans ps = spira_trans Q1 # map spira_trans rest"
         unfolding ps_eq by simp
       let ?N = "len_formula (Conn conn ps)"
@@ -3821,7 +4001,8 @@ qed
 lemma conn_cong_base_proof_spec:
   "valid_proof F (conn_cong_base_proof c)
    \<and> assumptions (conn_cong_base_proof c) = conn_cong_asms c
-   \<and> thesis (conn_cong_base_proof c) = iff_form (conn_cong_lhs c) (conn_cong_rhs c)"
+   \<and> thesis (conn_cong_base_proof c) = iff_form (conn_cong_lhs c) (conn_cong_rhs c)
+   \<and> (\<forall> st \<in> set (steps (conn_cong_base_proof c)). formula_well_formed (alphabet F) st)"
 proof -
   have wf_asms: "\<forall>f \<in> conn_cong_asms c. formula_well_formed (alphabet F) f"
     unfolding conn_cong_asms_def by (auto intro: iff_form_wf)
@@ -3935,6 +4116,8 @@ lemma conn_cong:
   fixes Sc Dc :: nat and lf :: "nat \<Rightarrow> nat"
   assumes len_eq: "length Bs = length As"
       and ar: "length As = arity (alphabet F) c"
+      and wfAs: "\<And>a. a \<in> set As \<Longrightarrow> formula_well_formed (alphabet F) a"
+      and wfBs: "\<And>b. b \<in> set Bs \<Longrightarrow> formula_well_formed (alphabet F) b"
       and prem: "\<And>i. i < length As \<Longrightarrow>
                    \<exists>l s d. provable_balanced_iff (As ! i) (Bs ! i) l s d
                             \<and> l \<le> lf i \<and> s \<le> Sc \<and> d \<le> Dc"
@@ -4083,6 +4266,29 @@ proof -
     using frege_system.proof_substitution[OF fs_F] conn_cong_base_proof_spec by blast
   have ci_steps: "steps ci = map (sub_formula csub) (steps (conn_cong_base_proof c))"
     unfolding ci_def by simp
+  have csub_wf: "\<And>v. formula_well_formed (alphabet F) (csub v)"
+  proof -
+    fix v
+    show "formula_well_formed (alphabet F) (csub v)"
+    proof (cases "v \<in> set atoms")
+      case True
+      have "csub v \<in> set As \<or> csub v \<in> set Bs" using val_in[OF True] .
+      thus ?thesis using wfAs wfBs by auto
+    next
+      case False
+      thus ?thesis using sub_id by simp
+    qed
+  qed
+  have ci_wf: "\<forall>s \<in> set (steps ci). formula_well_formed (alphabet F) s"
+  proof
+    fix s assume "s \<in> set (steps ci)"
+    then obtain s0 where s0: "s0 \<in> set (steps (conn_cong_base_proof c))"
+      and seq: "s = sub_formula csub s0" using ci_steps by auto
+    have "formula_well_formed (alphabet F) s0"
+      using conn_cong_base_proof_spec s0 by blast
+    thus "formula_well_formed (alphabet F) s"
+      unfolding seq by (rule sub_formula_well_formed[OF _ csub_wf])
+  qed
   have ci_lines: "length (steps ci) = conn_cong_lines c"
     using ci_steps by (simp add: conn_cong_lines_def)
   have map_lhs: "map csub (take kk atoms) = As"
@@ -4196,13 +4402,15 @@ proof -
         \<and> frege_proof.thesis pr = iff_form (As ! i) (Bs ! i)
         \<and> length (steps pr) \<le> lf i
         \<and> (\<forall>s \<in> set (steps pr). len_formula s \<le> Sc)
-        \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> Dc))"
+        \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> Dc)
+        \<and> (\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s))"
   have ip_spec: "\<And>i. i < kk \<Longrightarrow>
        valid_proof F (ip i) \<and> assumptions (ip i) = {}
        \<and> frege_proof.thesis (ip i) = iff_form (As ! i) (Bs ! i)
        \<and> length (steps (ip i)) \<le> lf i
        \<and> (\<forall>s \<in> set (steps (ip i)). len_formula s \<le> Sc)
-       \<and> (\<forall>s \<in> set (steps (ip i)). depth_formula s \<le> Dc)"
+       \<and> (\<forall>s \<in> set (steps (ip i)). depth_formula s \<le> Dc)
+       \<and> (\<forall>s \<in> set (steps (ip i)). formula_well_formed (alphabet F) s)"
   proof -
     fix i assume i: "i < kk"
     hence "i < length As" using askk by simp
@@ -4212,12 +4420,14 @@ proof -
         "frege_proof.thesis pr = iff_form (As ! i) (Bs ! i)" "length (steps pr) \<le> l"
         "\<forall>s' \<in> set (steps pr). len_formula s' \<le> s"
         "\<forall>s' \<in> set (steps pr). depth_formula s' \<le> d"
+        "\<forall>s' \<in> set (steps pr). formula_well_formed (alphabet F) s'"
       unfolding provable_balanced_iff_def by blast
     have ex: "\<exists>pr. valid_proof F pr \<and> assumptions pr = {}
           \<and> frege_proof.thesis pr = iff_form (As ! i) (Bs ! i)
           \<and> length (steps pr) \<le> lf i
           \<and> (\<forall>s \<in> set (steps pr). len_formula s \<le> Sc)
-          \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> Dc)"
+          \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> Dc)
+          \<and> (\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s)"
     proof (intro exI[where x = pr] conjI)
       show "valid_proof F pr" by (rule pr(1))
       show "assumptions pr = {}" by (rule pr(2))
@@ -4225,12 +4435,14 @@ proof -
       show "length (steps pr) \<le> lf i" using pr(4) lLc by linarith
       show "\<forall>s \<in> set (steps pr). len_formula s \<le> Sc" using pr(5) sSc by force
       show "\<forall>s \<in> set (steps pr). depth_formula s \<le> Dc" using pr(6) dDc by force
+      show "\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s" by (rule pr(7))
     qed
     show "valid_proof F (ip i) \<and> assumptions (ip i) = {}
        \<and> frege_proof.thesis (ip i) = iff_form (As ! i) (Bs ! i)
        \<and> length (steps (ip i)) \<le> lf i
        \<and> (\<forall>s \<in> set (steps (ip i)). len_formula s \<le> Sc)
-       \<and> (\<forall>s \<in> set (steps (ip i)). depth_formula s \<le> Dc)"
+       \<and> (\<forall>s \<in> set (steps (ip i)). depth_formula s \<le> Dc)
+       \<and> (\<forall>s \<in> set (steps (ip i)). formula_well_formed (alphabet F) s)"
       unfolding ip_def by (rule someI_ex[OF ex])
   qed
   define ps where "ps = map ip [0..< kk]"
@@ -4342,6 +4554,20 @@ proof -
       thus ?thesis by simp
     qed
   qed
+  have cb_wf: "\<forall>s \<in> set (steps cb). formula_well_formed (alphabet F) s"
+  proof
+    fix s assume "s \<in> set (steps cb)"
+    hence "s \<in> set (concat (map steps ps)) \<or> s \<in> set (steps ci)" using cb_spec by auto
+    thus "formula_well_formed (alphabet F) s"
+    proof
+      assume "s \<in> set (concat (map steps ps))"
+      then obtain p where pps: "p \<in> set ps" and sp: "s \<in> set (steps p)" by auto
+      obtain i where "i < kk" "p = ip i" using ps_elem[OF pps] by blast
+      thus ?thesis using ip_spec sp by blast
+    next
+      assume "s \<in> set (steps ci)" thus ?thesis using ci_wf by blast
+    qed
+  qed
   have main: "provable_balanced_iff (Conn c As) (Conn c Bs)
           (sum_list (map lf [0..< length As]) + conn_cong_max_lines)
           (Sc + conn_cong_max_step_len * (2 * kk * LAB + 1))
@@ -4357,6 +4583,7 @@ proof -
             \<le> Sc + conn_cong_max_step_len * (2 * kk * LAB + 1)" using cb_len .
     show "\<forall>s \<in> set (steps cb). depth_formula s
             \<le> max Dc (conn_cong_max_step_depth + DAB)" using cb_dep .
+    show "\<forall>s \<in> set (steps cb). formula_well_formed (alphabet F) s" using cb_wf .
   qed
   show ?thesis
     using main[unfolded askk[symmetric] LAB_def DAB_def] by blast
@@ -4673,7 +4900,7 @@ proof -
         have refl: "provable_balanced_iff (spira_trans (sub a)) (spira_trans (sub a))
                       refl_lines (refl_step_len * len_formula (spira_trans (sub a)))
                       (refl_step_depth + depth_formula (spira_trans (sub a)))"
-          by (rule iff_refl)
+          by (rule iff_refl[OF spira_trans_wf[OF wfsa]])
         \<comment> \<open>@{term BIGC} dominates the reflexivity constants\<close>
         have reflB: "refl_lines \<le> BIGC \<and> refl_step_len \<le> BIGC" using bigS by linarith
         \<comment> \<open>lines bound\<close>
@@ -4944,6 +5171,26 @@ proof -
         qed
         have leneq: "length ?Bs = length ?As" by simp
         have areq: "length ?As = arity (alphabet F) cc0" using arEq by simp
+        have sv_wf: "\<And>v. formula_well_formed (alphabet F) (spira_trans (sub v))"
+          using spira_trans_wf[OF wfsv] .
+        have wfAs': "\<And>a. a \<in> set ?As \<Longrightarrow> formula_well_formed (alphabet F) a"
+        proof -
+          fix a assume "a \<in> set ?As"
+          then obtain x where x: "x \<in> set fs"
+            and aeq: "a = spira_trans (sub_formula sub x)" by auto
+          have "formula_well_formed (alphabet F) (sub_formula sub x)"
+            by (rule sub_formula_well_formed[OF wfsi[OF x] wfsv])
+          thus "formula_well_formed (alphabet F) a"
+            unfolding aeq by (rule spira_trans_wf)
+        qed
+        have wfBs': "\<And>b. b \<in> set ?Bs \<Longrightarrow> formula_well_formed (alphabet F) b"
+        proof -
+          fix b assume "b \<in> set ?Bs"
+          then obtain x where x: "x \<in> set fs"
+            and beq: "b = sub_formula (\<lambda>v. spira_trans (sub v)) x" by auto
+          show "formula_well_formed (alphabet F) b"
+            unfolding beq by (rule sub_formula_well_formed[OF wfsi[OF x] sv_wf])
+        qed
         \<comment> \<open>pB: congruence over @{term cc0} from the argument commutations\<close>
         obtain lB sB dB where
             pBpbi: "provable_balanced_iff ?MID ?BB lB sB dB"
@@ -4952,9 +5199,18 @@ proof -
                           * (2 * length ?As * (len_formula ?MID + len_formula ?BB) + 1)"
           and pBd: "dB \<le> max ?Dc (conn_cong_max_step_depth
                           + max (depth_formula ?MID) (depth_formula ?BB))"
-          using conn_cong[OF leneq areq prem] by blast
+          using conn_cong[OF leneq areq wfAs' wfBs' prem] by blast
         \<comment> \<open>pC: transitivity glues pA and pB\<close>
-        note pC = iff_trans[OF pA(1) pBpbi]
+        have wf_A0: "formula_well_formed (alphabet F) ?A0"
+        proof (rule spira_trans_wf)
+          show "formula_well_formed (alphabet F) (Conn cc0 (map (sub_formula sub) fs))"
+            using wfps lenps by auto
+        qed
+        have wf_MID: "formula_well_formed (alphabet F) ?MID"
+          using wfAs' areq by auto
+        have wf_BB: "formula_well_formed (alphabet F) ?BB"
+          using wfBs' leneq areq by auto
+        note pC = iff_trans[OF pA(1) pBpbi wf_A0 wf_MID wf_BB]
         \<comment> \<open>shared measure facts\<close>
         have lenLS: "?LS = 1 + ?SUML" by (simp add: o_def)
         have MFgeC: "len_formula (Conn cc0 fs) \<le> MF" by (simp add: MF_def)

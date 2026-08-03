@@ -203,6 +203,182 @@ lemma var_set_sub:
   "var_set_form (sub_formula s f) = (\<Union>a\<in>var_set_form f. var_set_form (s a))"
   by (induction f) auto
 
+subsection \<open>Normalizing ill-formed formulas (proof repair)\<close>
+
+text \<open>Padding or truncating every connective node to its arity (using a nullary
+      connective for padding) makes any formula well formed, is the identity on
+      well-formed formulas, and commutes with substitution.  A valid proof over
+      well-formed rules therefore normalizes to a valid proof with well-formed
+      steps — which is how the strengthened @{text impl_complete} obligation is
+      discharged for constructed systems.\<close>
+
+fun normalize_formula :: "'c alphabet \<Rightarrow> 'c \<Rightarrow> 'c formula \<Rightarrow> 'c formula" where
+  "normalize_formula alph topc (Atom v) = Atom v"
+| "normalize_formula alph topc (Conn c gs) =
+     Conn c (take (arity alph c) (map (normalize_formula alph topc) gs)
+             @ replicate (arity alph c - length gs) (Conn topc []))"
+
+lemma normalize_formula_well_formed:
+  assumes "arity alph topc = 0"
+  shows "formula_well_formed alph (normalize_formula alph topc f)"
+proof (induction f)
+  case (Atom v)
+  show ?case by simp
+next
+  case (Conn c gs)
+  have len_ok: "length (take (arity alph c) (map (normalize_formula alph topc) gs)
+                @ replicate (arity alph c - length gs) (Conn topc [])) = arity alph c"
+    by (simp add: min_def)
+  have mem_wf: "formula_well_formed alph g"
+    if g_in: "g \<in> set (take (arity alph c) (map (normalize_formula alph topc) gs)
+                @ replicate (arity alph c - length gs) (Conn topc []))" for g
+  proof -
+    from g_in have "g \<in> set (map (normalize_formula alph topc) gs) \<or> g = Conn topc []"
+      by (auto dest: in_set_takeD)
+    thus ?thesis using Conn.IH assms by auto
+  qed
+  show ?case using len_ok mem_wf by simp
+qed
+
+lemma normalize_formula_id:
+  assumes "formula_well_formed alph f"
+  shows "normalize_formula alph topc f = f"
+  using assms
+proof (induction f)
+  case (Atom v)
+  show ?case by simp
+next
+  case (Conn c gs)
+  have len_eq: "length gs = arity alph c"
+    using Conn.prems by simp
+  have "map (normalize_formula alph topc) gs = gs"
+    by (rule map_idI) (use Conn.IH Conn.prems in auto)
+  thus ?case using len_eq by simp
+qed
+
+lemma normalize_formula_substitution:
+  "normalize_formula alph topc (sub_formula s g)
+ = sub_formula (\<lambda>v. normalize_formula alph topc (s v)) (normalize_formula alph topc g)"
+proof (induction g)
+  case (Atom v)
+  show ?case by simp
+next
+  case (Conn c gs)
+  define nf where "nf = normalize_formula alph topc"
+  define k where "k = arity alph c"
+  have pointwise: "map (\<lambda>g'. nf (sub_formula s g')) gs
+                 = map (\<lambda>g'. sub_formula (\<lambda>v. nf (s v)) (nf g')) gs"
+    using Conn.IH unfolding nf_def by (intro map_cong refl) simp
+  have "normalize_formula alph topc (sub_formula s (Conn c gs))
+      = Conn c (take k (map (\<lambda>g'. nf (sub_formula s g')) gs)
+                @ replicate (k - length gs) (Conn topc []))"
+    unfolding nf_def k_def by (simp add: comp_def)
+  also have "\<dots> = Conn c (take k (map (\<lambda>g'. sub_formula (\<lambda>v. nf (s v)) (nf g')) gs)
+                @ replicate (k - length gs) (Conn topc []))"
+    unfolding pointwise ..
+  also have "\<dots> = sub_formula (\<lambda>v. nf (s v))
+                   (Conn c (take k (map nf gs) @ replicate (k - length gs) (Conn topc [])))"
+    by (simp add: take_map comp_def)
+  also have "\<dots> = sub_formula (\<lambda>v. nf (s v)) (normalize_formula alph topc (Conn c gs))"
+    unfolding nf_def k_def by simp
+  finally show ?case unfolding nf_def .
+qed
+
+fun normalize_proof :: "'c alphabet \<Rightarrow> 'c \<Rightarrow> 'c frege_proof \<Rightarrow> 'c frege_proof" where
+  "normalize_proof alph topc pr = \<lparr>
+     assumptions = normalize_formula alph topc ` assumptions pr,
+     thesis = normalize_formula alph topc (thesis pr),
+     steps = map (normalize_formula alph topc) (steps pr) \<rparr>"
+
+lemma normalize_proof_valid:
+  assumes valid: "valid_proof F pr"
+      and rules_wf: "\<forall> r \<in> rules F. (\<forall> p \<in> set (prems r). formula_well_formed (alphabet F) p)
+                                  \<and> formula_well_formed (alphabet F) (concl r)"
+  shows "valid_proof F (normalize_proof (alphabet F) topc pr)"
+proof -
+  define nf where "nf = normalize_formula (alphabet F) topc"
+  have steps_eq: "steps (normalize_proof (alphabet F) topc pr) = map nf (steps pr)"
+    unfolding nf_def by simp
+  have ne: "steps pr \<noteq> []" and last_eq: "thesis pr = last (steps pr)"
+    using valid unfolding valid_proof_def by blast+
+  have ne': "steps (normalize_proof (alphabet F) topc pr) \<noteq> []"
+    using ne by simp
+  have thesis_ok: "thesis (normalize_proof (alphabet F) topc pr)
+                 = last (steps (normalize_proof (alphabet F) topc pr))"
+    using ne last_eq unfolding nf_def by (simp add: last_map)
+  have step_ok: "steps (normalize_proof (alphabet F) topc pr) ! i
+                   \<in> assumptions (normalize_proof (alphabet F) topc pr)
+               \<or> derived (rules F) (take i (steps (normalize_proof (alphabet F) topc pr)))
+                         (steps (normalize_proof (alphabet F) topc pr) ! i)"
+    if i_lt: "i < length (steps (normalize_proof (alphabet F) topc pr))" for i
+  proof -
+    have i_pr: "i < length (steps pr)" using i_lt by simp
+    have nth_eq: "steps (normalize_proof (alphabet F) topc pr) ! i = nf (steps pr ! i)"
+      using i_pr unfolding nf_def by simp
+    from valid i_pr have "steps pr ! i \<in> assumptions pr
+        \<or> derived (rules F) (take i (steps pr)) (steps pr ! i)"
+      unfolding valid_proof_def by blast
+    thus ?thesis
+    proof
+      assume "steps pr ! i \<in> assumptions pr"
+      hence "nf (steps pr ! i) \<in> assumptions (normalize_proof (alphabet F) topc pr)"
+        unfolding nf_def by simp
+      thus ?thesis using nth_eq by simp
+    next
+      assume "derived (rules F) (take i (steps pr)) (steps pr ! i)"
+      then obtain r s where r_in: "r \<in> rules F"
+        and concl_eq: "concl (sub_rule s r) = steps pr ! i"
+        and prems_prior: "\<forall> p \<in> set (prems (sub_rule s r)). \<exists> q \<in> set (take i (steps pr)). p = q"
+        unfolding derived_def by (auto simp add: Let_def)
+      have r_wf_prems: "\<forall> p \<in> set (prems r). formula_well_formed (alphabet F) p"
+        and r_wf_concl: "formula_well_formed (alphabet F) (concl r)"
+        using rules_wf r_in by blast+
+      define s' where "s' = (\<lambda>v. nf (s v))"
+      have concl_new: "concl (sub_rule s' r) = nf (steps pr ! i)"
+      proof -
+        have "concl (sub_rule s' r) = sub_formula s' (concl r)" by simp
+        also have "\<dots> = sub_formula s' (normalize_formula (alphabet F) topc (concl r))"
+          using normalize_formula_id[OF r_wf_concl] by simp
+        also have "\<dots> = nf (sub_formula s (concl r))"
+          unfolding nf_def s'_def by (rule normalize_formula_substitution[symmetric])
+        also have "\<dots> = nf (steps pr ! i)"
+          using concl_eq by simp
+        finally show ?thesis .
+      qed
+      have prems_new: "\<forall> p \<in> set (prems (sub_rule s' r)).
+                        \<exists> q' \<in> set (take i (map nf (steps pr))). p = q'"
+      proof
+        fix p assume "p \<in> set (prems (sub_rule s' r))"
+        then obtain h where h_in: "h \<in> set (prems r)" and p_eq: "p = sub_formula s' h"
+          by auto
+        have p_nf: "p = nf (sub_formula s h)"
+        proof -
+          have "sub_formula s' h = sub_formula s' (normalize_formula (alphabet F) topc h)"
+            using normalize_formula_id r_wf_prems h_in by fastforce
+          also have "\<dots> = nf (sub_formula s h)"
+            unfolding nf_def s'_def by (rule normalize_formula_substitution[symmetric])
+          finally show ?thesis using p_eq by simp
+        qed
+        have "sub_formula s h \<in> set (prems (sub_rule s r))"
+          using h_in by simp
+        then obtain q where q_in: "q \<in> set (take i (steps pr))" and q_eq: "sub_formula s h = q"
+          using prems_prior by blast
+        have "nf q \<in> set (take i (map nf (steps pr)))"
+          using q_in by (auto simp add: take_map)
+        thus "\<exists> q' \<in> set (take i (map nf (steps pr))). p = q'"
+          using p_nf q_eq by blast
+      qed
+      have "derived (rules F) (take i (map nf (steps pr))) (nf (steps pr ! i))"
+        unfolding derived_def using r_in concl_new prems_new
+        by (auto simp add: Let_def)
+      thus ?thesis using nth_eq steps_eq by (simp add: nf_def)
+    qed
+  qed
+  show ?thesis
+    unfolding valid_proof_def using thesis_ok ne' step_ok by blast
+qed
+
+
 
 subsection \<open>A locale fixing the alphabet and its standard connectives\<close>
 
@@ -223,6 +399,14 @@ locale fc_alph =
             formula_well_formed alph f' \<and> formulas_equiv f dm_alphabet f' alph"
     and htop: "\<exists>t. arity alph t = 0 \<and> (\<forall>val. eval alph val (Conn t []) = True)"
     and hbot: "\<exists>b. arity alph b = 0 \<and> (\<forall>val. eval alph val (Conn b []) = False)"
+    and cimp_wf: "formula_well_formed alph \<phi> \<Longrightarrow> formula_well_formed alph \<psi>
+                  \<Longrightarrow> formula_well_formed alph (cimp \<phi> \<psi>)"
+    and cand_wf: "formula_well_formed alph \<phi> \<Longrightarrow> formula_well_formed alph \<psi>
+                  \<Longrightarrow> formula_well_formed alph (cand \<phi> \<psi>)"
+    and cor_wf:  "formula_well_formed alph \<phi> \<Longrightarrow> formula_well_formed alph \<psi>
+                  \<Longrightarrow> formula_well_formed alph (cor \<phi> \<psi>)"
+    and cneg_wf: "formula_well_formed alph \<phi> \<Longrightarrow> formula_well_formed alph (cneg \<phi>)"
+    and cfls_wf: "formula_well_formed alph cfls"
 begin
 
 fun bt :: "string Formulas.formula \<Rightarrow> 'c formula" where
@@ -291,6 +475,44 @@ proof -
     by (auto simp: set_n_lists)
   finally show ?thesis .
 qed
+
+lemma ciff_wf:
+  "formula_well_formed alph a \<Longrightarrow> formula_well_formed alph b
+   \<Longrightarrow> formula_well_formed alph (ciff a b)"
+  unfolding ciff_def by (simp add: cand_wf cimp_wf)
+
+lemma clit_wf:
+  "formula_well_formed alph a \<Longrightarrow> formula_well_formed alph (clit b a)"
+  unfolding clit_def by (simp add: cneg_wf)
+
+lemma cbig_and_wf:
+  "(\<And>a. a \<in> set as \<Longrightarrow> formula_well_formed alph a) \<Longrightarrow> formula_well_formed alph (cbig_and as)"
+  by (induction as) (simp_all add: cand_wf cneg_wf cfls_wf)
+
+lemma cbig_or_wf:
+  "(\<And>a. a \<in> set as \<Longrightarrow> formula_well_formed alph a) \<Longrightarrow> formula_well_formed alph (cbig_or as)"
+  by (induction as) (simp_all add: cor_wf cfls_wf)
+
+lemma cmk_conn_wf:
+  assumes args_wf: "\<And>a. a \<in> set args \<Longrightarrow> formula_well_formed alph a"
+  shows "formula_well_formed alph (cmk_conn g args)"
+  unfolding cmk_conn_def
+proof (rule cbig_or_wf)
+  fix x assume "x \<in> set (map (\<lambda>v. cbig_and (map (\<lambda>i. clit (v ! i) (args ! i)) [0..<length args]))
+                          (filter g (List.n_lists (length args) [True, False])))"
+  then obtain v where x_eq: "x = cbig_and (map (\<lambda>i. clit (v ! i) (args ! i)) [0..<length args])"
+    by auto
+  show "formula_well_formed alph x"
+    unfolding x_eq
+  proof (rule cbig_and_wf)
+    fix y assume "y \<in> set (map (\<lambda>i. clit (v ! i) (args ! i)) [0..<length args])"
+    then obtain i where i_lt: "i < length args" and y_eq: "y = clit (v ! i) (args ! i)"
+      by auto
+    show "formula_well_formed alph y"
+      unfolding y_eq using args_wf i_lt nth_mem by (auto intro: clit_wf)
+  qed
+qed
+
 
 lemma bt_big_or: "bt (big_or Fs) = cbig_or (map bt Fs)"
   by (induction Fs) auto
@@ -972,6 +1194,8 @@ lemma frege_system_from_rules:
     and Rsound: "\<And>r. r \<in> R \<Longrightarrow> sound_rule \<lparr>rules = R, alphabet = alph\<rparr> r"
     and ax: "\<And>\<psi>. \<psi> \<in> cAX \<Longrightarrow> derived R [] \<psi>"
     and mp: "\<And>a b. derived R [a, cimp a b] b"
+    and Rwf: "\<And>r. r \<in> R \<Longrightarrow> (\<forall> p \<in> set (prems r). formula_well_formed alph p)
+                          \<and> formula_well_formed alph (concl r)"
   shows "frege_system \<lparr>rules = R, alphabet = alph\<rparr>"
 proof -
   let ?F = "\<lparr>rules = R, alphabet = alph\<rparr> :: 'c frege"
@@ -997,7 +1221,8 @@ next
           (\<forall>f\<in>fs. formula_well_formed (alphabet ?F) f) \<longrightarrow>
           formula_well_formed (alphabet ?F) th \<longrightarrow>
           (\<forall>val. (\<forall>f\<in>fs. eval (alphabet ?F) val f) \<longrightarrow> eval (alphabet ?F) val th) \<longrightarrow>
-          (\<exists>pr. valid_proof ?F pr \<and> assumptions pr = fs \<and> thesis pr = th)"
+          (\<exists>pr. valid_proof ?F pr \<and> assumptions pr = fs \<and> thesis pr = th
+              \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet ?F) st))"
   proof (intro allI impI)
     fix fs th
     assume wfs: "\<forall>f\<in>fs. formula_well_formed (alphabet ?F) f"
@@ -1013,10 +1238,28 @@ next
       "\<forall>i < length ss. ss ! i \<in> fs \<or> derived R (take i ss) (ss ! i)"
       using cder_proof_list[OF ax mp] by blast
     let ?pr = "\<lparr>assumptions = fs, thesis = th, steps = ss\<rparr> :: 'c frege_proof"
-    have "valid_proof ?F ?pr" unfolding valid_proof_def using ss by simp
-    moreover have "assumptions ?pr = fs" by simp
-    moreover have "thesis ?pr = th" by simp
-    ultimately show "\<exists>pr. valid_proof ?F pr \<and> assumptions pr = fs \<and> thesis pr = th" by blast
+    have vp: "valid_proof ?F ?pr" unfolding valid_proof_def using ss by simp
+    obtain topc where topc_ar: "arity alph topc = 0"
+      using htop by blast
+    let ?pr' = "normalize_proof alph topc ?pr"
+    have rw: "\<forall> r \<in> rules ?F. (\<forall> p \<in> set (prems r). formula_well_formed (alphabet ?F) p)
+                            \<and> formula_well_formed (alphabet ?F) (concl r)"
+      using Rwf by simp
+    have vp': "valid_proof ?F ?pr'"
+      using normalize_proof_valid[OF vp] rw by simp
+    have asms': "assumptions ?pr' = fs"
+    proof -
+      have "normalize_formula alph topc ` fs = fs"
+        using wfs normalize_formula_id by force
+      thus ?thesis by simp
+    qed
+    have th': "thesis ?pr' = th"
+      using wth normalize_formula_id by simp
+    have stw: "\<forall> st \<in> set (steps ?pr'). formula_well_formed (alphabet ?F) st"
+      using normalize_formula_well_formed[OF topc_ar] by auto
+    show "\<exists>pr. valid_proof ?F pr \<and> assumptions pr = fs \<and> thesis pr = th
+             \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet ?F) st)"
+      using vp' asms' th' stw by blast
   qed
   qed
 qed
@@ -1055,12 +1298,17 @@ text \<open>From a functional-completeness witness for a De Morgan formula whose
 lemma conn_template:
   fixes alph :: "'c alphabet" and dmf :: "dm_conn formula" and f' :: "'c formula"
   assumes equiv: "formulas_equiv dmf dm_alphabet f' alph"
+    and wf: "formula_well_formed alph f'"
+    and topA: "arity alph topc = 0"
     and topT: "\<And>val. eval alph val (Conn topc []) = True"
     and Vsub: "var_set_form dmf \<subseteq> V"
-  shows "\<exists>tmpl. var_set_form tmpl \<subseteq> V \<and> (\<forall>val. eval alph val tmpl = eval dm_alphabet val dmf)"
+  shows "\<exists>tmpl. formula_well_formed alph tmpl \<and> var_set_form tmpl \<subseteq> V
+              \<and> (\<forall>val. eval alph val tmpl = eval dm_alphabet val dmf)"
 proof -
   let ?p = "\<lambda>s. if s \<in> V then Atom s else Conn topc []"
   let ?tmpl = "sub_formula ?p f'"
+  have w: "formula_well_formed alph ?tmpl"
+    by (rule sub_formula_well_formed[OF wf]) (simp add: topA)
   have v: "var_set_form ?tmpl \<subseteq> V"
     unfolding var_set_sub by (auto split: if_splits)
   have e: "eval alph val ?tmpl = eval dm_alphabet val dmf" for val
@@ -1077,7 +1325,7 @@ proof -
     qed
     finally show ?thesis .
   qed
-  from v e show ?thesis by blast
+  from w v e show ?thesis by blast
 qed
 
 
@@ -1106,8 +1354,10 @@ lemma frege_system_over_complete_alphabet:
     and "\<exists> b. arity alph b = 0 \<and> (\<forall> val. eval alph val (Conn b []) = False)"
   shows "\<exists> F. frege_system F \<and> alphabet F = alph"
 proof -
-  from assms(3) obtain topc where topc: "\<And>val. eval alph val (Conn topc []) = True" by blast
-  from assms(4) obtain botc where botc: "\<And>val. eval alph val (Conn botc []) = False" by blast
+  from assms(3) obtain topc where topc_ar: "arity alph topc = 0"
+    and topc: "\<And>val. eval alph val (Conn topc []) = True" by blast
+  from assms(4) obtain botc where botc_ar: "arity alph botc = 0"
+    and botc: "\<And>val. eval alph val (Conn botc []) = False" by blast
 
   define two :: "'c formula \<Rightarrow> 'c formula \<Rightarrow> string \<Rightarrow> 'c formula"
     where "two = (\<lambda>a b s. if s = ''0'' then a else if s = ''1'' then b else Atom s)"
@@ -1118,44 +1368,52 @@ proof -
                              else if s = ''2'' then H else Atom s)"
 
   \<comment> \<open>templates from functional completeness, pruned to their marker variables\<close>
-  obtain ta where ta_v: "var_set_form ta \<subseteq> {''0'', ''1''}"
+  obtain ta where ta_w: "formula_well_formed alph ta"
+    and ta_v: "var_set_form ta \<subseteq> {''0'', ''1''}"
     and ta_e: "\<And>val. eval alph val ta = eval dm_alphabet val (Conn And [Atom ''0'', Atom ''1''])"
   proof -
-    obtain fa where "formulas_equiv (Conn And [Atom ''0'', Atom ''1''] :: dm_conn formula) dm_alphabet fa alph"
+    obtain fa where fa_w: "formula_well_formed alph fa"
+      and "formulas_equiv (Conn And [Atom ''0'', Atom ''1''] :: dm_conn formula) dm_alphabet fa alph"
       using assms(2) by blast
-    hence "\<exists>t. var_set_form t \<subseteq> {''0'', ''1''} \<and>
+    hence "\<exists>t. formula_well_formed alph t \<and> var_set_form t \<subseteq> {''0'', ''1''} \<and>
                (\<forall>val. eval alph val t = eval dm_alphabet val (Conn And [Atom ''0'', Atom ''1'']))"
-      by (rule conn_template[OF _ topc]) simp
+      by (intro conn_template[OF _ fa_w topc_ar topc]) simp_all
     thus thesis using that by blast
   qed
-  obtain to where to_v: "var_set_form to \<subseteq> {''0'', ''1''}"
+  obtain to where to_w: "formula_well_formed alph to"
+    and to_v: "var_set_form to \<subseteq> {''0'', ''1''}"
     and to_e: "\<And>val. eval alph val to = eval dm_alphabet val (Conn Or [Atom ''0'', Atom ''1''])"
   proof -
-    obtain fo where "formulas_equiv (Conn Or [Atom ''0'', Atom ''1''] :: dm_conn formula) dm_alphabet fo alph"
+    obtain fo where fo_w: "formula_well_formed alph fo"
+      and "formulas_equiv (Conn Or [Atom ''0'', Atom ''1''] :: dm_conn formula) dm_alphabet fo alph"
       using assms(2) by blast
-    hence "\<exists>t. var_set_form t \<subseteq> {''0'', ''1''} \<and>
+    hence "\<exists>t. formula_well_formed alph t \<and> var_set_form t \<subseteq> {''0'', ''1''} \<and>
                (\<forall>val. eval alph val t = eval dm_alphabet val (Conn Or [Atom ''0'', Atom ''1'']))"
-      by (rule conn_template[OF _ topc]) simp
+      by (intro conn_template[OF _ fo_w topc_ar topc]) simp_all
     thus thesis using that by blast
   qed
-  obtain ti where ti_v: "var_set_form ti \<subseteq> {''0'', ''1''}"
+  obtain ti where ti_w: "formula_well_formed alph ti"
+    and ti_v: "var_set_form ti \<subseteq> {''0'', ''1''}"
     and ti_e: "\<And>val. eval alph val ti = eval dm_alphabet val (Conn Or [Conn Not [Atom ''0''], Atom ''1''])"
   proof -
-    obtain fi where "formulas_equiv (Conn Or [Conn Not [Atom ''0''], Atom ''1''] :: dm_conn formula) dm_alphabet fi alph"
+    obtain fi where fi_w: "formula_well_formed alph fi"
+      and "formulas_equiv (Conn Or [Conn Not [Atom ''0''], Atom ''1''] :: dm_conn formula) dm_alphabet fi alph"
       using assms(2) by blast
-    hence "\<exists>t. var_set_form t \<subseteq> {''0'', ''1''} \<and>
+    hence "\<exists>t. formula_well_formed alph t \<and> var_set_form t \<subseteq> {''0'', ''1''} \<and>
                (\<forall>val. eval alph val t = eval dm_alphabet val (Conn Or [Conn Not [Atom ''0''], Atom ''1'']))"
-      by (rule conn_template[OF _ topc]) simp
+      by (intro conn_template[OF _ fi_w topc_ar topc]) simp_all
     thus thesis using that by blast
   qed
-  obtain tn where tn_v: "var_set_form tn \<subseteq> {''0''}"
+  obtain tn where tn_w: "formula_well_formed alph tn"
+    and tn_v: "var_set_form tn \<subseteq> {''0''}"
     and tn_e: "\<And>val. eval alph val tn = eval dm_alphabet val (Conn Not [Atom ''0''])"
   proof -
-    obtain fn where "formulas_equiv (Conn Not [Atom ''0''] :: dm_conn formula) dm_alphabet fn alph"
+    obtain fn where fn_w: "formula_well_formed alph fn"
+      and "formulas_equiv (Conn Not [Atom ''0''] :: dm_conn formula) dm_alphabet fn alph"
       using assms(2) by blast
-    hence "\<exists>t. var_set_form t \<subseteq> {''0''} \<and>
+    hence "\<exists>t. formula_well_formed alph t \<and> var_set_form t \<subseteq> {''0''} \<and>
                (\<forall>val. eval alph val t = eval dm_alphabet val (Conn Not [Atom ''0'']))"
-      by (rule conn_template[OF _ topc]) simp
+      by (intro conn_template[OF _ fn_w topc_ar topc]) simp_all
     thus thesis using that by blast
   qed
 
@@ -1269,9 +1527,31 @@ proof -
   have cfls_sub: "sub_formula sub cfls = cfls" for sub
     unfolding cfls_def by simp
 
+  have two_wf: "formula_well_formed alph (two a b s)"
+    if "formula_well_formed alph a" and "formula_well_formed alph b" for a b s
+    using that by (simp add: two_def)
+  have one_wf: "formula_well_formed alph (one a s)"
+    if "formula_well_formed alph a" for a s
+    using that by (simp add: one_def)
+  have cand_wf: "formula_well_formed alph (cand a b)"
+    if "formula_well_formed alph a" and "formula_well_formed alph b" for a b
+    unfolding cand_def by (rule sub_formula_well_formed[OF ta_w two_wf[OF that]])
+  have cor_wf: "formula_well_formed alph (cor a b)"
+    if "formula_well_formed alph a" and "formula_well_formed alph b" for a b
+    unfolding cor_def by (rule sub_formula_well_formed[OF to_w two_wf[OF that]])
+  have cimp_wf: "formula_well_formed alph (cimp a b)"
+    if "formula_well_formed alph a" and "formula_well_formed alph b" for a b
+    unfolding cimp_def by (rule sub_formula_well_formed[OF ti_w two_wf[OF that]])
+  have cneg_wf: "formula_well_formed alph (cneg a)"
+    if "formula_well_formed alph a" for a
+    unfolding cneg_def by (rule sub_formula_well_formed[OF tn_w one_wf[OF that]])
+  have cfls_wf: "formula_well_formed alph cfls"
+    unfolding cfls_def using botc_ar by simp
+
   interpret FC: fc_alph alph cimp cand cor cneg cfls
     by unfold_locales
-       (rule assms(1) cimp_eval cand_eval cor_eval cneg_eval cfls_eval assms(2) assms(3) assms(4))+
+       ((rule assms(1) cimp_eval cand_eval cor_eval cneg_eval cfls_eval assms(2) assms(3) assms(4)
+              cimp_wf cand_wf cor_wf cneg_wf cfls_wf | assumption)+)
 
   \<comment> \<open>marker atoms for the connective-definition rules\<close>
   define mrk :: "nat \<Rightarrow> string" where "mrk i = replicate (Suc i) (CHR ''m'')" for i
@@ -1441,8 +1721,36 @@ proof -
     qed
   qed
 
+  have Rwf: "(\<forall> p \<in> set (prems r). formula_well_formed alph p)
+             \<and> formula_well_formed alph (concl r)" if rR: "r \<in> R" for r
+  proof -
+    consider "r = mp_rule" | "r \<in> proprules" | "r \<in> cdef_rule ` UNIV"
+      using rR by (auto simp: R_def)
+    thus ?thesis
+    proof cases
+      case 1
+      show ?thesis unfolding 1 mp_rule_def by (auto intro!: cimp_wf)
+    next
+      case 2
+      thus ?thesis
+        by (auto simp: proprules_def intro!: cimp_wf cand_wf cor_wf cneg_wf cfls_wf)
+    next
+      case 3
+      then obtain c where rc: "r = cdef_rule c" by auto
+      have conn_wf: "formula_well_formed alph
+          (Conn c (map (\<lambda>i. Atom (mrk i)) [0..<arity alph c]))"
+        by simp
+      have mk_wf: "formula_well_formed alph
+          (FC.cmk_conn (conn_evals alph c) (map (\<lambda>i. Atom (mrk i)) [0..<arity alph c]))"
+        by (rule FC.cmk_conn_wf) auto
+      show ?thesis
+        unfolding rc cdef_rule_def
+        using FC.ciff_wf[OF conn_wf mk_wf] by simp
+    qed
+  qed
+
   have fs: "frege_system \<lparr>rules = R, alphabet = alph\<rparr>"
-    by (rule FC.frege_system_from_rules[OF Rfin Rsound ax mp])
+    by (rule FC.frege_system_from_rules[OF Rfin Rsound ax mp Rwf])
   have "frege_system \<lparr>rules = R, alphabet = alph\<rparr>
         \<and> alphabet (\<lparr>rules = R, alphabet = alph\<rparr> :: 'c frege) = alph"
     using fs by simp
