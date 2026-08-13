@@ -406,6 +406,8 @@ text \<open>With the finite carrier realised as a connective type 'c2 (the
   rule together with closure_carrier_finite), the closed extension and a
   witnessing renaming exist.\<close>
 
+\<comment> \<open>the expansiveness helper lemmas were removed here; see simulates-expansiveness-repair.md\<close>
+
 lemma extended_frege_exists:
   fixes Rep :: "'c2 \<Rightarrow> (nat \<times> (bool list \<Rightarrow> bool))"
     and Abs :: "(nat \<times> (bool list \<Rightarrow> bool)) \<Rightarrow> 'c2"
@@ -553,6 +555,9 @@ proof -
     ultimately show ?thesis by blast
   qed
 
+  \<comment> \<open>the reference/size-preserving completeness strengthening was removed here; see
+      simulates-expansiveness-repair.md\<close>
+
   \<comment> \<open>a complete Frege system over the closure alphabet exists; @{term F2} adds the
       renamed @{term F1} rules to it\<close>
   obtain Fc :: "'c2 frege" where fc: "frege_system Fc" and fc_alph: "alphabet Fc = alph2"
@@ -648,8 +653,15 @@ qed
 
   
 
-locale frege_closure = frege_balancing +
-  assumes conn_closed_alphabet: "conn_closed (alphabet F)"
+text \<open>Spira balancing needs NO closure assumption.  The connective \<open>conn_fix\<close> below is used
+  only by the arity-reducing \<open>reduce_*\<close> identity and by \<open>collapse\<close>, both of which are
+  superseded by \<open>shc_subst_cons\<close> and \<open>collapse_open\<close>.  They are kept here for alphabets that
+  happen to be closed, but now carry \<open>conn_closed (alphabet F)\<close> as an explicit hypothesis
+  rather than as a locale assumption — so an ARBITRARY Frege system interprets
+  \<open>frege_closure\<close>, which is exactly what lets the last leg of Reckhow's theorem stay
+  inside F2.\<close>
+
+locale frege_closure = frege_balancing
 begin
 
 definition conn_fix where
@@ -660,7 +672,8 @@ definition conn_fix where
                = conn_evals (alphabet F) c (take i args @ b # drop i args)))"
 
 lemma conn_fix_spec:
-  assumes "i < arity (alphabet F) c"
+  assumes cc: "conn_closed (alphabet F)"
+      and lt: "i < arity (alphabet F) c"
   shows "arity (alphabet F) (conn_fix c i b) = arity (alphabet F) c - 1
        \<and> (\<forall>args. length args = arity (alphabet F) c - 1 \<longrightarrow>
             conn_evals (alphabet F) (conn_fix c i b) args
@@ -676,8 +689,8 @@ proof -
              \<and> (\<forall>args. length args = arity (alphabet F) c - 1 \<longrightarrow>
                   conn_evals (alphabet F) c' args
                     = conn_evals (alphabet F) c (take i args @ b # drop i args))))"
-      using conn_closed_alphabet unfolding conn_closed_def by blast
-    thus ?thesis using assms by auto
+      using cc unfolding conn_closed_def by blast
+    thus ?thesis using lt by auto
   qed
   show ?thesis unfolding conn_fix_def by (rule someI_ex[OF ex])
 qed
@@ -734,18 +747,19 @@ lemma reduce_atoms_spec:
   using fresh_atoms_spec[of "arity (alphabet F) c - 1"] by simp
 
 lemma reduce_taut:
-  assumes "arity (alphabet F) c \<ge> 1"
+  assumes cc: "conn_closed (alphabet F)"
+      and ar: "arity (alphabet F) c \<ge> 1"
   shows "\<forall>val. eval (alphabet F) val (iff_form (reduce_lhs c b) (reduce_rhs c b))"
 proof (intro allI)
   fix val
   let ?ev = "eval (alphabet F) val"
   let ?ys = "reduce_atoms c"
   have ylen: "length ?ys = arity (alphabet F) c - 1" using reduce_atoms_spec by simp
-  have a1: "0 < arity (alphabet F) c" using assms by simp
+  have a1: "0 < arity (alphabet F) c" using ar by simp
   have evcomp: "?ev \<circ> Atom = val" by (simp add: fun_eq_iff)
   have spec2: "conn_evals (alphabet F) (conn_fix c 0 b) (map val ?ys)
              = conn_evals (alphabet F) c (take 0 (map val ?ys) @ b # drop 0 (map val ?ys))"
-    using conn_fix_spec[of 0 c b] a1 ylen by simp
+    using conn_fix_spec[OF cc, of 0 c b] a1 ylen by simp
   have lhs: "?ev (reduce_lhs c b) = conn_evals (alphabet F) c (b # map val ?ys)"
   proof -
     have "?ev (if b then true_const else false_const) = b"
@@ -778,19 +792,20 @@ definition reduce_step_depth where
             (iff_form (reduce_lhs c b) (reduce_rhs c b))))))"
 
 lemma reduce_proof:
-  assumes "arity (alphabet F) c \<ge> 1"
+  assumes cc: "conn_closed (alphabet F)"
+      and ar: "arity (alphabet F) c \<ge> 1"
   shows "provable_balanced_iff (reduce_lhs c b) (reduce_rhs c b)
            (reduce_lines c b) (reduce_step_len c b) (reduce_step_depth c b)"
 proof -
   have cf_ar: "arity (alphabet F) (conn_fix c 0 b) = arity (alphabet F) c - 1"
-    using conn_fix_spec[of 0 c b] assms by simp
+    using conn_fix_spec[OF cc, of 0 c b] ar by simp
   have wf_lhs: "formula_well_formed (alphabet F) (reduce_lhs c b)"
-    unfolding reduce_lhs_def using reduce_atoms_spec assms
+    unfolding reduce_lhs_def using reduce_atoms_spec ar
     by (cases b) (auto simp: true_const_wf false_const_wf)
   have wf_rhs: "formula_well_formed (alphabet F) (reduce_rhs c b)"
     unfolding reduce_rhs_def using reduce_atoms_spec cf_ar by simp
   show ?thesis
-    using iff_from_taut[OF wf_lhs wf_rhs reduce_taut[OF assms]]
+    using iff_from_taut[OF wf_lhs wf_rhs reduce_taut[OF cc ar]]
     unfolding reduce_lines_def reduce_step_len_def reduce_step_depth_def .
 qed
 
@@ -799,7 +814,8 @@ definition reduce_sub where
      (\<lambda>v. case map_of (zip (reduce_atoms c) qs) v of None \<Rightarrow> Atom v | Some f \<Rightarrow> f)"
 
 lemma reduce_subst:
-  assumes ar: "arity (alphabet F) c \<ge> 1"
+  assumes cc: "conn_closed (alphabet F)"
+      and ar: "arity (alphabet F) c \<ge> 1"
       and len_qs: "length qs = arity (alphabet F) c - 1"
       and wf_qs: "\<And>q. q \<in> set qs \<Longrightarrow> formula_well_formed (alphabet F) q"
   shows "provable_balanced_iff
@@ -849,7 +865,8 @@ proof -
       using wf_qs by (simp add: subv)
   qed
   note subst_pbi =
-    provable_balanced_iff_subst[OF reduce_proof[where b = b, OF ar] finVS sig_id sig_conn sig_wf]
+    provable_balanced_iff_subst[OF reduce_proof[where b = b, OF cc ar]
+                                   finVS sig_id sig_conn sig_wf]
   have mapslots: "map (sub_formula ?sub) (map Atom ?atoms) = qs"
     using sub_slots by (simp add: comp_def)
   have cb_sub: "sub_formula ?sub (if b then true_const else false_const)
@@ -1061,6 +1078,36 @@ proof -
 qed
 
 subsection \<open>Uniform cost bounds for the schematic proofs\<close>
+
+text \<open>The Shannon step in the shape needed when a frozen slot is written out as a constant
+  argument of \<open>c\<close> rather than absorbed into a connective of smaller arity: expanding
+  argument \<open>j\<close> of \<open>gs\<close> becomes expanding argument \<open>Suc j\<close> of \<open>cb # gs\<close>, at the SAME
+  connective \<open>c\<close>.  This is what lets the auxiliary commutation lemma below avoid the
+  arity-reducing \<open>conn_fix\<close> entirely, and with it the closure assumption.\<close>
+
+lemma shc_subst_cons:
+  assumes ar: "1 \<le> arity (alphabet F) c"
+      and j: "j < arity (alphabet F) c - 1"
+      and len_gs: "length gs = arity (alphabet F) c - 1"
+      and wf_gs: "\<And>g. g \<in> set gs \<Longrightarrow> formula_well_formed (alphabet F) g"
+      and wf_cb: "formula_well_formed (alphabet F) cb"
+      and wfZ: "formula_well_formed (alphabet F) Z"
+  shows "provable_balanced_iff
+           (balance (Conn c (cb # gs[j := true_const]))
+                    (Conn c (cb # gs[j := false_const])) Z)
+           (Conn c (cb # gs[j := Z]))
+           (shc_lines c (Suc j))
+           (shc_step_len c (Suc j) * len_sub (set (shc_atoms c)) (shc_sub c (cb # gs) Z))
+           (shc_step_depth c (Suc j) + depth_sub (set (shc_atoms c)) (shc_sub c (cb # gs) Z))"
+proof -
+  have jc: "Suc j < arity (alphabet F) c" using j ar by simp
+  have lencb: "length (cb # gs) = arity (alphabet F) c" using len_gs ar by simp
+  have wfcbgs: "\<And>g. g \<in> set (cb # gs) \<Longrightarrow> formula_well_formed (alphabet F) g"
+    using wf_cb wf_gs by auto
+  show ?thesis
+    using shc_subst[where d = c and i = "Suc j" and gs = "cb # gs" and Z = Z,
+                    OF jc lencb wfcbgs wfZ] by simp
+qed
 
 definition shc_max_lines where
   "shc_max_lines = Max (insert 0 ((\<lambda>(d,i). shc_lines d i) ` reassoc_index_set))"
@@ -1476,7 +1523,7 @@ lemma commutes_aux:
          \<and> len_formula (Conn c ((if b then true_const else false_const) # qs)) \<le> N
        \<longrightarrow> (\<exists> lines sz dep. provable_balanced_iff
               (spira_trans (Conn c ((if b then true_const else false_const) # qs)))
-              (Conn (conn_fix c 0 b) (map spira_trans qs)) lines sz dep
+              (Conn c ((if b then true_const else false_const) # map spira_trans qs)) lines sz dep
             \<and> lines \<le> poly SL N * 4 ^ count_big qs
             \<and> sz \<le> poly SL N * 4 ^ count_big qs
             \<and> real dep \<le> DD * log 2 (real N + 1) + DDC)"
@@ -1493,8 +1540,7 @@ proof -
     using trans_c by blast
   define MA where "MA = Max (arity (alphabet F) ` UNIV)"
   define Cc :: nat where
-    "Cc = (reduce_max_lines + reduce_max_step_len + reduce_max_step_depth
-         + shc_max_lines + shc_max_step_len + shc_max_step_depth
+    "Cc = (shc_max_lines + shc_max_step_len + shc_max_step_depth
          + balance_cong_lines + balance_cong_step_len + balance_cong_step_depth
          + trans_lines + trans_step_len + trans_step_depth
          + refl_lines + refl_step_len + refl_step_depth
@@ -1510,9 +1556,7 @@ proof -
     unfolding SL_def by (simp add: poly_monom)
   have Ccge1: "1 \<le> Cc" unfolding Cc_def by simp
   have Ccbig: "1000 \<le> Cc" unfolding Cc_def by simp
-  have Cc_red_l: "reduce_max_lines \<le> Cc" unfolding Cc_def by simp
-  have Cc_red_s: "reduce_max_step_len \<le> Cc" unfolding Cc_def by simp
-  have Cc_red_d: "reduce_max_step_depth \<le> Cc" unfolding Cc_def by simp
+  have Cc_shc_l: "shc_max_lines \<le> Cc" unfolding Cc_def by simp
   have Cc_shc_s: "shc_max_step_len \<le> Cc" unfolding Cc_def by simp
   have Cc_shc_d: "shc_max_step_depth \<le> Cc" unfolding Cc_def by simp
   have Cc_bcsl: "balance_cong_step_len \<le> Cc" unfolding Cc_def by simp
@@ -1552,7 +1596,7 @@ proof -
         \<and> len_formula (Conn c ((if b then true_const else false_const) # qs)) \<le> N)
        \<longrightarrow> (\<exists> lines sz dep. provable_balanced_iff
               (spira_trans (Conn c ((if b then true_const else false_const) # qs)))
-              (Conn (conn_fix c 0 b) (map spira_trans qs)) lines sz dep
+              (Conn c ((if b then true_const else false_const) # map spira_trans qs)) lines sz dep
             \<and> lines \<le> poly SL N * 4 ^ count_big qs
             \<and> sz \<le> poly SL N * 4 ^ count_big qs
             \<and> real dep \<le> DD * log 2 (real N + 1) + DDC)"
@@ -1564,7 +1608,7 @@ proof -
         \<and> len_formula (Conn c ((if b then true_const else false_const) # qs)) \<le> N)
        \<longrightarrow> (\<exists> lines sz dep. provable_balanced_iff
               (spira_trans (Conn c ((if b then true_const else false_const) # qs)))
-              (Conn (conn_fix c 0 b) (map spira_trans qs)) lines sz dep
+              (Conn c ((if b then true_const else false_const) # map spira_trans qs)) lines sz dep
             \<and> lines \<le> poly SL N * 4 ^ count_big qs
             \<and> sz \<le> poly SL N * 4 ^ count_big qs
             \<and> real dep \<le> DD * log 2 (real N + 1) + DDC)"
@@ -1583,7 +1627,7 @@ proof -
           by (cases b) (simp_all add: true_const_wf false_const_wf)
         have wfN1: "formula_well_formed (alphabet F) ?N1" using ar wfqs lenqs cb_wf by auto
         show "\<exists> lines sz dep. provable_balanced_iff (spira_trans ?N1)
-                (Conn (conn_fix c 0 b) (map spira_trans qs)) lines sz dep
+                (Conn c (?cb # map spira_trans qs)) lines sz dep
               \<and> lines \<le> poly SL N * 4 ^ count_big qs
               \<and> sz \<le> poly SL N * 4 ^ count_big qs
               \<and> real dep \<le> DD * log 2 (real N + 1) + DDC"
@@ -1605,64 +1649,45 @@ proof -
             using lenN by (simp add: len_true_false_const)
           have wfq': "\<And>q. q \<in> set qs \<Longrightarrow> formula_well_formed (alphabet F) q"
             using wfqs by blast
+          \<comment> \<open>below threshold both sides are literally @{term ?N1}, so reflexivity suffices —
+              this is where the arity-preserving form is strictly simpler than the
+              @{const conn_fix} one, which needed the reduce identity here\<close>
           have pbi: "provable_balanced_iff (spira_trans ?N1)
-                  (Conn (conn_fix c 0 b) (map spira_trans qs))
-                  (reduce_lines c b)
-                  (reduce_step_len c b * len_sub (set (reduce_atoms c)) (reduce_sub c qs))
-                  (reduce_step_depth c b + depth_sub (set (reduce_atoms c)) (reduce_sub c qs))"
-            unfolding idN1 idqs using reduce_subst[OF ar lenqs wfq'] .
+                  (Conn c (?cb # map spira_trans qs))
+                  refl_lines
+                  (refl_step_len * len_formula ?N1)
+                  (refl_step_depth + depth_formula ?N1)"
+            unfolding idN1 idqs using iff_refl[OF wfN1] .
           \<comment> \<open>lines bound\<close>
-          have BL: "reduce_lines c b \<le> poly SL N * 4 ^ count_big qs"
-            using order_trans[OF reduce_lines_le Cc_red_l] order_trans[OF CcSL SLpow]
-            by (rule order_trans)
-          \<comment> \<open>size bound\<close>
-          have BS: "reduce_step_len c b * len_sub (set (reduce_atoms c)) (reduce_sub c qs)
-                  \<le> poly SL N * 4 ^ count_big qs"
+          have BL: "refl_lines \<le> poly SL N * 4 ^ count_big qs"
           proof -
-            have rs: "reduce_step_len c b \<le> Cc"
-              by (rule order_trans[OF reduce_step_len_le Cc_red_s])
-            have ls: "len_sub (set (reduce_atoms c)) (reduce_sub c qs) \<le> N + 1"
-              using reduce_len_sub[OF lenqs] sumle by simp
+            have "refl_lines \<le> Cc" unfolding Cc_def by simp
+            also have "\<dots> \<le> poly SL N" by (rule CcSL)
+            also have "\<dots> \<le> poly SL N * 4 ^ count_big qs" by (rule SLpow)
+            finally show ?thesis .
+          qed
+          \<comment> \<open>size bound\<close>
+          have BS: "refl_step_len * len_formula ?N1 \<le> poly SL N * 4 ^ count_big qs"
+          proof -
+            have rs: "refl_step_len \<le> Cc" unfolding Cc_def by simp
+            have ls: "len_formula ?N1 \<le> N + 1" using lenN by simp
             show ?thesis
               using order_trans[OF mult_le_mono[OF rs ls] Cc1SL] SLpow
               by (rule order_trans)
           qed
           \<comment> \<open>depth bound\<close>
-          have BD: "real (reduce_step_depth c b
-                       + depth_sub (set (reduce_atoms c)) (reduce_sub c qs))
+          have BD: "real (refl_step_depth + depth_formula ?N1)
                   \<le> DD * log 2 (real N + 1) + DDC"
           proof -
-            have dsub: "depth_sub (set (reduce_atoms c)) (reduce_sub c qs) \<le> spira_threshold"
+            have dN: "depth_formula ?N1 \<le> spira_threshold"
             proof -
-              have "depth_sub (set (reduce_atoms c)) (reduce_sub c qs)
-                  = Max (insert 1 (depth_formula ` set qs))"
-                by (rule reduce_depth_sub[OF lenqs])
-              moreover have "\<forall>x\<in>insert 1 (depth_formula ` set qs). x \<le> spira_threshold"
-              proof
-                fix x assume "x \<in> insert 1 (depth_formula ` set qs)"
-                moreover have "spira_threshold \<ge> 2" unfolding spira_threshold_def by simp
-                ultimately consider "x = 1" | q where "q \<in> set qs" "x = depth_formula q" by auto
-                thus "x \<le> spira_threshold"
-                proof cases
-                  case 1 thus ?thesis using \<open>spira_threshold \<ge> 2\<close> by simp
-                next
-                  case 2
-                  have "depth_formula q \<le> len_formula q" by (rule depth_formula_le_len)
-                  also have "len_formula q \<le> sum_list (map len_formula qs)"
-                    using 2 by (auto intro: member_le_sum_list)
-                  also have "\<dots> < len_formula ?N1" by (simp add: len_true_false_const)
-                  finally show ?thesis using True 2 by simp
-                qed
-              qed
-              ultimately show ?thesis by simp
+              have "depth_formula ?N1 \<le> len_formula ?N1" by (rule depth_formula_le_len)
+              thus ?thesis using True by linarith
             qed
-            have rd: "reduce_step_depth c b \<le> Cc"
-              by (rule order_trans[OF reduce_step_depth_le Cc_red_d])
-            have "reduce_step_depth c b
-                 + depth_sub (set (reduce_atoms c)) (reduce_sub c qs)
-                \<le> Cc + spira_threshold" by (rule add_le_mono[OF rd dsub])
-            hence "real (reduce_step_depth c b
-                       + depth_sub (set (reduce_atoms c)) (reduce_sub c qs))
+            have rd: "refl_step_depth \<le> Cc" unfolding Cc_def by simp
+            have "refl_step_depth + depth_formula ?N1 \<le> Cc + spira_threshold"
+              by (rule add_le_mono[OF rd dN])
+            hence "real (refl_step_depth + depth_formula ?N1)
                  \<le> real (Cc + spira_threshold)" by simp
             also have "\<dots> \<le> DDC" unfolding DDC_def by simp
             also have "\<dots> \<le> DD * log 2 (real N + 1) + DDC"
@@ -1700,9 +1725,8 @@ proof -
           then obtain j where j_lt: "j < length qs" and j_big: "2 \<le> len_formula (qs ! j)"
             by blast
           have ar0: "0 < arity (alphabet F) c" using ar by simp
-          have cf_ar: "arity (alphabet F) (conn_fix c 0 b) = arity (alphabet F) c - 1"
-            using conn_fix_spec[of 0 c b] ar0 by simp
-          have jc: "j < arity (alphabet F) (conn_fix c 0 b)" using j_lt lenqs cf_ar by simp
+          have jc: "j < arity (alphabet F) c - 1" using j_lt lenqs by simp
+          have jcS: "Suc j < arity (alphabet F) c" using jc ar by simp
           let ?gbar = "map spira_trans qs"
           have gbar_len: "length ?gbar = arity (alphabet F) c - 1" using lenqs by simp
           have gbar_j: "?gbar ! j = spira_trans (qs ! j)" using j_lt by simp
@@ -1730,7 +1754,7 @@ proof -
           \<comment> \<open>the two arms by the induction hypothesis, with their bounds\<close>
           have armB: "\<And>bb. \<exists> l s d. provable_balanced_iff
                   (spira_trans (Conn c (?cb # qs[j := (if bb then true_const else false_const)])))
-                  (Conn (conn_fix c 0 b) (?gbar[j := (if bb then true_const else false_const)])) l s d
+                  (Conn c (?cb # ?gbar[j := (if bb then true_const else false_const)])) l s d
                 \<and> l \<le> poly SL N * 4 ^ m \<and> s \<le> poly SL N * 4 ^ m
                 \<and> real d \<le> DD * log 2 (real N + 1) + DDC"
           proof -
@@ -1762,7 +1786,7 @@ proof -
                 count_big_update[OF j_lt j_big tlt] by simp
             have "\<exists> lines sz dep. provable_balanced_iff
                     (spira_trans (Conn c (?cb # ?qsa)))
-                    (Conn (conn_fix c 0 b) (map spira_trans ?qsa)) lines sz dep
+                    (Conn c (?cb # map spira_trans ?qsa)) lines sz dep
                   \<and> lines \<le> poly SL N * 4 ^ count_big ?qsa
                   \<and> sz \<le> poly SL N * 4 ^ count_big ?qsa
                   \<and> real dep \<le> DD * log 2 (real N + 1) + DDC"
@@ -1771,24 +1795,24 @@ proof -
               by (simp add: map_update spira_trans_true_const spira_trans_false_const)
             ultimately show "\<exists> l s d. provable_balanced_iff
                   (spira_trans (Conn c (?cb # ?qsa)))
-                  (Conn (conn_fix c 0 b) (?gbar[j := ?cbb])) l s d
+                  (Conn c (?cb # ?gbar[j := ?cbb])) l s d
                 \<and> l \<le> poly SL N * 4 ^ m \<and> s \<le> poly SL N * 4 ^ m
                 \<and> real d \<le> DD * log 2 (real N + 1) + DDC"
               using cbm by simp
           qed
           from armB[of True] obtain lT sT dT where PT:
             "provable_balanced_iff (spira_trans (Conn c (?cb # qs[j := true_const])))
-               (Conn (conn_fix c 0 b) (?gbar[j := true_const])) lT sT dT"
+               (Conn c (?cb # ?gbar[j := true_const])) lT sT dT"
             and PTl: "lT \<le> poly SL N * 4 ^ m" and PTs: "sT \<le> poly SL N * 4 ^ m"
             and PTd: "real dT \<le> DD * log 2 (real N + 1) + DDC" by auto
           from armB[of False] obtain lF sF dF where PF:
             "provable_balanced_iff (spira_trans (Conn c (?cb # qs[j := false_const])))
-               (Conn (conn_fix c 0 b) (?gbar[j := false_const])) lF sF dF"
+               (Conn c (?cb # ?gbar[j := false_const])) lF sF dF"
             and PFl: "lF \<le> poly SL N * 4 ^ m" and PFs: "sF \<le> poly SL N * 4 ^ m"
             and PFd: "real dF \<le> DD * log 2 (real N + 1) + DDC" by auto
           \<comment> \<open>assemble: substitute the arms into the rebalanced selector, then collapse\<close>
-          have gbar_len_c: "length ?gbar = arity (alphabet F) (conn_fix c 0 b)"
-            using gbar_len cf_ar by simp
+          have lencb: "length (?cb # ?gbar) = arity (alphabet F) c"
+            using gbar_len ar by simp
           have wf_qsj: "formula_well_formed (alphabet F) (qs ! j)"
             using wfqs j_lt by (simp add: nth_mem)
           have wf_stqsj: "formula_well_formed (alphabet F) (spira_trans (qs ! j))"
@@ -1823,16 +1847,17 @@ proof -
               by auto
           qed
           have wf_arm_rhs: "formula_well_formed (alphabet F)
-                (Conn (conn_fix c 0 b) (?gbar[j := bc]))"
+                (Conn c (?cb # ?gbar[j := bc]))"
             if bcwf: "formula_well_formed (alphabet F) bc" for bc
           proof -
-            have L: "length (?gbar[j := bc]) = arity (alphabet F) (conn_fix c 0 b)"
-              using gbar_len_c by simp
-            have "\<And>f. f \<in> set (?gbar[j := bc]) \<Longrightarrow> formula_well_formed (alphabet F) f"
+            have L: "length (?cb # ?gbar[j := bc]) = arity (alphabet F) c"
+              using gbar_len ar by simp
+            have "\<And>f. f \<in> set (?cb # ?gbar[j := bc]) \<Longrightarrow> formula_well_formed (alphabet F) f"
             proof -
-              fix f assume "f \<in> set (?gbar[j := bc])"
-              hence "f \<in> insert bc (set ?gbar)" using set_update_subset_insert by fastforce
-              thus "formula_well_formed (alphabet F) f" using wf_gbar bcwf by auto
+              fix f assume "f \<in> set (?cb # ?gbar[j := bc])"
+              hence "f = ?cb \<or> f \<in> insert bc (set ?gbar)"
+                using set_update_subset_insert by fastforce
+              thus "formula_well_formed (alphabet F) f" using wf_gbar bcwf cb_wf by auto
             qed
             with L show ?thesis by auto
           qed
@@ -1841,19 +1866,19 @@ proof -
           have wf_reb: "formula_well_formed (alphabet F) (rebalancing ?N1 [Suc j])"
             by (rule rebalancing_wf[OF wfN1 validpos])
           have wf_balC: "formula_well_formed (alphabet F)
-                (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                         (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                (balance (Conn c (?cb # ?gbar[j := true_const]))
+                         (Conn c (?cb # ?gbar[j := false_const]))
                          (spira_trans (qs ! j)))"
             by (rule balance_wf[OF wf_arm_rhs[OF true_const_wf]
                                    wf_arm_rhs[OF false_const_wf] wf_stqsj])
-          have wf_conn_gbar: "formula_well_formed (alphabet F) (Conn (conn_fix c 0 b) ?gbar)"
-            using gbar_len_c wf_gbar by auto
+          have wf_conn_gbar: "formula_well_formed (alphabet F) (Conn c (?cb # ?gbar))"
+            using lencb wf_gbar cb_wf by auto
           note PB = balance_cong[OF PT PF iff_refl[OF wf_stqsj]
                        wf_arm_lhs[OF true_const_wf] wf_arm_rhs[OF true_const_wf]
                        wf_arm_lhs[OF false_const_wf] wf_arm_rhs[OF false_const_wf]
                        wf_stqsj wf_stqsj]
           note PB' = PB[folded rebeq]
-          note shc = shc_subst[OF jc gbar_len_c wf_gbar wf_stqsj]
+          note shc = shc_subst_cons[OF ar jc gbar_len wf_gbar cb_wf wf_stqsj]
           have gupd: "?gbar[j := spira_trans (qs ! j)] = ?gbar" using gbar_j[symmetric] by simp
           note shc' = shc[unfolded gupd]
           note comp = iff_trans[OF iff_trans[OF P0 PB' wf_stN1 wf_reb wf_balC]
@@ -1874,11 +1899,11 @@ proof -
           qed
           \<comment> \<open>lines\<close>
           have Lconst: "refl_lines + balance_cong_lines
-                      + shc_lines (conn_fix c 0 b) j + 2 * trans_lines \<le> poly SL N"
+                      + shc_lines c (Suc j) + 2 * trans_lines \<le> poly SL N"
           proof -
-            have "refl_lines + balance_cong_lines + shc_lines (conn_fix c 0 b) j + 2 * trans_lines
+            have "refl_lines + balance_cong_lines + shc_lines c (Suc j) + 2 * trans_lines
                 \<le> refl_lines + balance_cong_lines + shc_max_lines + 2 * trans_lines"
-              using shc_lines_le[OF jc] by simp
+              using shc_lines_le[OF jcS] by simp
             also have "\<dots> \<le> Cc" unfolding Cc_def by simp
             also have "\<dots> \<le> poly SL N" by (rule CcSL)
             finally show ?thesis .
@@ -2001,26 +2026,56 @@ proof -
               thus ?thesis by simp
             qed
           qed
-          have szB1: "len_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const])) \<le> ?SU"
+          \<comment> \<open>the frozen slot is written out, so each node is one symbol longer than in the
+              arity-reduced form; that costs exactly the \<open>1 \<le> poly rebal_tb N\<close> slack below\<close>
+          have tb1: "1 \<le> poly rebal_tb N"
+            using szZ len_formula_ge_1[of "spira_trans (qs ! j)"] by simp
+          have szB1: "len_formula (Conn c (?cb # ?gbar[j := true_const])) \<le> ?SU"
           proof -
-            have "sum_list (map len_formula (?gbar[j := true_const]))
-                \<le> length (?gbar[j := true_const]) * (poly rebal_tb N + 1)"
-              by (rule sum_list_map_le[OF gbarT_each])
-            also have "\<dots> \<le> MA * (poly rebal_tb N + 1)"
-              by (rule mult_le_mono1) (use gbar_len_MA in simp)
-            finally show ?thesis by simp
+            have s: "sum_list (map len_formula (?gbar[j := true_const]))
+                   \<le> MA * (poly rebal_tb N + 1)"
+            proof -
+              have "sum_list (map len_formula (?gbar[j := true_const]))
+                  \<le> length (?gbar[j := true_const]) * (poly rebal_tb N + 1)"
+                by (rule sum_list_map_le[OF gbarT_each])
+              also have "\<dots> \<le> MA * (poly rebal_tb N + 1)"
+                by (rule mult_le_mono1) (use gbar_len_MA in simp)
+              finally show ?thesis .
+            qed
+            have e: "len_formula (Conn c (?cb # ?gbar[j := true_const]))
+                   = 2 + sum_list (map len_formula (?gbar[j := true_const]))"
+              by (simp add: len_true_false_const)
+            have "(2::nat) + MA * (poly rebal_tb N + 1) \<le> (MA + 1) * (poly rebal_tb N + 1)"
+              using tb1 by (simp add: algebra_simps)
+            thus ?thesis using s e by linarith
           qed
-          have szB2: "len_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const])) \<le> ?SU"
+          have szB2: "len_formula (Conn c (?cb # ?gbar[j := false_const])) \<le> ?SU"
           proof -
-            have "sum_list (map len_formula (?gbar[j := false_const]))
-                \<le> length (?gbar[j := false_const]) * (poly rebal_tb N + 1)"
-              by (rule sum_list_map_le[OF gbarF_each])
-            also have "\<dots> \<le> MA * (poly rebal_tb N + 1)"
-              by (rule mult_le_mono1) (use gbar_len_MA in simp)
-            finally show ?thesis by simp
+            have s: "sum_list (map len_formula (?gbar[j := false_const]))
+                   \<le> MA * (poly rebal_tb N + 1)"
+            proof -
+              have "sum_list (map len_formula (?gbar[j := false_const]))
+                  \<le> length (?gbar[j := false_const]) * (poly rebal_tb N + 1)"
+                by (rule sum_list_map_le[OF gbarF_each])
+              also have "\<dots> \<le> MA * (poly rebal_tb N + 1)"
+                by (rule mult_le_mono1) (use gbar_len_MA in simp)
+              finally show ?thesis .
+            qed
+            have e: "len_formula (Conn c (?cb # ?gbar[j := false_const]))
+                   = 2 + sum_list (map len_formula (?gbar[j := false_const]))"
+              by (simp add: len_true_false_const)
+            have "(2::nat) + MA * (poly rebal_tb N + 1) \<le> (MA + 1) * (poly rebal_tb N + 1)"
+              using tb1 by (simp add: algebra_simps)
+            thus ?thesis using s e by linarith
           qed
-          have szB3: "len_formula (Conn (conn_fix c 0 b) ?gbar) \<le> ?SU"
-            using gbar_sum by simp
+          have szB3: "len_formula (Conn c (?cb # ?gbar)) \<le> ?SU"
+          proof -
+            have e: "len_formula (Conn c (?cb # ?gbar)) = 2 + sum_list (map len_formula ?gbar)"
+              by (simp add: len_true_false_const)
+            have "(2::nat) + MA * poly rebal_tb N \<le> (MA + 1) * (poly rebal_tb N + 1)"
+              using tb1 by (simp add: algebra_simps)
+            thus ?thesis using gbar_sum e by linarith
+          qed
           have szSU: "poly rebal_tb N \<le> ?SU" by simp
           have SU1: "1 \<le> ?SU" by simp
           have szC1: "len_formula (rebalancing ?N1 [Suc j]) \<le> Cc * (4 * ?SU)"
@@ -2042,34 +2097,36 @@ proof -
             qed
             finally show ?thesis .
           qed
-          have szC2: "len_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                           (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+          have szC2: "len_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                           (Conn c (?cb # ?gbar[j := false_const]))
                                            (spira_trans (qs ! j))) \<le> Cc * (4 * ?SU)"
           proof -
-            have "len_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                       (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+            have "len_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                       (Conn c (?cb # ?gbar[j := false_const]))
                                        (spira_trans (qs ! j)))
                 \<le> len_formula custom_balancing
-                  * (len_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                     + len_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                  * (len_formula (Conn c (?cb # ?gbar[j := true_const]))
+                     + len_formula (Conn c (?cb # ?gbar[j := false_const]))
                      + len_formula (spira_trans (qs ! j)) + 1)" by (rule len_balance_le)
             also have "\<dots> \<le> Cc * (4 * ?SU)"
             proof (rule mult_le_mono[OF Cc_cbl])
-              show "len_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                  + len_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+              show "len_formula (Conn c (?cb # ?gbar[j := true_const]))
+                  + len_formula (Conn c (?cb # ?gbar[j := false_const]))
                   + len_formula (spira_trans (qs ! j)) + 1 \<le> 4 * ?SU"
                 using szB1 szB2 szZ szSU SU1 by linarith
             qed
             finally show ?thesis .
           qed
-          have szLsub: "len_sub (set (shc_atoms (conn_fix c 0 b)))
-                          (shc_sub (conn_fix c 0 b) ?gbar (spira_trans (qs ! j))) \<le> ?SU"
+          have szLsub: "len_sub (set (shc_atoms c))
+                          (shc_sub c (?cb # ?gbar) (spira_trans (qs ! j))) \<le> ?SU"
           proof -
-            have "len_sub (set (shc_atoms (conn_fix c 0 b)))
-                    (shc_sub (conn_fix c 0 b) ?gbar (spira_trans (qs ! j)))
-                = max 1 (sum_list (map len_formula ?gbar) + len_formula (spira_trans (qs ! j)))"
-              by (rule shc_len_sub[OF gbar_len_c])
-            also have "\<dots> \<le> ?SU" using gbar_sum szZ by simp
+            have "len_sub (set (shc_atoms c))
+                    (shc_sub c (?cb # ?gbar) (spira_trans (qs ! j)))
+                = max 1 (sum_list (map len_formula (?cb # ?gbar))
+                           + len_formula (spira_trans (qs ! j)))"
+              by (rule shc_len_sub[OF lencb])
+            also have "\<dots> \<le> ?SU"
+              using gbar_sum szZ by (simp add: len_true_false_const)
             finally show ?thesis .
           qed
           \<comment> \<open>--- products: each summand of the composed size bound ---\<close>
@@ -2083,34 +2140,34 @@ proof -
           have ccfour: "Cc * (4 * ?SU) = 4 * (Cc * ?SU)" by (rule mult.left_commute)
           have lenC1_4: "len_formula (rebalancing ?N1 [Suc j]) \<le> 4 * (Cc * ?SU)"
             by (rule szC1[unfolded ccfour])
-          have lenC2_4: "len_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                              (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+          have lenC2_4: "len_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                              (Conn c (?cb # ?gbar[j := false_const]))
                                               (spira_trans (qs ! j))) \<le> 4 * (Cc * ?SU)"
             by (rule szC2[unfolded ccfour])
-          have shc_sl_Cc: "shc_step_len (conn_fix c 0 b) j \<le> Cc"
-            using shc_step_len_le[OF jc] Cc_shc_s by (rule order_trans)
+          have shc_sl_Cc: "shc_step_len c (Suc j) \<le> Cc"
+            using shc_step_len_le[OF jcS] Cc_shc_s by (rule order_trans)
           \<comment> \<open>combos (the parenthesised size sums) are all \<le> 36 (Cc \<cdot> SU)\<close>
           have combo1: "len_formula (spira_trans (qs ! j)) \<le> 36 * (Cc * ?SU)"
             using lenZ_SU W by linarith
           have combo2: "6 * (len_formula (spira_trans (Conn c (?cb # qs[j := true_const])))
-                            + len_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
+                            + len_formula (Conn c (?cb # ?gbar[j := true_const]))
                             + len_formula (spira_trans (Conn c (?cb # qs[j := false_const])))
-                            + len_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                            + len_formula (Conn c (?cb # ?gbar[j := false_const]))
                             + len_formula (spira_trans (qs ! j))
                             + len_formula (spira_trans (qs ! j))) \<le> 36 * (Cc * ?SU)"
           proof -
             have "len_formula (spira_trans (Conn c (?cb # qs[j := true_const])))
-                + len_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
+                + len_formula (Conn c (?cb # ?gbar[j := true_const]))
                 + len_formula (spira_trans (Conn c (?cb # qs[j := false_const])))
-                + len_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                + len_formula (Conn c (?cb # ?gbar[j := false_const]))
                 + len_formula (spira_trans (qs ! j))
                 + len_formula (spira_trans (qs ! j))
                 \<le> ?SU + ?SU + ?SU + ?SU + ?SU + ?SU"
               by (intro add_mono A3_SU szB1 A4_SU szB2 lenZ_SU)
             hence "6 * (len_formula (spira_trans (Conn c (?cb # qs[j := true_const])))
-                + len_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
+                + len_formula (Conn c (?cb # ?gbar[j := true_const]))
                 + len_formula (spira_trans (Conn c (?cb # qs[j := false_const])))
-                + len_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                + len_formula (Conn c (?cb # ?gbar[j := false_const]))
                 + len_formula (spira_trans (qs ! j))
                 + len_formula (spira_trans (qs ! j)))
                 \<le> 6 * (?SU + ?SU + ?SU + ?SU + ?SU + ?SU)" by (rule mult_le_mono2)
@@ -2119,15 +2176,15 @@ proof -
             finally show ?thesis .
           qed
           have combo3: "len_formula (spira_trans ?N1) + len_formula (rebalancing ?N1 [Suc j])
-                      + len_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                             (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                      + len_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                             (Conn c (?cb # ?gbar[j := false_const]))
                                              (spira_trans (qs ! j))) \<le> 36 * (Cc * ?SU)"
           proof -
             have a: "len_formula (spira_trans ?N1) \<le> Cc * ?SU"
               using lenN1_SU W by (rule order_trans)
             have "len_formula (spira_trans ?N1) + len_formula (rebalancing ?N1 [Suc j])
-                + len_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                       (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                + len_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                       (Conn c (?cb # ?gbar[j := false_const]))
                                        (spira_trans (qs ! j)))
                 \<le> Cc * ?SU + 4 * (Cc * ?SU) + 4 * (Cc * ?SU)"
               by (rule add_mono[OF add_mono[OF a lenC1_4] lenC2_4])
@@ -2135,30 +2192,30 @@ proof -
             also have "\<dots> \<le> 36 * (Cc * ?SU)" by simp
             finally show ?thesis .
           qed
-          have combo4: "len_sub (set (shc_atoms (conn_fix c 0 b)))
-                          (shc_sub (conn_fix c 0 b) ?gbar (spira_trans (qs ! j))) \<le> 36 * (Cc * ?SU)"
+          have combo4: "len_sub (set (shc_atoms c))
+                          (shc_sub c (?cb # ?gbar) (spira_trans (qs ! j))) \<le> 36 * (Cc * ?SU)"
           proof -
-            have "len_sub (set (shc_atoms (conn_fix c 0 b)))
-                    (shc_sub (conn_fix c 0 b) ?gbar (spira_trans (qs ! j))) \<le> Cc * ?SU"
+            have "len_sub (set (shc_atoms c))
+                    (shc_sub c (?cb # ?gbar) (spira_trans (qs ! j))) \<le> Cc * ?SU"
               using szLsub W by (rule order_trans)
             also have "Cc * ?SU \<le> 36 * (Cc * ?SU)" by simp
             finally show ?thesis .
           qed
           have combo5: "len_formula (spira_trans ?N1)
-                      + len_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                             (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                      + len_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                             (Conn c (?cb # ?gbar[j := false_const]))
                                              (spira_trans (qs ! j)))
-                      + len_formula (Conn (conn_fix c 0 b) ?gbar) \<le> 36 * (Cc * ?SU)"
+                      + len_formula (Conn c (?cb # ?gbar)) \<le> 36 * (Cc * ?SU)"
           proof -
             have a: "len_formula (spira_trans ?N1) \<le> Cc * ?SU"
               using lenN1_SU W by (rule order_trans)
-            have b: "len_formula (Conn (conn_fix c 0 b) ?gbar) \<le> Cc * ?SU"
+            have b: "len_formula (Conn c (?cb # ?gbar)) \<le> Cc * ?SU"
               using szB3 W by (rule order_trans)
             have "len_formula (spira_trans ?N1)
-                + len_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                       (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                + len_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                       (Conn c (?cb # ?gbar[j := false_const]))
                                        (spira_trans (qs ! j)))
-                + len_formula (Conn (conn_fix c 0 b) ?gbar)
+                + len_formula (Conn c (?cb # ?gbar))
                 \<le> Cc * ?SU + 4 * (Cc * ?SU) + Cc * ?SU"
               by (rule add_mono[OF add_mono[OF a lenC2_4] b])
             also have "\<dots> = 6 * (Cc * ?SU)" by simp
@@ -2169,30 +2226,30 @@ proof -
             using mult_le_mono[OF Cc_rfsl combo1] by (simp add: ac_simps)
           have P2: "balance_cong_step_len
                     * (6 * (len_formula (spira_trans (Conn c (?cb # qs[j := true_const])))
-                            + len_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
+                            + len_formula (Conn c (?cb # ?gbar[j := true_const]))
                             + len_formula (spira_trans (Conn c (?cb # qs[j := false_const])))
-                            + len_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                            + len_formula (Conn c (?cb # ?gbar[j := false_const]))
                             + len_formula (spira_trans (qs ! j))
                             + len_formula (spira_trans (qs ! j))))
                   \<le> 36 * (Cc * (Cc * ?SU))"
             using mult_le_mono[OF Cc_bcsl combo2] by (simp add: ac_simps)
           have P3: "trans_step_len * (len_formula (spira_trans ?N1)
                       + len_formula (rebalancing ?N1 [Suc j])
-                      + len_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                             (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                      + len_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                             (Conn c (?cb # ?gbar[j := false_const]))
                                              (spira_trans (qs ! j))))
                   \<le> 36 * (Cc * (Cc * ?SU))"
             using mult_le_mono[OF Cc_tsl combo3] by (simp add: ac_simps)
-          have P4: "shc_step_len (conn_fix c 0 b) j
-                    * len_sub (set (shc_atoms (conn_fix c 0 b)))
-                              (shc_sub (conn_fix c 0 b) ?gbar (spira_trans (qs ! j)))
+          have P4: "shc_step_len c (Suc j)
+                    * len_sub (set (shc_atoms c))
+                              (shc_sub c (?cb # ?gbar) (spira_trans (qs ! j)))
                   \<le> 36 * (Cc * (Cc * ?SU))"
             using mult_le_mono[OF shc_sl_Cc combo4] by (simp add: ac_simps)
           have P5: "trans_step_len * (len_formula (spira_trans ?N1)
-                      + len_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                             (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                      + len_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                             (Conn c (?cb # ?gbar[j := false_const]))
                                              (spira_trans (qs ! j)))
-                      + len_formula (Conn (conn_fix c 0 b) ?gbar))
+                      + len_formula (Conn c (?cb # ?gbar)))
                   \<le> 36 * (Cc * (Cc * ?SU))"
             using mult_le_mono[OF Cc_tsl combo5] by (simp add: ac_simps)
           have SZclean: "5 * (36 * (Cc * (Cc * ?SU))) \<le> poly SL N"
@@ -2283,19 +2340,31 @@ proof -
               assume "g \<in> set ?gbar" thus ?thesis using gbar_dep[of g] by simp
             qed
           qed
-          have dB1: "real (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const]))) \<le> ?LGN + 2"
+          have cb_dep_le: "depth_formula ?cb \<le> 1"
+            using tc_dep_le fc_dep_le by (cases b) simp_all
+          have cbd: "real (depth_formula ?cb) \<le> ?LGN + 1"
+            using cb_dep_le LGNpos by simp
+          have cbd0: "real (depth_formula ?cb) \<le> ?LGN"
+            using cb_dep_le LGN1 by simp
+          have dB1: "real (depth_formula (Conn c (?cb # ?gbar[j := true_const]))) \<le> ?LGN + 2"
           proof -
-            have "0 \<le> ?LGN + 1" using LGNpos by simp
-            from conn_dep_le[OF gbarT_dep this] show ?thesis by simp
+            have z: "0 \<le> ?LGN + 1" using LGNpos by simp
+            have "\<forall>g\<in>set (?cb # ?gbar[j := true_const]). real (depth_formula g) \<le> ?LGN + 1"
+              using gbarT_dep cbd by simp
+            from conn_dep_le[OF this z] show ?thesis by simp
           qed
-          have dB2: "real (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const]))) \<le> ?LGN + 2"
+          have dB2: "real (depth_formula (Conn c (?cb # ?gbar[j := false_const]))) \<le> ?LGN + 2"
           proof -
-            have "0 \<le> ?LGN + 1" using LGNpos by simp
-            from conn_dep_le[OF gbarF_dep this] show ?thesis by simp
+            have z: "0 \<le> ?LGN + 1" using LGNpos by simp
+            have "\<forall>g\<in>set (?cb # ?gbar[j := false_const]). real (depth_formula g) \<le> ?LGN + 1"
+              using gbarF_dep cbd by simp
+            from conn_dep_le[OF this z] show ?thesis by simp
           qed
-          have dB3: "real (depth_formula (Conn (conn_fix c 0 b) ?gbar)) \<le> ?LGN + 2"
+          have dB3: "real (depth_formula (Conn c (?cb # ?gbar))) \<le> ?LGN + 2"
           proof -
-            from conn_dep_le[OF gbar_dep_all LGNpos] show ?thesis by simp
+            have "\<forall>g\<in>set (?cb # ?gbar). real (depth_formula g) \<le> ?LGN"
+              using gbar_dep_all cbd0 by simp
+            from conn_dep_le[OF this LGNpos] show ?thesis by simp
           qed
           \<comment> \<open>balance-node depths\<close>
           have dreb: "real (depth_formula (rebalancing ?N1 [Suc j]))
@@ -2311,43 +2380,47 @@ proof -
           qed
           have dZ2: "real (depth_formula (spira_trans (qs ! j))) \<le> ?LGN + 2" using dZ by simp
           have LGN2_1: "(1::real) \<le> ?LGN + 2" using LGNpos by simp
-          have dC2: "real (depth_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                                  (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+          have dC2: "real (depth_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                                  (Conn c (?cb # ?gbar[j := false_const]))
                                                   (spira_trans (qs ! j))))
                    \<le> real (depth_formula custom_balancing) + (?LGN + 2)"
             by (rule balance_dep_le[OF dB1 dB2 dZ2 LGN2_1])
           \<comment> \<open>the shc substitution depth\<close>
-          have ddsub: "real (depth_sub (set (shc_atoms (conn_fix c 0 b)))
-                              (shc_sub (conn_fix c 0 b) ?gbar (spira_trans (qs ! j)))) \<le> ?LGN + 1"
+          have ddsub: "real (depth_sub (set (shc_atoms c))
+                              (shc_sub c (?cb # ?gbar) (spira_trans (qs ! j)))) \<le> ?LGN + 1"
           proof -
-            have eq: "depth_sub (set (shc_atoms (conn_fix c 0 b)))
-                        (shc_sub (conn_fix c 0 b) ?gbar (spira_trans (qs ! j)))
-                    = Max (insert 1 (depth_formula ` set (?gbar @ [spira_trans (qs ! j)])))"
-              by (rule shc_depth_sub[OF gbar_len_c])
-            have bnd: "\<forall>x\<in>insert 1 (depth_formula ` set (?gbar @ [spira_trans (qs ! j)])).
+            have eq: "depth_sub (set (shc_atoms c))
+                        (shc_sub c (?cb # ?gbar) (spira_trans (qs ! j)))
+                    = Max (insert 1 (depth_formula ` set ((?cb # ?gbar) @ [spira_trans (qs ! j)])))"
+              by (rule shc_depth_sub[OF lencb])
+            have bnd: "\<forall>x\<in>insert 1 (depth_formula ` set ((?cb # ?gbar) @ [spira_trans (qs ! j)])).
                          real x \<le> ?LGN + 1"
             proof
-              fix x assume "x \<in> insert 1 (depth_formula ` set (?gbar @ [spira_trans (qs ! j)]))"
+              fix x assume "x \<in> insert 1 (depth_formula ` set ((?cb # ?gbar) @ [spira_trans (qs ! j)]))"
               then consider "x = 1"
-                | g where "g \<in> set (?gbar @ [spira_trans (qs ! j)])" "x = depth_formula g" by auto
+                | g where "g \<in> set ((?cb # ?gbar) @ [spira_trans (qs ! j)])" "x = depth_formula g"
+                by auto
               thus "real x \<le> ?LGN + 1"
               proof cases
                 case 1 thus ?thesis using LGNpos by simp
               next
                 case 2
-                have "g \<in> set ?gbar \<or> g = spira_trans (qs ! j)" using 2(1) by auto
+                have "g = ?cb \<or> g \<in> set ?gbar \<or> g = spira_trans (qs ! j)" using 2(1) by auto
                 thus ?thesis
-                proof
+                proof (elim disjE)
+                  assume "g = ?cb" thus ?thesis using cbd 2(2) by simp
+                next
                   assume "g \<in> set ?gbar" thus ?thesis using gbar_dep[of g] 2(2) by simp
                 next
                   assume "g = spira_trans (qs ! j)" thus ?thesis using dZ 2(2) by simp
                 qed
               qed
             qed
-            have "Max (insert 1 (depth_formula ` set (?gbar @ [spira_trans (qs ! j)])))
-                    \<in> insert 1 (depth_formula ` set (?gbar @ [spira_trans (qs ! j)]))"
+            have "Max (insert 1 (depth_formula ` set ((?cb # ?gbar) @ [spira_trans (qs ! j)])))
+                    \<in> insert 1 (depth_formula ` set ((?cb # ?gbar) @ [spira_trans (qs ! j)]))"
               by (intro Max_in) auto
-            hence "real (Max (insert 1 (depth_formula ` set (?gbar @ [spira_trans (qs ! j)]))))
+            hence "real (Max (insert 1 (depth_formula
+                       ` set ((?cb # ?gbar) @ [spira_trans (qs ! j)]))))
                  \<le> ?LGN + 1" using bnd by blast
             thus ?thesis unfolding eq .
           qed
@@ -2391,10 +2464,10 @@ proof -
               using Cc_tsd Cc_cbd by linarith
             thus ?thesis unfolding DDC_def by simp
           qed
-          have cshc1: "real (shc_step_depth (conn_fix c 0 b) j) + 1 \<le> DDC"
+          have cshc1: "real (shc_step_depth c (Suc j)) + 1 \<le> DDC"
           proof -
-            have "shc_step_depth (conn_fix c 0 b) j \<le> Cc"
-              by (rule order_trans[OF shc_step_depth_le[OF jc] Cc_shc_d])
+            have "shc_step_depth c (Suc j) \<le> Cc"
+              by (rule order_trans[OF shc_step_depth_le[OF jcS] Cc_shc_d])
             thus ?thesis unfolding DDC_def by simp
           qed
           \<comment> \<open>leaf bounds: every leaf of comp's depth is \<le> ?LGN + DDC\<close>
@@ -2415,32 +2488,32 @@ proof -
           have dZw: "real (depth_formula (spira_trans (qs ! j))) \<le> ?LGN + 2"
             using dZ by simp
           have dmax6: "real (max (depth_formula (spira_trans (Conn c (?cb # qs[j := true_const]))))
-                  (max (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const])))
+                  (max (depth_formula (Conn c (?cb # ?gbar[j := true_const])))
                   (max (depth_formula (spira_trans (Conn c (?cb # qs[j := false_const]))))
-                  (max (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const])))
+                  (max (depth_formula (Conn c (?cb # ?gbar[j := false_const])))
                   (max (depth_formula (spira_trans (qs ! j)))
                        (depth_formula (spira_trans (qs ! j))))))))
                 \<le> ?LGN + 2"
             by (rule real_of_nat_max_le dA3w dB1 dA4w dB2 dZw)+
           have DL5: "real (balance_cong_step_depth
                   + max (depth_formula (spira_trans (Conn c (?cb # qs[j := true_const]))))
-                  (max (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const])))
+                  (max (depth_formula (Conn c (?cb # ?gbar[j := true_const])))
                   (max (depth_formula (spira_trans (Conn c (?cb # qs[j := false_const]))))
-                  (max (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const])))
+                  (max (depth_formula (Conn c (?cb # ?gbar[j := false_const])))
                   (max (depth_formula (spira_trans (qs ! j)))
                        (depth_formula (spira_trans (qs ! j)))))))) \<le> ?LGN + DDC"
           proof -
             have "real (balance_cong_step_depth + max (depth_formula (spira_trans (Conn c (?cb # qs[j := true_const]))))
-                  (max (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const])))
+                  (max (depth_formula (Conn c (?cb # ?gbar[j := true_const])))
                   (max (depth_formula (spira_trans (Conn c (?cb # qs[j := false_const]))))
-                  (max (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const])))
+                  (max (depth_formula (Conn c (?cb # ?gbar[j := false_const])))
                   (max (depth_formula (spira_trans (qs ! j)))
                        (depth_formula (spira_trans (qs ! j))))))))
                 = real balance_cong_step_depth
                   + real (max (depth_formula (spira_trans (Conn c (?cb # qs[j := true_const]))))
-                  (max (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := true_const])))
+                  (max (depth_formula (Conn c (?cb # ?gbar[j := true_const])))
                   (max (depth_formula (spira_trans (Conn c (?cb # qs[j := false_const]))))
-                  (max (depth_formula (Conn (conn_fix c 0 b) (?gbar[j := false_const])))
+                  (max (depth_formula (Conn c (?cb # ?gbar[j := false_const])))
                   (max (depth_formula (spira_trans (qs ! j)))
                        (depth_formula (spira_trans (qs ! j))))))))" by (rule of_nat_add)
             also have "\<dots> \<le> ?LGN + DDC" using dmax6 cbcsd2 by linarith
@@ -2448,8 +2521,8 @@ proof -
           qed
           have DL6: "real (trans_step_depth + max (depth_formula (spira_trans ?N1))
                   (max (depth_formula (rebalancing ?N1 [Suc j]))
-                       (depth_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                               (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                       (depth_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                               (Conn c (?cb # ?gbar[j := false_const]))
                                                (spira_trans (qs ! j)))))) \<le> ?LGN + DDC"
           proof -
             have dN1_M: "real (depth_formula (spira_trans ?N1))
@@ -2458,56 +2531,56 @@ proof -
                         \<le> real (depth_formula custom_balancing) + (?LGN + 2)" using dreb by simp
             have "real (max (depth_formula (spira_trans ?N1))
                   (max (depth_formula (rebalancing ?N1 [Suc j]))
-                       (depth_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                               (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                       (depth_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                               (Conn c (?cb # ?gbar[j := false_const]))
                                                (spira_trans (qs ! j))))))
                 \<le> real (depth_formula custom_balancing) + (?LGN + 2)"
               using dN1_M dreb_M dC2 by (simp add: of_nat_max)
             hence "real (trans_step_depth + max (depth_formula (spira_trans ?N1))
                   (max (depth_formula (rebalancing ?N1 [Suc j]))
-                       (depth_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                               (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                       (depth_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                               (Conn c (?cb # ?gbar[j := false_const]))
                                                (spira_trans (qs ! j))))))
                 \<le> real trans_step_depth + (real (depth_formula custom_balancing) + (?LGN + 2))"
               by simp
             also have "\<dots> \<le> ?LGN + DDC" using ctsd_cb2 by linarith
             finally show ?thesis .
           qed
-          have DL7: "real (shc_step_depth (conn_fix c 0 b) j
-                  + depth_sub (set (shc_atoms (conn_fix c 0 b)))
-                              (shc_sub (conn_fix c 0 b) ?gbar (spira_trans (qs ! j)))) \<le> ?LGN + DDC"
+          have DL7: "real (shc_step_depth c (Suc j)
+                  + depth_sub (set (shc_atoms c))
+                              (shc_sub c (?cb # ?gbar) (spira_trans (qs ! j)))) \<le> ?LGN + DDC"
           proof -
-            have "real (shc_step_depth (conn_fix c 0 b) j
-                  + depth_sub (set (shc_atoms (conn_fix c 0 b)))
-                              (shc_sub (conn_fix c 0 b) ?gbar (spira_trans (qs ! j))))
-                = real (shc_step_depth (conn_fix c 0 b) j)
-                  + real (depth_sub (set (shc_atoms (conn_fix c 0 b)))
-                              (shc_sub (conn_fix c 0 b) ?gbar (spira_trans (qs ! j))))" by simp
+            have "real (shc_step_depth c (Suc j)
+                  + depth_sub (set (shc_atoms c))
+                              (shc_sub c (?cb # ?gbar) (spira_trans (qs ! j))))
+                = real (shc_step_depth c (Suc j))
+                  + real (depth_sub (set (shc_atoms c))
+                              (shc_sub c (?cb # ?gbar) (spira_trans (qs ! j))))" by simp
             also have "\<dots> \<le> ?LGN + DDC" using ddsub cshc1 by linarith
             finally show ?thesis .
           qed
           have DL8: "real (trans_step_depth + max (depth_formula (spira_trans ?N1))
-                  (max (depth_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                               (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                  (max (depth_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                               (Conn c (?cb # ?gbar[j := false_const]))
                                                (spira_trans (qs ! j))))
-                       (depth_formula (Conn (conn_fix c 0 b) ?gbar)))) \<le> ?LGN + DDC"
+                       (depth_formula (Conn c (?cb # ?gbar))))) \<le> ?LGN + DDC"
           proof -
             have dN1_M: "real (depth_formula (spira_trans ?N1))
                        \<le> real (depth_formula custom_balancing) + (?LGN + 2)" using dN1 by simp
-            have dB3_M: "real (depth_formula (Conn (conn_fix c 0 b) ?gbar))
+            have dB3_M: "real (depth_formula (Conn c (?cb # ?gbar)))
                        \<le> real (depth_formula custom_balancing) + (?LGN + 2)" using dB3 by simp
             have "real (max (depth_formula (spira_trans ?N1))
-                  (max (depth_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                               (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                  (max (depth_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                               (Conn c (?cb # ?gbar[j := false_const]))
                                                (spira_trans (qs ! j))))
-                       (depth_formula (Conn (conn_fix c 0 b) ?gbar))))
+                       (depth_formula (Conn c (?cb # ?gbar)))))
                 \<le> real (depth_formula custom_balancing) + (?LGN + 2)"
               using dN1_M dC2 dB3_M by (simp add: of_nat_max)
             hence "real (trans_step_depth + max (depth_formula (spira_trans ?N1))
-                  (max (depth_formula (balance (Conn (conn_fix c 0 b) (?gbar[j := true_const]))
-                                               (Conn (conn_fix c 0 b) (?gbar[j := false_const]))
+                  (max (depth_formula (balance (Conn c (?cb # ?gbar[j := true_const]))
+                                               (Conn c (?cb # ?gbar[j := false_const]))
                                                (spira_trans (qs ! j))))
-                       (depth_formula (Conn (conn_fix c 0 b) ?gbar))))
+                       (depth_formula (Conn c (?cb # ?gbar)))))
                 \<le> real trans_step_depth + (real (depth_formula custom_balancing) + (?LGN + 2))"
               by simp
             also have "\<dots> \<le> ?LGN + DDC" using ctsd_cb2 by linarith
@@ -2532,6 +2605,7 @@ qed
 subsection \<open>Bounded collapse\<close>
 
 lemma collapse:
+  assumes cc: "conn_closed (alphabet F)"
   shows "\<exists> Kc :: nat. \<forall> c gbar z.
            1 \<le> arity (alphabet F) c \<and> length gbar = arity (alphabet F) c - 1
            \<and> (\<forall>g\<in>set gbar. formula_well_formed (alphabet F) g)
@@ -2730,9 +2804,9 @@ proof -
     qed
     \<comment> \<open>the construction, kept explicit for bounds\<close>
     have cfT_ar: "arity (alphabet F) (conn_fix c 0 True) = arity (alphabet F) c - 1"
-      using conn_fix_spec[of 0 c True] ar0 by simp
+      using conn_fix_spec[OF cc, of 0 c True] ar0 by simp
     have cfF_ar: "arity (alphabet F) (conn_fix c 0 False) = arity (alphabet F) c - 1"
-      using conn_fix_spec[of 0 c False] ar0 by simp
+      using conn_fix_spec[OF cc, of 0 c False] ar0 by simp
     have lenTg: "length (true_const # gbar) = arity (alphabet F) c" using len ar by simp
     have lenFg: "length (false_const # gbar) = arity (alphabet F) c" using len ar by simp
     have wf_Ttg: "formula_well_formed (alphabet F) (Conn c (true_const # gbar))"
@@ -2747,12 +2821,12 @@ proof -
         (Conn (conn_fix c 0 True) gbar) (reduce_lines c True)
         (reduce_step_len c True * len_sub (set (reduce_atoms c)) (reduce_sub c gbar))
         (reduce_step_depth c True + depth_sub (set (reduce_atoms c)) (reduce_sub c gbar))"
-      using reduce_subst[where b = True, OF ar len wfgbar'] by simp
+      using reduce_subst[where b = True, OF cc ar len wfgbar'] by simp
     have redF: "provable_balanced_iff (Conn c (false_const # gbar))
         (Conn (conn_fix c 0 False) gbar) (reduce_lines c False)
         (reduce_step_len c False * len_sub (set (reduce_atoms c)) (reduce_sub c gbar))
         (reduce_step_depth c False + depth_sub (set (reduce_atoms c)) (reduce_sub c gbar))"
-      using reduce_subst[where b = False, OF ar len wfgbar'] by simp
+      using reduce_subst[where b = False, OF cc ar len wfgbar'] by simp
     note rT = iff_sym[OF redT wf_Ttg wf_cfT]
     note rF = iff_sym[OF redF wf_Ffg wf_cfF]
     note PB2 = balance_cong[OF rT rF iff_refl[OF wfz]
@@ -3096,6 +3170,136 @@ proof -
   show ?thesis using main by blast
 qed
 
+subsection \<open>Bounded collapse without arity reduction\<close>
+
+text \<open>The same statement as @{thm [source] collapse}, but with the frozen slot written
+  out as a constant argument of @{term c} instead of being absorbed into a connective of
+  smaller arity.  This form needs no @{const conn_fix}, hence no closure assumption:
+  it is exactly the Shannon identity @{thm [source] shc_subst} at slot \<open>0\<close>.\<close>
+
+lemma collapse_open:
+  shows "\<exists> Kc :: nat. \<forall> c gbar z.
+           1 \<le> arity (alphabet F) c \<and> length gbar = arity (alphabet F) c - 1
+           \<and> (\<forall>g\<in>set gbar. formula_well_formed (alphabet F) g)
+           \<and> formula_well_formed (alphabet F) z
+         \<longrightarrow> (\<exists> lines sz dep. provable_balanced_iff
+                (balance (Conn c (true_const # gbar)) (Conn c (false_const # gbar)) z)
+                (Conn c (z # gbar)) lines sz dep
+              \<and> lines \<le> Kc
+              \<and> sz \<le> Kc * (len_formula (Conn c (z # gbar)) + 1)
+              \<and> real dep \<le> real Kc * (real (depth_formula (Conn c (z # gbar))) + 1))"
+proof -
+  define Kc :: nat where
+    "Kc = 2 * (shc_max_lines + shc_max_step_len + shc_max_step_depth) + 2"
+  have Kc_lines: "shc_max_lines \<le> Kc" unfolding Kc_def by simp
+  have Kc_len: "2 * shc_max_step_len \<le> Kc" unfolding Kc_def by simp
+  have Kc_dep: "shc_max_step_depth + 1 \<le> Kc" unfolding Kc_def by simp
+  have "\<forall> c gbar z.
+          1 \<le> arity (alphabet F) c \<and> length gbar = arity (alphabet F) c - 1
+          \<and> (\<forall>g\<in>set gbar. formula_well_formed (alphabet F) g)
+          \<and> formula_well_formed (alphabet F) z
+        \<longrightarrow> (\<exists> lines sz dep. provable_balanced_iff
+               (balance (Conn c (true_const # gbar)) (Conn c (false_const # gbar)) z)
+               (Conn c (z # gbar)) lines sz dep
+             \<and> lines \<le> Kc
+             \<and> sz \<le> Kc * (len_formula (Conn c (z # gbar)) + 1)
+             \<and> real dep \<le> real Kc * (real (depth_formula (Conn c (z # gbar))) + 1))"
+  proof (intro allI impI)
+    fix c gbar z
+    assume A: "1 \<le> arity (alphabet F) c \<and> length gbar = arity (alphabet F) c - 1
+             \<and> (\<forall>g\<in>set gbar. formula_well_formed (alphabet F) g)
+             \<and> formula_well_formed (alphabet F) z"
+    from A have ar: "1 \<le> arity (alphabet F) c"
+      and len: "length gbar = arity (alphabet F) c - 1"
+      and wfgbar: "\<forall>g\<in>set gbar. formula_well_formed (alphabet F) g"
+      and wfz: "formula_well_formed (alphabet F) z" by auto
+    let ?L = "len_formula (Conn c (z # gbar))"
+    let ?D = "depth_formula (Conn c (z # gbar))"
+    let ?lsub = "len_sub (set (shc_atoms c)) (shc_sub c (z # gbar) z)"
+    let ?dsub = "depth_sub (set (shc_atoms c)) (shc_sub c (z # gbar) z)"
+    have ar0: "0 < arity (alphabet F) c" using ar by simp
+    have lenz: "length (z # gbar) = arity (alphabet F) c" using len ar by simp
+    have wfzgbar: "\<And>g. g \<in> set (z # gbar) \<Longrightarrow> formula_well_formed (alphabet F) g"
+      using wfgbar wfz by auto
+    have shc: "provable_balanced_iff
+        (balance (Conn c (true_const # gbar)) (Conn c (false_const # gbar)) z)
+        (Conn c (z # gbar)) (shc_lines c 0)
+        (shc_step_len c 0 * ?lsub) (shc_step_depth c 0 + ?dsub)"
+      using shc_subst[where d = c and i = 0 and gs = "z # gbar" and Z = z,
+                      OF ar0 lenz wfzgbar wfz] by simp
+    \<comment> \<open>lines bound\<close>
+    have BL: "shc_lines c 0 \<le> Kc"
+      using order_trans[OF shc_lines_le[OF ar0] Kc_lines] .
+    \<comment> \<open>size bound\<close>
+    have lsub_le: "?lsub \<le> 2 * ?L"
+    proof -
+      have "?lsub = max 1 (sum_list (map len_formula (z # gbar)) + len_formula z)"
+        by (rule shc_len_sub[OF lenz])
+      also have "\<dots> \<le> 2 * (1 + sum_list (map len_formula (z # gbar)))" by simp
+      also have "\<dots> = 2 * ?L" by simp
+      finally show ?thesis .
+    qed
+    have BS: "shc_step_len c 0 * ?lsub \<le> Kc * (?L + 1)"
+    proof -
+      have a: "shc_step_len c 0 \<le> shc_max_step_len" by (rule shc_step_len_le[OF ar0])
+      have "shc_step_len c 0 * ?lsub \<le> shc_max_step_len * (2 * ?L)"
+        by (rule mult_le_mono[OF a lsub_le])
+      also have "\<dots> = (2 * shc_max_step_len) * ?L" by simp
+      also have "\<dots> \<le> Kc * ?L" by (rule mult_le_mono1[OF Kc_len])
+      also have "\<dots> \<le> Kc * (?L + 1)" by (rule mult_le_mono2) simp
+      finally show ?thesis .
+    qed
+    \<comment> \<open>depth bound\<close>
+    have dsub_le: "?dsub \<le> ?D"
+    proof -
+      have D1: "1 \<le> ?D" by simp
+      have "?dsub = Max (insert 1 (depth_formula ` set ((z # gbar) @ [z])))"
+        by (rule shc_depth_sub[OF lenz])
+      moreover have "\<forall>x \<in> insert 1 (depth_formula ` set ((z # gbar) @ [z])). x \<le> ?D"
+      proof
+        fix x assume "x \<in> insert 1 (depth_formula ` set ((z # gbar) @ [z]))"
+        then consider "x = 1" | g where "g \<in> set (z # gbar)" "x = depth_formula g"
+          by auto
+        thus "x \<le> ?D"
+        proof cases
+          case 1 thus ?thesis using D1 by simp
+        next
+          case (2 g) thus ?thesis using depth_elt_le_conn[of g "z # gbar" c] by simp
+        qed
+      qed
+      ultimately show ?thesis by simp
+    qed
+    have BDnat: "shc_step_depth c 0 + ?dsub \<le> Kc * (?D + 1)"
+    proof -
+      have arith: "\<And>a d :: nat. a + d \<le> (a + 1) * (d + 1)" by (simp add: algebra_simps)
+      have a: "shc_step_depth c 0 \<le> shc_max_step_depth" by (rule shc_step_depth_le[OF ar0])
+      have "shc_step_depth c 0 + ?dsub \<le> shc_max_step_depth + ?D" using a dsub_le by simp
+      also have "\<dots> \<le> (shc_max_step_depth + 1) * (?D + 1)" by (rule arith)
+      also have "\<dots> \<le> Kc * (?D + 1)" by (rule mult_le_mono1[OF Kc_dep])
+      finally show ?thesis .
+    qed
+    have BD: "real (shc_step_depth c 0 + ?dsub) \<le> real Kc * (real ?D + 1)"
+    proof -
+      have eq: "real Kc * (real ?D + 1) = real (Kc * (?D + 1))"
+        by (simp only: of_nat_mult of_nat_add of_nat_1)
+      have "real (shc_step_depth c 0 + ?dsub) \<le> real (Kc * (?D + 1))"
+        using BDnat by (simp only: of_nat_le_iff)
+      thus ?thesis by (simp only: eq)
+    qed
+    show "\<exists> lines sz dep. provable_balanced_iff
+             (balance (Conn c (true_const # gbar)) (Conn c (false_const # gbar)) z)
+             (Conn c (z # gbar)) lines sz dep
+           \<and> lines \<le> Kc
+           \<and> sz \<le> Kc * (len_formula (Conn c (z # gbar)) + 1)
+           \<and> real dep \<le> real Kc * (real (depth_formula (Conn c (z # gbar))) + 1)"
+      using shc BL BS BD by blast
+  qed
+  thus ?thesis by blast
+qed
+
+\<comment> \<open>\<open>shc_subst_cons\<close> is stated with the rest of the Shannon machinery, before \<open>commutes_aux\<close>.\<close>
+
+subsection \<open>Bounded commutation: Lemma 6.2 (transform_commutes_conn)\<close>
 subsection \<open>Bounded commutation: Lemma 6.2 (transform_commutes_conn)\<close>
 
 lemma transform_commutes_conn:
@@ -3121,7 +3325,7 @@ proof -
          \<and> len_formula (Conn c ((if b then true_const else false_const) # qs)) \<le> N
        \<longrightarrow> (\<exists> lines sz dep. provable_balanced_iff
               (spira_trans (Conn c ((if b then true_const else false_const) # qs)))
-              (Conn (conn_fix c 0 b) (map spira_trans qs)) lines sz dep
+              (Conn c ((if b then true_const else false_const) # map spira_trans qs)) lines sz dep
             \<and> lines \<le> poly SL N * 4 ^ count_big qs
             \<and> sz \<le> poly SL N * 4 ^ count_big qs
             \<and> real dep \<le> DD * log 2 (real N + 1) + DDC)"
@@ -3131,12 +3335,12 @@ proof -
            \<and> (\<forall>g\<in>set gbar. formula_well_formed (alphabet F) g)
            \<and> formula_well_formed (alphabet F) z
          \<longrightarrow> (\<exists> lines sz dep. provable_balanced_iff
-                (balance (Conn (conn_fix c 0 True) gbar) (Conn (conn_fix c 0 False) gbar) z)
+                (balance (Conn c (true_const # gbar)) (Conn c (false_const # gbar)) z)
                 (Conn c (z # gbar)) lines sz dep
               \<and> lines \<le> Kc
               \<and> sz \<le> Kc * (len_formula (Conn c (z # gbar)) + 1)
               \<and> real dep \<le> real Kc * (real (depth_formula (Conn c (z # gbar))) + 1))"
-    using collapse by blast
+    using collapse_open by blast
   obtain tc :: real where tc:
     "\<forall>f. formula_well_formed (alphabet F) f \<longrightarrow>
        real (depth_formula (spira_trans f)) \<le> tc * log 2 (real (len_formula f) + 1)"
@@ -3295,7 +3499,7 @@ proof -
       \<comment> \<open>the two arms, by the bounded comprehension lemma\<close>
       have ATex: "\<exists>lines sz dep. provable_balanced_iff
             (spira_trans (Conn conn (true_const # rest)))
-            (Conn (conn_fix conn 0 True) (map spira_trans rest)) lines sz dep
+            (Conn conn (true_const # map spira_trans rest)) lines sz dep
           \<and> lines \<le> poly SL (len_formula (Conn conn (true_const # rest))) * 4 ^ count_big rest
           \<and> sz \<le> poly SL (len_formula (Conn conn (true_const # rest))) * 4 ^ count_big rest
           \<and> real dep \<le> DD * log 2 (real (len_formula (Conn conn (true_const # rest))) + 1) + DDC"
@@ -3310,14 +3514,14 @@ proof -
       qed
       obtain lT sT dT where AT:
           "provable_balanced_iff (spira_trans (Conn conn (true_const # rest)))
-             (Conn (conn_fix conn 0 True) (map spira_trans rest)) lT sT dT"
+             (Conn conn (true_const # map spira_trans rest)) lT sT dT"
         and ATl: "lT \<le> poly SL (len_formula (Conn conn (true_const # rest))) * 4 ^ count_big rest"
         and ATs: "sT \<le> poly SL (len_formula (Conn conn (true_const # rest))) * 4 ^ count_big rest"
         and ATd: "real dT \<le> DD * log 2 (real (len_formula (Conn conn (true_const # rest))) + 1) + DDC"
         using ATex by blast
       have AFex: "\<exists>lines sz dep. provable_balanced_iff
             (spira_trans (Conn conn (false_const # rest)))
-            (Conn (conn_fix conn 0 False) (map spira_trans rest)) lines sz dep
+            (Conn conn (false_const # map spira_trans rest)) lines sz dep
           \<and> lines \<le> poly SL (len_formula (Conn conn (false_const # rest))) * 4 ^ count_big rest
           \<and> sz \<le> poly SL (len_formula (Conn conn (false_const # rest))) * 4 ^ count_big rest
           \<and> real dep \<le> DD * log 2 (real (len_formula (Conn conn (false_const # rest))) + 1) + DDC"
@@ -3332,7 +3536,7 @@ proof -
       qed
       obtain lF sF dF where AF:
           "provable_balanced_iff (spira_trans (Conn conn (false_const # rest)))
-             (Conn (conn_fix conn 0 False) (map spira_trans rest)) lF sF dF"
+             (Conn conn (false_const # map spira_trans rest)) lF sF dF"
         and AFl: "lF \<le> poly SL (len_formula (Conn conn (false_const # rest))) * 4 ^ count_big rest"
         and AFs: "sF \<le> poly SL (len_formula (Conn conn (false_const # rest))) * 4 ^ count_big rest"
         and AFd: "real dF \<le> DD * log 2 (real (len_formula (Conn conn (false_const # rest))) + 1) + DDC"
@@ -3348,16 +3552,16 @@ proof -
         from r wfrest have "formula_well_formed (alphabet F) r" by blast
         thus "formula_well_formed (alphabet F) g" unfolding geq by (rule spira_trans_wf)
       qed
-      have cfTr_ar: "arity (alphabet F) (conn_fix conn 0 True) = arity (alphabet F) conn - 1"
-        using conn_fix_spec[of 0 conn True] ar0c by simp
-      have cfFr_ar: "arity (alphabet F) (conn_fix conn 0 False) = arity (alphabet F) conn - 1"
-        using conn_fix_spec[of 0 conn False] ar0c by simp
+      have lencTr: "length (true_const # map spira_trans rest) = arity (alphabet F) conn"
+        using lenrest ar by simp
+      have lencFr: "length (false_const # map spira_trans rest) = arity (alphabet F) conn"
+        using lenrest ar by simp
       have wf_cfTr: "formula_well_formed (alphabet F)
-            (Conn (conn_fix conn 0 True) (map spira_trans rest))"
-        using cfTr_ar lenrest wf_strest by auto
+            (Conn conn (true_const # map spira_trans rest))"
+        using lencTr wf_strest true_const_wf by auto
       have wf_cfFr: "formula_well_formed (alphabet F)
-            (Conn (conn_fix conn 0 False) (map spira_trans rest))"
-        using cfFr_ar lenrest wf_strest by auto
+            (Conn conn (false_const # map spira_trans rest))"
+        using lencFr wf_strest false_const_wf by auto
       have wfstT: "formula_well_formed (alphabet F)
             (spira_trans (Conn conn (true_const # rest)))"
         by (rule spira_trans_wf) (use true_const_wf wfrest lenrest ar in auto)
@@ -3369,8 +3573,8 @@ proof -
       have wf_rebN: "formula_well_formed (alphabet F) (rebalancing (Conn conn ps) [0])"
         by (rule rebalancing_wf[OF wfN validpos])
       have wf_balR: "formula_well_formed (alphabet F)
-          (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                   (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1))"
+          (balance (Conn conn (true_const # map spira_trans rest))
+                   (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1))"
         by (rule balance_wf[OF wf_cfTr wf_cfFr wf_stQ1])
       have wf_result: "formula_well_formed (alphabet F)
           (Conn conn (spira_trans Q1 # map spira_trans rest))"
@@ -3378,8 +3582,8 @@ proof -
       \<comment> \<open>the collapse step\<close>
       obtain l4 s4 d4 where COL:
           "provable_balanced_iff
-             (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                      (Conn (conn_fix conn 0 False) (map spira_trans rest))
+             (balance (Conn conn (true_const # map spira_trans rest))
+                      (Conn conn (false_const # map spira_trans rest))
                       (spira_trans Q1))
              (Conn conn (spira_trans Q1 # map spira_trans rest)) l4 s4 d4"
         and COLl: "l4 \<le> Kc"
@@ -3447,10 +3651,15 @@ proof -
         also have "\<dots> \<le> MA * poly rebal_tb ?N" by (rule mult_le_mono1[OF lenrest_MA])
         finally show ?thesis unfolding eq .
       qed
-      have Lcft: "len_formula (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                  \<le> 1 + MA * poly rebal_tb ?N" using Lrestsum by simp
-      have Lcff: "len_formula (Conn (conn_fix conn 0 False) (map spira_trans rest))
-                  \<le> 1 + MA * poly rebal_tb ?N" using Lrestsum by simp
+      \<comment> \<open>one symbol longer than in the arity-reduced form, absorbed by \<open>1 \<le> poly rebal_tb ?N\<close>\<close>
+      have tb1c: "1 \<le> poly rebal_tb ?N"
+        using LQ1 len_formula_ge_1[of "spira_trans Q1"] by simp
+      have Lcft: "len_formula (Conn conn (true_const # map spira_trans rest))
+                  \<le> 1 + (MA + 1) * poly rebal_tb ?N"
+        using Lrestsum tb1c by (simp add: true_const_len add_mult_distrib)
+      have Lcff: "len_formula (Conn conn (false_const # map spira_trans rest))
+                  \<le> 1 + (MA + 1) * poly rebal_tb ?N"
+        using Lrestsum tb1c by (simp add: false_const_len add_mult_distrib)
       have Lres: "len_formula (Conn conn (spira_trans Q1 # map spira_trans rest))
                   \<le> 1 + (MA + 1) * poly rebal_tb ?N"
         using LQ1 Lrestsum by (simp add: add_mult_distrib)
@@ -3521,10 +3730,10 @@ proof -
         using LTr base_G by linarith
       have LB_Fr: "len_formula (spira_trans (Conn conn (false_const # rest))) \<le> U"
         using LFr base_G by linarith
-      have LB_cft: "len_formula (Conn (conn_fix conn 0 True) (map spira_trans rest)) \<le> U"
-        using Lcft mid_cf by linarith
-      have LB_cff: "len_formula (Conn (conn_fix conn 0 False) (map spira_trans rest)) \<le> U"
-        using Lcff mid_cf by linarith
+      have LB_cft: "len_formula (Conn conn (true_const # map spira_trans rest)) \<le> U"
+        using Lcft mid_res by linarith
+      have LB_cff: "len_formula (Conn conn (false_const # map spira_trans rest)) \<le> U"
+        using Lcff mid_res by linarith
       have LB_res: "len_formula (Conn conn (spira_trans Q1 # map spira_trans rest)) \<le> U"
         using Lres mid_res by linarith
       have LB_rebal: "len_formula (rebalancing (Conn conn ps) [0]) \<le> 3 * U"
@@ -3545,20 +3754,20 @@ proof -
         show "3 * poly rebal_tb ?N + 1 \<le> 3 * ((MA + 1) * (poly rebal_tb ?N + 1))"
           by (rule scale_MA_prt) simp
       qed
-      have LB_C1: "len_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                     (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)) \<le> 3 * U"
+      have LB_C1: "len_formula (balance (Conn conn (true_const # map spira_trans rest))
+                     (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)) \<le> 3 * U"
         unfolding U_def
       proof (rule len_le_via_cb[OF _ cb_Cc])
-        have "len_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1))
+        have "len_formula (balance (Conn conn (true_const # map spira_trans rest))
+                (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1))
               \<le> len_formula custom_balancing
-              * (len_formula (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                 + len_formula (Conn (conn_fix conn 0 False) (map spira_trans rest))
+              * (len_formula (Conn conn (true_const # map spira_trans rest))
+                 + len_formula (Conn conn (false_const # map spira_trans rest))
                  + len_formula (spira_trans Q1) + 1)" by (rule len_balance_le)
         also have "\<dots> \<le> len_formula custom_balancing * ((3 * MA + 3) * poly rebal_tb ?N + 3)"
           by (rule mult_le_mono2) (use Lcft Lcff LQ1 in \<open>simp add: add_mult_distrib\<close>)
-        finally show "len_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1))
+        finally show "len_formula (balance (Conn conn (true_const # map spira_trans rest))
+                (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1))
               \<le> len_formula custom_balancing * ((3 * MA + 3) * poly rebal_tb ?N + 3)" .
         show "(3 * MA + 3) * poly rebal_tb ?N + 3 \<le> 3 * ((MA + 1) * (poly rebal_tb ?N + 1))"
           by (simp add: algebra_simps)
@@ -3570,46 +3779,46 @@ proof -
         show ?thesis by (rule prod_le_kV[OF rsl_Cc h[unfolded U_def] V_def])
       qed
       have P_bc: "balance_cong_step_len * (6 * (len_formula (spira_trans (Conn conn (true_const # rest)))
-                   + len_formula (Conn (conn_fix conn 0 True) (map spira_trans rest))
+                   + len_formula (Conn conn (true_const # map spira_trans rest))
                    + len_formula (spira_trans (Conn conn (false_const # rest)))
-                   + len_formula (Conn (conn_fix conn 0 False) (map spira_trans rest))
+                   + len_formula (Conn conn (false_const # map spira_trans rest))
                    + len_formula (spira_trans Q1) + len_formula (spira_trans Q1))) \<le> 36 * V"
       proof -
         have s6: "len_formula (spira_trans (Conn conn (true_const # rest)))
-                   + len_formula (Conn (conn_fix conn 0 True) (map spira_trans rest))
+                   + len_formula (Conn conn (true_const # map spira_trans rest))
                    + len_formula (spira_trans (Conn conn (false_const # rest)))
-                   + len_formula (Conn (conn_fix conn 0 False) (map spira_trans rest))
+                   + len_formula (Conn conn (false_const # map spira_trans rest))
                    + len_formula (spira_trans Q1) + len_formula (spira_trans Q1) \<le> 6 * U"
           using LB_Tr LB_Fr LB_cft LB_cff LB_Q1 by linarith
         have h: "6 * (len_formula (spira_trans (Conn conn (true_const # rest)))
-                   + len_formula (Conn (conn_fix conn 0 True) (map spira_trans rest))
+                   + len_formula (Conn conn (true_const # map spira_trans rest))
                    + len_formula (spira_trans (Conn conn (false_const # rest)))
-                   + len_formula (Conn (conn_fix conn 0 False) (map spira_trans rest))
+                   + len_formula (Conn conn (false_const # map spira_trans rest))
                    + len_formula (spira_trans Q1) + len_formula (spira_trans Q1)) \<le> 36 * U"
           using mult_le_mono2[OF s6, of 6] by simp
         show ?thesis by (rule prod_le_kV[OF bcsl_Cc h[unfolded U_def] V_def])
       qed
       have P_t1: "trans_step_len * (len_formula (spira_trans (Conn conn ps))
                    + len_formula (rebalancing (Conn conn ps) [0])
-                   + len_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))
+                   + len_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))
                    \<le> 7 * V"
       proof -
         have h: "len_formula (spira_trans (Conn conn ps))
                    + len_formula (rebalancing (Conn conn ps) [0])
-                   + len_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)) \<le> 7 * U"
+                   + len_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)) \<le> 7 * U"
           using LB_tN LB_rebal LB_C1 by linarith
         show ?thesis by (rule prod_le_kV[OF tsl_Cc h[unfolded U_def] V_def])
       qed
       have P_t2: "trans_step_len * (len_formula (spira_trans (Conn conn ps))
-                   + len_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1))
+                   + len_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1))
                    + len_formula (Conn conn (spira_trans Q1 # map spira_trans rest))) \<le> 5 * V"
       proof -
         have h: "len_formula (spira_trans (Conn conn ps))
-                   + len_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1))
+                   + len_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1))
                    + len_formula (Conn conn (spira_trans Q1 # map spira_trans rest)) \<le> 5 * U"
           using LB_tN LB_C1 LB_res by linarith
         show ?thesis by (rule prod_le_kV[OF tsl_Cc h[unfolded U_def] V_def])
@@ -3657,12 +3866,22 @@ proof -
           by (rule spira_trans_dep_le[OF tc _ restN[OF r]]) (use wfrest r in blast)
         thus "real (depth_formula g) \<le> tcm * log 2 (real ?N + 1)" unfolding g tcm_def .
       qed
-      have Dcftr: "real (depth_formula (Conn (conn_fix conn 0 True) (map spira_trans rest)))
+      have Dtc: "real (depth_formula true_const) \<le> tcm * log 2 (real ?N + 1)"
+        using depth_formula_le_len[of true_const] true_const_len B1real by simp
+      have Dfc: "real (depth_formula false_const) \<le> tcm * log 2 (real ?N + 1)"
+        using depth_formula_le_len[of false_const] false_const_len B1real by simp
+      have DcftrE: "\<forall>g\<in>set (true_const # map spira_trans rest).
+                      real (depth_formula g) \<le> tcm * log 2 (real ?N + 1)"
+        using Drest_each Dtc by simp
+      have Dcftr: "real (depth_formula (Conn conn (true_const # map spira_trans rest)))
                    \<le> tcm * log 2 (real ?N + 1) + 1"
-        by (rule conn_dep_le[OF Drest_each LGtcm_nn])
-      have Dcffr: "real (depth_formula (Conn (conn_fix conn 0 False) (map spira_trans rest)))
+        by (rule conn_dep_le[OF DcftrE LGtcm_nn])
+      have DcffrE: "\<forall>g\<in>set (false_const # map spira_trans rest).
+                      real (depth_formula g) \<le> tcm * log 2 (real ?N + 1)"
+        using Drest_each Dfc by simp
+      have Dcffr: "real (depth_formula (Conn conn (false_const # map spira_trans rest)))
                    \<le> tcm * log 2 (real ?N + 1) + 1"
-        by (rule conn_dep_le[OF Drest_each LGtcm_nn])
+        by (rule conn_dep_le[OF DcffrE LGtcm_nn])
       have Dres_each: "\<forall>g\<in>set (spira_trans Q1 # map spira_trans rest).
                         real (depth_formula g) \<le> tcm * log 2 (real ?N + 1)"
         using DQ1r Drest_each by auto
@@ -3683,8 +3902,8 @@ proof -
       have DQ1r1: "real (depth_formula (spira_trans Q1)) \<le> tcm * log 2 (real ?N + 1) + 1"
         using DQ1r by simp
       have B1real1: "1 \<le> tcm * log 2 (real ?N + 1) + 1" using B1real by simp
-      have DC1r: "real (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                    (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))
+      have DC1r: "real (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                    (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))
                   \<le> real (depth_formula custom_balancing) + (tcm * log 2 (real ?N + 1) + 1)"
         by (rule balance_dep_le[OF Dcftr Dcffr DQ1r1 B1real1])
       have DTrr1: "real (depth_formula (spira_trans (Conn conn (true_const # rest))))
@@ -3760,44 +3979,44 @@ proof -
       qed (use logge1 tcm1 ccL4 in simp_all)
       have DL5: "real (balance_cong_step_depth
                  + max (depth_formula (spira_trans (Conn conn (true_const # rest))))
-                   (max (depth_formula (Conn (conn_fix conn 0 True) (map spira_trans rest)))
+                   (max (depth_formula (Conn conn (true_const # map spira_trans rest)))
                      (max (depth_formula (spira_trans (Conn conn (false_const # rest))))
-                       (max (depth_formula (Conn (conn_fix conn 0 False) (map spira_trans rest)))
+                       (max (depth_formula (Conn conn (false_const # map spira_trans rest)))
                          (max (depth_formula (spira_trans Q1)) (depth_formula (spira_trans Q1)))))))
                  \<le> cc * log 2 (real ?N + 1)"
       proof (rule leaf_log_bound[where K = "real balance_cong_step_depth + 1" and M = tcm])
         have m6: "real (max (depth_formula (spira_trans (Conn conn (true_const # rest))))
-                   (max (depth_formula (Conn (conn_fix conn 0 True) (map spira_trans rest)))
+                   (max (depth_formula (Conn conn (true_const # map spira_trans rest)))
                      (max (depth_formula (spira_trans (Conn conn (false_const # rest))))
-                       (max (depth_formula (Conn (conn_fix conn 0 False) (map spira_trans rest)))
+                       (max (depth_formula (Conn conn (false_const # map spira_trans rest)))
                          (max (depth_formula (spira_trans Q1)) (depth_formula (spira_trans Q1)))))))
                  \<le> tcm * log 2 (real ?N + 1) + 1"
           by (rule real_of_nat_max_le DTrr1 Dcftr DFrr1 Dcffr DQ1r1)+
         have "real (balance_cong_step_depth + max (depth_formula (spira_trans (Conn conn (true_const # rest))))
-                   (max (depth_formula (Conn (conn_fix conn 0 True) (map spira_trans rest)))
+                   (max (depth_formula (Conn conn (true_const # map spira_trans rest)))
                      (max (depth_formula (spira_trans (Conn conn (false_const # rest))))
-                       (max (depth_formula (Conn (conn_fix conn 0 False) (map spira_trans rest)))
+                       (max (depth_formula (Conn conn (false_const # map spira_trans rest)))
                          (max (depth_formula (spira_trans Q1)) (depth_formula (spira_trans Q1)))))))
               = real balance_cong_step_depth
                 + real (max (depth_formula (spira_trans (Conn conn (true_const # rest))))
-                   (max (depth_formula (Conn (conn_fix conn 0 True) (map spira_trans rest)))
+                   (max (depth_formula (Conn conn (true_const # map spira_trans rest)))
                      (max (depth_formula (spira_trans (Conn conn (false_const # rest))))
-                       (max (depth_formula (Conn (conn_fix conn 0 False) (map spira_trans rest)))
+                       (max (depth_formula (Conn conn (false_const # map spira_trans rest)))
                          (max (depth_formula (spira_trans Q1)) (depth_formula (spira_trans Q1)))))))"
           by (rule of_nat_add)
         also have "\<dots> \<le> (real balance_cong_step_depth + 1) + tcm * log 2 (real ?N + 1)"
           using m6 by linarith
         finally show "real (balance_cong_step_depth + max (depth_formula (spira_trans (Conn conn (true_const # rest))))
-                   (max (depth_formula (Conn (conn_fix conn 0 True) (map spira_trans rest)))
+                   (max (depth_formula (Conn conn (true_const # map spira_trans rest)))
                      (max (depth_formula (spira_trans (Conn conn (false_const # rest))))
-                       (max (depth_formula (Conn (conn_fix conn 0 False) (map spira_trans rest)))
+                       (max (depth_formula (Conn conn (false_const # map spira_trans rest)))
                          (max (depth_formula (spira_trans Q1)) (depth_formula (spira_trans Q1)))))))
               \<le> (real balance_cong_step_depth + 1) + tcm * log 2 (real ?N + 1)" .
       qed (use logge1 tcm1 ccL5 in simp_all)
       have DL6: "real (trans_step_depth + max (depth_formula (spira_trans (Conn conn ps)))
                    (max (depth_formula (rebalancing (Conn conn ps) [0]))
-                     (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))))
+                     (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))))
                  \<le> cc * log 2 (real ?N + 1)"
       proof (rule leaf_log_bound[where K = "real trans_step_depth + real (depth_formula custom_balancing) + 1" and M = tcm])
         have dN1: "real (depth_formula (spira_trans (Conn conn ps)))
@@ -3806,30 +4025,30 @@ proof -
         have dreb: "real (depth_formula (rebalancing (Conn conn ps) [0]))
                    \<le> real (depth_formula custom_balancing) + tcm * log 2 (real ?N + 1) + 1"
           using Drebalr by simp
-        have dC1: "real (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))
+        have dC1: "real (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))
                    \<le> real (depth_formula custom_balancing) + tcm * log 2 (real ?N + 1) + 1"
           using DC1r by simp
         have m3: "real (max (depth_formula (spira_trans (Conn conn ps)))
                    (max (depth_formula (rebalancing (Conn conn ps) [0]))
-                     (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))))
+                     (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))))
                  \<le> real (depth_formula custom_balancing) + tcm * log 2 (real ?N + 1) + 1"
           by (rule real_of_nat_max_le dN1 dreb dC1)+
         have "real (trans_step_depth + max (depth_formula (spira_trans (Conn conn ps)))
                    (max (depth_formula (rebalancing (Conn conn ps) [0]))
-                     (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))))
+                     (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))))
               = real trans_step_depth + real (max (depth_formula (spira_trans (Conn conn ps)))
                    (max (depth_formula (rebalancing (Conn conn ps) [0]))
-                     (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))))" by simp
+                     (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))))" by simp
         also have "\<dots> \<le> (real trans_step_depth + real (depth_formula custom_balancing) + 1)
                         + tcm * log 2 (real ?N + 1)" using m3 by simp
         finally show "real (trans_step_depth + max (depth_formula (spira_trans (Conn conn ps)))
                    (max (depth_formula (rebalancing (Conn conn ps) [0]))
-                     (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))))
+                     (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))))
               \<le> (real trans_step_depth + real (depth_formula custom_balancing) + 1)
                  + tcm * log 2 (real ?N + 1)" .
       qed (use logge1 tcm1 ccL6 in simp_all)
@@ -3844,40 +4063,40 @@ proof -
         finally show "real d4 \<le> 2 * real Kc + real Kc * tcm * log 2 (real ?N + 1)" .
       qed (use logge1 tcm1 ccL7 in simp_all)
       have DL8: "real (trans_step_depth + max (depth_formula (spira_trans (Conn conn ps)))
-                   (max (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))
+                   (max (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))
                      (depth_formula (Conn conn (spira_trans Q1 # map spira_trans rest)))))
                  \<le> cc * log 2 (real ?N + 1)"
       proof (rule leaf_log_bound[where K = "real trans_step_depth + real (depth_formula custom_balancing) + 1" and M = tcm])
         have dN1: "real (depth_formula (spira_trans (Conn conn ps)))
                    \<le> real (depth_formula custom_balancing) + tcm * log 2 (real ?N + 1) + 1"
           using DtNr by simp
-        have dC1: "real (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))
+        have dC1: "real (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))
                    \<le> real (depth_formula custom_balancing) + tcm * log 2 (real ?N + 1) + 1"
           using DC1r by simp
         have dres: "real (depth_formula (Conn conn (spira_trans Q1 # map spira_trans rest)))
                    \<le> real (depth_formula custom_balancing) + tcm * log 2 (real ?N + 1) + 1"
           using Dresr by simp
         have m3: "real (max (depth_formula (spira_trans (Conn conn ps)))
-                   (max (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))
+                   (max (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))
                      (depth_formula (Conn conn (spira_trans Q1 # map spira_trans rest)))))
                  \<le> real (depth_formula custom_balancing) + tcm * log 2 (real ?N + 1) + 1"
           by (rule real_of_nat_max_le dN1 dC1 dres)+
         have "real (trans_step_depth + max (depth_formula (spira_trans (Conn conn ps)))
-                   (max (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))
+                   (max (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))
                      (depth_formula (Conn conn (spira_trans Q1 # map spira_trans rest)))))
               = real trans_step_depth + real (max (depth_formula (spira_trans (Conn conn ps)))
-                   (max (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))
+                   (max (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))
                      (depth_formula (Conn conn (spira_trans Q1 # map spira_trans rest)))))" by simp
         also have "\<dots> \<le> (real trans_step_depth + real (depth_formula custom_balancing) + 1)
                         + tcm * log 2 (real ?N + 1)" using m3 by simp
         finally show "real (trans_step_depth + max (depth_formula (spira_trans (Conn conn ps)))
-                   (max (depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                       (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1)))
+                   (max (depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                       (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1)))
                      (depth_formula (Conn conn (spira_trans Q1 # map spira_trans rest)))))
               \<le> (real trans_step_depth + real (depth_formula custom_balancing) + 1)
                  + tcm * log 2 (real ?N + 1)" .
@@ -3885,13 +4104,13 @@ proof -
       \<comment> \<open>------- assemble -------\<close>
       define G1 where "G1 = depth_formula (spira_trans (Conn conn ps))"
       define G2 where "G2 = depth_formula (rebalancing (Conn conn ps) [0])"
-      define G3 where "G3 = depth_formula (balance (Conn (conn_fix conn 0 True) (map spira_trans rest))
-                          (Conn (conn_fix conn 0 False) (map spira_trans rest)) (spira_trans Q1))"
+      define G3 where "G3 = depth_formula (balance (Conn conn (true_const # map spira_trans rest))
+                          (Conn conn (false_const # map spira_trans rest)) (spira_trans Q1))"
       define G4 where "G4 = depth_formula (Conn conn (spira_trans Q1 # map spira_trans rest))"
       define G5 where "G5 = depth_formula (spira_trans (Conn conn (true_const # rest)))"
-      define G6 where "G6 = depth_formula (Conn (conn_fix conn 0 True) (map spira_trans rest))"
+      define G6 where "G6 = depth_formula (Conn conn (true_const # map spira_trans rest))"
       define G7 where "G7 = depth_formula (spira_trans (Conn conn (false_const # rest)))"
-      define G8 where "G8 = depth_formula (Conn (conn_fix conn 0 False) (map spira_trans rest))"
+      define G8 where "G8 = depth_formula (Conn conn (false_const # map spira_trans rest))"
       define G9 where "G9 = depth_formula (spira_trans Q1)"
       note DLs = DL1 DL2 DL3 DL4 DL5 DL6 DL7 DL8
       note DLf = DLs[folded G1_def G2_def G3_def G4_def G5_def G6_def G7_def G8_def G9_def]

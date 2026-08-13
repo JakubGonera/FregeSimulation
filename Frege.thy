@@ -788,22 +788,55 @@ definition equiv_proofs :: "'c1 frege_proof \<Rightarrow> 'c1 frege \<Rightarrow
                                    formulas_equiv (thesis pr1) (alphabet F1) (thesis pr2) (alphabet F2))"
 
 
+(*
+  F2 simulates F1.  The requirements on the formula translation g are stated
+  UNCONDITIONALLY (outside the implication below), and demand that g be
+  faithful: on every well-formed F2-formula it must return a well-formed,
+  semantically equal F1-formula of polynomially bounded size.
+
+  Keeping these requirements outside the implication is essential.  If g were
+  left unconstrained, the predicate would be vacuously satisfiable: choosing
+  g \<tau> to be an ill-formed formula (e.g. Conn b [Atom ''x''] for a nullary b,
+  which exists by has_bot) makes the antecedent unsatisfiable for every w,
+  because valid_proof forces thesis w = last (steps w) to be one of the steps
+  and the antecedent requires every step to be well-formed.
+
+  The size of the produced proof is bounded polynomially in len_proof w PLUS
+  len_formula \<tau>.  This matches Cook-Reckhow / Krajicek (Basic propositional
+  logic, Definition 4.1.3(b), extended to two languages on p.48): there a
+  p-simulation is a polynomial time function f(w, \<tau>) of BOTH arguments, so its
+  output is bounded by a polynomial in |w| + |\<tau>|.  In the one-language case the
+  two readings agree, since \<tau> is then the output of the poly-time proof
+  predicate on w and hence already of size poly(|w|); across two languages they
+  differ, because P(w) = g(\<tau>) only bounds |g \<tau>|, and g is assumed merely
+  polynomial-time and tautology-preserving -- never size-expansive.  Demanding
+  poly q (len_proof w) alone would therefore be strictly stronger than
+  p-simulation as classically defined, forcing len_formula \<tau> \<le> poly(len_proof w)
+  for every proof w of g \<tau>, i.e. an expansiveness property of g that Reckhow's
+  theorem does not require.
+*)
 definition simulates :: "'c1 frege \<Rightarrow> 'c2 frege \<Rightarrow> bool" where
   "simulates F1 F2 \<longleftrightarrow>
-     (\<exists> f g p q. \<forall> w \<tau>.
-        (thesis w = g \<tau> \<and> valid_proof F1 w \<and> assumptions w = {}
-         \<and> (\<forall> s \<in> set (steps w). formula_well_formed (alphabet F1) s))
-        \<longrightarrow> valid_proof F2 (f w \<tau>)
-            \<and> thesis (f w \<tau>) = \<tau>
-            \<and> assumptions (f w \<tau>) = {}
-            \<and> len_formula (g \<tau>) \<le> poly p (len_formula \<tau>)
-            \<and> len_proof (f w \<tau>) \<le> poly q (len_proof w))"
+     (\<exists> f g p q.
+        (\<forall> \<tau>. formula_well_formed (alphabet F2) \<tau> \<longrightarrow>
+                formula_well_formed (alphabet F1) (g \<tau>)
+              \<and> formulas_equiv (g \<tau>) (alphabet F1) \<tau> (alphabet F2)
+              \<and> len_formula (g \<tau>) \<le> poly p (len_formula \<tau>))
+      \<and> (\<forall> w \<tau>.
+           (formula_well_formed (alphabet F2) \<tau>
+            \<and> thesis w = g \<tau> \<and> valid_proof F1 w \<and> assumptions w = {}
+            \<and> (\<forall> s \<in> set (steps w). formula_well_formed (alphabet F1) s))
+           \<longrightarrow> valid_proof F2 (f w \<tau>)
+               \<and> thesis (f w \<tau>) = \<tau>
+               \<and> assumptions (f w \<tau>) = {}
+               \<and> len_proof (f w \<tau>) \<le> poly q (len_proof w + len_formula \<tau>)))"
 
-(* A theorem on (only) simulation of Frege systems. For p-simulation we need f and
-  g to be polynomial time*)
-theorem Reckhow:
-  assumes "frege_system F1 \<and> frege_system F2"
-  shows "simulates F1 F2"
-  sorry
+(*
+  Reckhow's theorem -- any two Frege systems simulate each other -- is proved as
+  theorem Reckhow at the end of SystemTranslation.thy, where the whole construction
+  (closure-free Spira balancing, the template translation, the roundtrip, and the
+  modus ponens conversion) is available.  It is stated for simulates as defined
+  above; for p-simulation one additionally needs f and g to be polynomial time.
+*)
 
 end
