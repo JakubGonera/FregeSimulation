@@ -146,15 +146,6 @@ next
   ultimately show ?case by blast
 qed
 
-lemma fresh_distinct_atoms_exist:
-  "\<exists>vs :: string list.
-       length vs = n \<and> distinct vs \<and> ''a'' \<notin> set vs \<and> ''b'' \<notin> set vs"
-proof -
-  have "\<exists>vs. length vs = n \<and> distinct vs \<and> set vs \<inter> {''a'', ''b''} = {}"
-    using fresh_distinct_atoms_exist_general[where avoid = "{''a'', ''b''}"] by simp
-  thus ?thesis by auto
-qed
-
 locale frege_balancing =
   fixes F :: "'c frege"
   assumes "frege_system F"
@@ -345,9 +336,6 @@ definition canonical_atoms :: "'c \<Rightarrow> string list" where
        length vs = arity (alphabet F) c
      \<and> distinct vs
      \<and> set vs \<inter> ({''a'', ''b''} \<union> var_set_form conn_iff) = {})"
-
-definition canonical_conn :: "'c \<Rightarrow> 'c formula" where
-  "canonical_conn c = Conn c (map Atom (canonical_atoms c))"
 
 lemma var_set_form_finite: "finite (var_set_form f)"
   by (induction f) auto
@@ -702,41 +690,6 @@ proof -
   hence in_S: "depth_formula step \<in> ?S" using assms by auto
   have "depth_formula step \<le> Max ?S" using Max_ge[OF fin in_S] .
   thus ?thesis unfolding base_max_step_depth_def .
-qed
-
-(*
-  Under distinguished + contains_atom, the unique-path property lets us
-  rewrite plug: only the i_0-th child of \<chi> contributes to plug h \<tau> \<chi>; all
-  siblings stay as they are. The proof of iff_congruent uses this to match
-  the substituted base proof's thesis with the lemma's sub'.
-*)
-lemma plug_under_distinguished:
-  assumes "distinguished \<chi> h" "contains_atom \<chi> h"
-  shows "\<chi> = Atom h \<or>
-         (\<exists>c' fs i_0. \<chi> = Conn c' fs \<and> i_0 < length fs \<and>
-                       contains_atom (fs ! i_0) h \<and>
-                       distinguished (fs ! i_0) h \<and>
-                       (\<forall>j < length fs. j \<noteq> i_0 \<longrightarrow> \<not> contains_atom (fs ! j) h))"
-proof (cases \<chi>)
-  case (Atom a)
-  hence "a = h" using assms(2) by simp
-  thus ?thesis using Atom by simp
-next
-  case (Conn c' fs)
-  have witness: "\<exists>f \<in> set fs. contains_atom f h"
-    using assms(2) Conn by simp
-  hence uniq: "\<exists>!i. i < length fs \<and> contains_atom (fs ! i) h"
-    using assms(1) Conn by simp
-  have dist_children: "\<forall>f \<in> set fs. distinguished f h"
-    using assms(1) Conn witness by simp
-  obtain i_0 where i_0_props: "i_0 < length fs" "contains_atom (fs ! i_0) h"
-    using uniq by auto
-  have others: "\<forall>j < length fs. j \<noteq> i_0 \<longrightarrow> \<not> contains_atom (fs ! j) h"
-    using uniq i_0_props by blast
-  have dist_i_0: "distinguished (fs ! i_0) h"
-    using dist_children i_0_props nth_mem by blast
-  show ?thesis
-    using Conn i_0_props others dist_i_0 by blast
 qed
 
 lemma plug_distinguished_unfold:
@@ -2789,21 +2742,6 @@ proof -
   finally show ?thesis .
 qed
 
-lemma sub_in_cons_list_len_lt:
-  assumes "is_subformula q g"
-      and "g = f \<or> g \<in> set fs"
-    shows "len_formula q < Suc (len_formula f + sum_list (map len_formula fs))"
-proof -
-  have "len_formula q \<le> len_formula g"
-    using assms(1) is_subformula_len_le by simp
-  also have "len_formula g \<le> sum_list (map len_formula (f # fs))"
-    using assms(2) member_le_sum_list[where xs="map len_formula (f # fs)"] by auto
-  also have "sum_list (map len_formula (f # fs))
-           = Suc (len_formula f + sum_list (map len_formula fs)) - 1"
-    by simp
-  finally show ?thesis by simp
-qed
-
 (*
   Position calculus. The lemmas below relate subterm_at, valid_position and
   fix_at along a path: how a position decomposes over append, what fixing a
@@ -3383,18 +3321,6 @@ proof -
   qed
 qed
 
-lemma spiras_sel_neq:
-  assumes "formula_well_formed (alphabet F) p"
-      and "len_formula p \<ge> 2"
-    shows "spiras_sel p \<noteq> p"
-proof
-  assume "spiras_sel p = p"
-  hence "len_formula (spiras_sel p) = len_formula p" by simp
-  moreover have "len_formula (spiras_sel p) < len_formula p"
-    using spiras_sel_pred_when_wf[OF assms] by simp
-  ultimately show False by simp
-qed
-
 lemma spiras_sel_position_spec:
   assumes "formula_well_formed (alphabet F) p"
       and "len_formula p \<ge> 2"
@@ -3545,13 +3471,6 @@ proof (induction "len_formula f" arbitrary: f rule: less_induct)
     qed
   qed
 qed
-
-lemma trans_a:
-  assumes "formula_well_formed (alphabet F) f"
-  shows "formulas_equiv f (alphabet F) (spira_trans f) (alphabet F)"
-  using spira_trans_dom_and_eval[OF assms]
-  unfolding formulas_equiv_def by blast
-
 
 paragraph \<open>(c)\<close>
 

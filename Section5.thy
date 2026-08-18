@@ -1547,32 +1547,6 @@ proof -
   show ?thesis unfolding rebalancing_def using balance_wf[OF w1 w2 w3] by simp
 qed
 
-lemma rebalancing_eval:
-  assumes "formula_well_formed (alphabet F) p"
-      and "valid_position p pos"
-    shows "eval (alphabet F) val (rebalancing p pos) = eval (alphabet F) val p"
-proof -
-  have wf_T: "formula_well_formed (alphabet F) (fix_at pos True p)"
-    using assms(1) by (rule fix_at_wf)
-  have wf_F: "formula_well_formed (alphabet F) (fix_at pos False p)"
-    using assms(1) by (rule fix_at_wf)
-  have wf_sub: "formula_well_formed (alphabet F) (subterm_at p pos)"
-    using subterm_at_wf[OF assms] .
-  have "eval (alphabet F) val (rebalancing p pos)
-      = (if eval (alphabet F) val (spira_trans (subterm_at p pos))
-         then eval (alphabet F) val (spira_trans (fix_at pos True p))
-         else eval (alphabet F) val (spira_trans (fix_at pos False p)))"
-    unfolding rebalancing_def by (rule balance_eval)
-  also have "\<dots> = (if eval (alphabet F) val (subterm_at p pos)
-                   then eval (alphabet F) val (fix_at pos True p)
-                   else eval (alphabet F) val (fix_at pos False p))"
-    using spira_trans_dom_and_eval[OF wf_T] spira_trans_dom_and_eval[OF wf_F]
-          spira_trans_dom_and_eval[OF wf_sub] by simp
-  also have "\<dots> = eval (alphabet F) val p"
-    using fix_at_eval[OF assms(2), symmetric] by simp
-  finally show ?thesis .
-qed
-
 (*
   Case 1's key identity (Reckhow's P_{R=b,Q=c} = P_{Q=c}): rebalancing the
   R-fixed formula P_{R=b} at the ancestor position qp gives a balance whose

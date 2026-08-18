@@ -21,9 +21,6 @@ lemma finite_var_set_form: "finite (var_set_form f)"
 lemma finite_var_set_rule: "finite (var_set_rule r)"
   by (simp add: finite_var_set_form)
 
-lemma sub_formula_atom_id: "sub_formula Atom f = f"
-  by (induction f) (simp_all add: map_idI)
-
 lemma card_var_set_form_le_len: "card (var_set_form f) \<le> len_formula f"
 proof (induction f)
   case (Atom v)
@@ -198,11 +195,6 @@ lemma derived_imp_derived_with:
   assumes "derived rs (take i (steps pr)) (steps pr ! i)"
     and "i < length (steps pr)"
   shows "\<exists> r s. r \<in> rs \<and> derived_with i pr r s"
-  using assms unfolding derived_def derived_with_def by (auto simp add: Let_def)
-
-lemma derived_with_imp_derived:
-  assumes "r \<in> rs" and "derived_with i pr r s"
-  shows "derived rs (take i (steps pr)) (steps pr ! i)"
   using assms unfolding derived_def derived_with_def by (auto simp add: Let_def)
 
 lemma restricted_witness:
@@ -1317,11 +1309,6 @@ lemma rule_simulation_bound_ge:
   unfolding rule_simulation_bound_def
   using well_formed_rules_finite assms by (intro Max_ge) auto
 
-lemma rule_simulation_bound_positive:
-  "1 \<le> rule_simulation_bound"
-  unfolding rule_simulation_bound_def
-  using well_formed_rules_finite by (intro Max_ge) auto
-
 lemma translated_substitution_length_bound:
   assumes r_in: "r \<in> well_formed_rules"
       and dw: "derived_with i pr r s"
@@ -1580,23 +1567,6 @@ proof -
   qed
 qed
 
-corollary translated_thesis_length:
-  assumes valid: "valid_proof Fone pr"
-      and wf_steps: "\<forall> st \<in> set (steps pr). formula_well_formed (alphabet Fone) st"
-      and depth_steps: "\<forall> st \<in> set (steps pr). depth_formula st \<le> D"
-  shows "len_formula (translate_formula (thesis pr))
-       \<le> template_length_bound ^ D * len_formula (thesis pr)"
-proof -
-  have thesis_in: "thesis pr \<in> set (steps pr)"
-    using valid unfolding valid_proof_def by simp
-  have "formula_well_formed (alphabet Fone) (thesis pr)"
-    using wf_steps thesis_in by blast
-  moreover have "depth_formula (thesis pr) \<le> D"
-    using depth_steps thesis_in by blast
-  ultimately show ?thesis
-    by (rule translate_formula_length)
-qed
-
 subsection \<open>Phase E: the reverse translation, roundtrip, and final assembly\<close>
 
 text \<open>
@@ -1609,15 +1579,6 @@ text \<open>
 
 sublocale rev: frege_pair Ftwo Fone
   by unfold_locales
-
-lemma rev_translate_formula_wf:
-  "formula_well_formed (alphabet Fone) (rev.translate_formula \<tau>)"
-  by (rule rev.translate_formula_well_formed)
-
-lemma rev_translate_formula_equiv:
-  assumes "formula_well_formed (alphabet Ftwo) \<tau>"
-  shows "formulas_equiv \<tau> (alphabet Ftwo) (rev.translate_formula \<tau>) (alphabet Fone)"
-  using rev.translate_formula_equiv[OF assms] .
 
 text \<open>
   \<^text>\<open>frege_closure\<close> needs only \<^text>\<open>frege_system F\<close>: it is a plain extension of
@@ -1935,62 +1896,6 @@ proof -
     using rev.connective_template_spec by blast
   finally show ?thesis .
 qed
-
-definition roundtrip_base_proof :: "'c2 \<Rightarrow> 'c2 frege_proof" where
-  "roundtrip_base_proof c =
-     two_bal.entails_proof {}
-       (two_bal.iff_form (roundtrip_template c)
-          (Conn c (map Atom (marker_variables (arity (alphabet Ftwo) c)))))"
-
-lemma roundtrip_base_proof_spec:
-  "valid_proof Ftwo (roundtrip_base_proof c)
-   \<and> assumptions (roundtrip_base_proof c) = {}
-   \<and> thesis (roundtrip_base_proof c)
-       = two_bal.iff_form (roundtrip_template c)
-           (Conn c (map Atom (marker_variables (arity (alphabet Ftwo) c))))
-   \<and> (\<forall> st \<in> set (steps (roundtrip_base_proof c)).
-        formula_well_formed (alphabet Ftwo) st)"
-proof -
-  define names where "names = marker_variables (arity (alphabet Ftwo) c)"
-  have len_names: "length names = arity (alphabet Ftwo) c"
-    unfolding names_def using marker_variables_spec by blast
-  have wf_rhs: "formula_well_formed (alphabet Ftwo) (Conn c (map Atom names))"
-    using len_names by simp
-  have wf_lhs: "formula_well_formed (alphabet Ftwo) (roundtrip_template c)"
-    by (rule roundtrip_template_wf)
-  have eval_rhs: "\<And>val. eval (alphabet Ftwo) val (Conn c (map Atom names))
-                        = conn_evals (alphabet Ftwo) c (map val names)"
-    by (simp add: comp_def)
-  have wf_fs: "\<forall> f \<in> {}. formula_well_formed (alphabet Ftwo) f" by simp
-  have wf_th: "formula_well_formed (alphabet Ftwo)
-                 (two_bal.iff_form (roundtrip_template c) (Conn c (map Atom names)))"
-    by (rule two_bal.iff_form_wf[OF wf_lhs wf_rhs])
-  have sem: "\<forall> val. (\<forall> f \<in> {}. eval (alphabet Ftwo) val f)
-             \<longrightarrow> eval (alphabet Ftwo) val
-                  (two_bal.iff_form (roundtrip_template c) (Conn c (map Atom names)))"
-  proof (intro allI impI)
-    fix val
-    have "eval (alphabet Ftwo) val (roundtrip_template c)
-        = conn_evals (alphabet Ftwo) c (map val names)"
-      unfolding names_def by (rule roundtrip_template_eval)
-    also have "\<dots> = eval (alphabet Ftwo) val (Conn c (map Atom names))"
-      using eval_rhs by simp
-    finally show "eval (alphabet Ftwo) val
-                    (two_bal.iff_form (roundtrip_template c) (Conn c (map Atom names)))"
-      using two_bal.iff_form_eval by simp
-  qed
-  show ?thesis
-    unfolding roundtrip_base_proof_def names_def[symmetric]
-    using two_bal.entails_proof_spec[OF wf_fs wf_th sem] by simp
-qed
-
-definition roundtrip_base_bound :: nat where
-  "roundtrip_base_bound = Max ((\<lambda> c :: 'c2. len_proof (roundtrip_base_proof c)) ` UNIV)"
-
-lemma roundtrip_base_bound_ge:
-  "len_proof (roundtrip_base_proof c) \<le> roundtrip_base_bound"
-  unfolding roundtrip_base_bound_def
-  using two.finite_alphabet by (intro Max_ge) auto
 
 text \<open>
   The well-formedness hypothesis below is REQUIRED, not cosmetic: without it the arity
@@ -2964,14 +2869,14 @@ qed
 subsection \<open>The roundtrip base equivalence over fresh atoms\<close>
 
 text \<open>
-  \<^const>\<open>roundtrip_base_proof\<close> is stated over the MARKER variables, and those are
-  produced by \<^const>\<open>marker_variables\<close>, whose specification promises only length and
-  distinctness -- in particular nothing keeps them away from the variables of
-  \<^text>\<open>conn_iff\<close>.  Substituting into that proof would therefore not commute with
-  \<^text>\<open>iff_form\<close>.  Renaming the markers onto \<^text>\<open>two_bal.canonical_atoms\<close>, which
-  ARE fresh for \<open>conn_iff\<close> by construction, repairs this at no cost: the renamed template
-  still meets the template specification, so its equivalence with the bare connective
-  again has a proof of constant size.
+  A base proof stated over the MARKER variables is unusable here: those are produced by
+  \<^const>\<open>marker_variables\<close>, whose specification promises only length and distinctness --
+  in particular nothing keeps them away from the variables of \<^text>\<open>conn_iff\<close>.
+  Substituting into such a proof would therefore not commute with \<^text>\<open>iff_form\<close>.
+  Renaming the markers onto \<^text>\<open>two_bal.canonical_atoms\<close>, which ARE fresh for
+  \<open>conn_iff\<close> by construction, repairs this at no cost: the renamed template still meets the
+  template specification, so its equivalence with the bare connective again has a proof of
+  constant size.
 \<close>
 
 lemma roundtrip_template_var_set:
@@ -3767,6 +3672,39 @@ proof -
 qed
 
 text \<open>
+  Spira balancing bounds the depth of \<open>spira_trans f\<close> by a constant times \<open>log (len f + 1)\<close>.
+  Every consumer needs that constant to be NON-NEGATIVE --- it gets multiplied by other
+  logarithms and by template depths, and it feeds \<^text>\<open>pow_log_poly\<close>, whose hypothesis is
+  \<open>0 \<le> c\<close>.  Replacing the constant supplied by \<^text>\<open>trans_c\<close> with its maximum against
+  zero is harmless and is done once here, rather than at each use.
+\<close>
+
+lemma spira_depth_log:
+  "\<exists> c :: real. 0 \<le> c \<and> (\<forall> f. formula_well_formed (alphabet Ftwo) f
+       \<longrightarrow> real (depth_formula (two_bal.spira_trans f))
+           \<le> c * log 2 (real (len_formula f) + 1))"
+proof -
+  obtain cs0 :: real where cs0:
+    "\<And>f. formula_well_formed (alphabet Ftwo) f
+         \<Longrightarrow> real (depth_formula (two_bal.spira_trans f))
+             \<le> cs0 * log 2 (real (len_formula f) + 1)"
+    using two_bal.trans_c by blast
+  have nn: "(0::real) \<le> max cs0 0" by simp
+  have bnd: "real (depth_formula (two_bal.spira_trans f))
+               \<le> max cs0 0 * log 2 (real (len_formula f) + 1)"
+    if wff: "formula_well_formed (alphabet Ftwo) f" for f
+  proof -
+    have "0 \<le> log 2 (real (len_formula f) + 1)" by simp
+    hence "cs0 * log 2 (real (len_formula f) + 1)
+             \<le> max cs0 0 * log 2 (real (len_formula f) + 1)"
+      by (intro mult_right_mono) simp_all
+    thus ?thesis using cs0[OF wff] by linarith
+  qed
+  show ?thesis using nn bnd by blast
+qed
+
+
+text \<open>
   Step 4 of the chain, made polynomial.  \<^text>\<open>roundtrip_provable\<close> costs
   \<open>roundtrip_const ^ depth \<sigma> * roundtrip_weight \<sigma>\<close>, which is polynomial precisely when \<sigma> is
   BALANCED --- and \<sigma> is always \<^text>\<open>spira_trans \<tau>\<close> here.  The same balancing bounds the
@@ -3786,23 +3724,11 @@ proof -
     "\<And>f. formula_well_formed (alphabet Ftwo) f
          \<Longrightarrow> len_formula (two_bal.spira_trans f) \<le> poly szp (len_formula f)"
     using two_bal.trans_b by blast
-  obtain cs0 :: real where cs0:
+  obtain cs :: real where cs_nn: "0 \<le> cs" and cs_bound:
     "\<And>f. formula_well_formed (alphabet Ftwo) f
          \<Longrightarrow> real (depth_formula (two_bal.spira_trans f))
-             \<le> cs0 * log 2 (real (len_formula f) + 1)"
-    using two_bal.trans_c by blast
-  define cs :: real where "cs = max cs0 0"
-  have cs_nn: "0 \<le> cs" unfolding cs_def by simp
-  have cs_bound: "real (depth_formula (two_bal.spira_trans f))
-                    \<le> cs * log 2 (real (len_formula f) + 1)"
-    if wff: "formula_well_formed (alphabet Ftwo) f" for f
-  proof -
-    have "0 \<le> log 2 (real (len_formula f) + 1)" by simp
-    hence "cs0 * log 2 (real (len_formula f) + 1)
              \<le> cs * log 2 (real (len_formula f) + 1)"
-      unfolding cs_def by (intro mult_right_mono) simp_all
-    thus ?thesis using cs0[OF wff] by linarith
-  qed
+    using spira_depth_log by blast
   define DD :: "nat \<Rightarrow> nat" where "DD n = nat \<lceil>cs * log 2 (real n + 1)\<rceil>" for n
   have dep_le: "depth_formula (two_bal.spira_trans f) \<le> DD (len_formula f)"
     if wff: "formula_well_formed (alphabet Ftwo) f" for f
@@ -4129,23 +4055,11 @@ lemma translated_balanced_proof:
                 = translate_formula (rev.translate_formula (two_bal.spira_trans \<tau>))
             \<and> len_proof pr2 \<le> poly q (len_proof w + len_formula \<tau>))"
 proof -
-  obtain cs0 :: real where cs0:
+  obtain cs :: real where cs_nn: "0 \<le> cs" and cs_bound:
     "\<And>f. formula_well_formed (alphabet Ftwo) f
          \<Longrightarrow> real (depth_formula (two_bal.spira_trans f))
-             \<le> cs0 * log 2 (real (len_formula f) + 1)"
-    using two_bal.trans_c by blast
-  define cs :: real where "cs = max cs0 0"
-  have cs_nn: "0 \<le> cs" unfolding cs_def by simp
-  have cs_bound: "real (depth_formula (two_bal.spira_trans f))
-                    \<le> cs * log 2 (real (len_formula f) + 1)"
-    if wff: "formula_well_formed (alphabet Ftwo) f" for f
-  proof -
-    have "0 \<le> log 2 (real (len_formula f) + 1)" by simp
-    hence "cs0 * log 2 (real (len_formula f) + 1)
              \<le> cs * log 2 (real (len_formula f) + 1)"
-      unfolding cs_def by (intro mult_right_mono) simp_all
-    thus ?thesis using cs0[OF wff] by linarith
-  qed
+    using spira_depth_log by blast
   obtain Bbal :: "nat poly" and cbal0 :: real where PBAL:
     "\<forall> pr. valid_proof Fone pr \<and> assumptions pr = {}
            \<and> (\<forall> s \<in> set (steps pr). formula_well_formed (alphabet Fone) s) \<longrightarrow>
@@ -4486,7 +4400,5 @@ proof -
   interpret frege_pair F1 F2 by (rule frege_pair.intro[OF f1 f2])
   show ?thesis by (rule reckhow_simulates)
 qed
-
-end
 
 end
