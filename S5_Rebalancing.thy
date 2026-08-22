@@ -1,5 +1,5 @@
-theory Section5
-  imports Translation
+theory S5_Rebalancing
+  imports S3_4_Balancing
 begin
 
 text \<open>

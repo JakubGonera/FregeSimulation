@@ -1,5 +1,5 @@
-theory Section6
-  imports FregeCompleteness Section5
+theory S6_Comprehension
+  imports TruthTables S5_Rebalancing
 begin
 
 section \<open>Pushing the balancing translation through connectives (Filmus section 6)\<close>

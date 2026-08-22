@@ -1,14 +1,14 @@
-theory FregeCompleteness
+theory TruthTables
   imports
     "Propositional_Proof_Systems.Sema"
-    Frege
+    S2_Frege
 begin
 
 text \<open>Bridge to the AFP entry \<^session>\<open>Propositional_Proof_Systems\<close>.  Reckhow's theorem
   ASSUMES two Frege systems rather than constructing one, so nothing here needs to build a
   Frege system: proving that a functionally complete alphabet admits one is left to whoever
   instantiates \<^locale>\<open>frege_system\<close>.  What survives is the small amount of machinery
-  \<open>SystemTranslation\<close> actually consumes --- the truth-table encoding of a connective as an
+  \<open>Reckhow\<close> actually consumes --- the truth-table encoding of a connective as an
   AFP formula, and four substitution/congruence facts on the Frege side.\<close>
 
 subsection \<open>Big conjunction/disjunction over AFP formulas\<close>

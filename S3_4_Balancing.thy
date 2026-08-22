@@ -1,5 +1,5 @@
-theory Translation
-  imports Frege Arithmetic "HOL.Transcendental"
+theory S3_4_Balancing
+  imports S2_Frege Arithmetic "HOL.Transcendental"
 begin
 
 (* The numbering of lemmas follows Yuval Filmus' manuscript *)
@@ -187,7 +187,7 @@ lemma conn_iff_wf: "formula_well_formed (alphabet F) conn_iff"
 lemma conn_iff_equiv: "formulas_equiv conn_iff (alphabet F) iff_dm dm_alphabet"
   unfolding conn_iff_def using someI_ex[OF conn_iff_spec] by blast
 
-(* lemma 3.1 already proven in Frege.thy *)
+(* lemma 3.1 already proven in S2_Frege.thy *)
 
 fun contains_atom :: "'c formula \<Rightarrow> string \<Rightarrow> bool" where
   "contains_atom (Atom s) h = (h = s)" |

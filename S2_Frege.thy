@@ -1,4 +1,4 @@
-theory Frege
+theory S2_Frege
   imports Main "HOL-Computational_Algebra.Polynomial"
 begin
 
@@ -777,7 +777,7 @@ definition simulates :: "'c1 frege \<Rightarrow> 'c2 frege \<Rightarrow> bool" w
 
 (*
   Reckhow's theorem -- any two Frege systems simulate each other -- is proved as
-  theorem Reckhow at the end of SystemTranslation.thy, where the whole construction
+  theorem Reckhow at the end of Reckhow.thy, where the whole construction
   (closure-free Spira balancing, the template translation, the roundtrip, and the
   modus ponens conversion) is available.  It is stated for simulates as defined
   above; for p-simulation one additionally needs f and g to be polynomial time.

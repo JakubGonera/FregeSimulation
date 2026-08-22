@@ -1,5 +1,5 @@
 theory DeMorgan
-  imports Frege
+  imports S2_Frege
 begin
 
 type_synonym dformula = "dm_conn formula"

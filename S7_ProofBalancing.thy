@@ -1,5 +1,5 @@
-theory Section7
-  imports Section6
+theory S7_ProofBalancing
+  imports S6_Comprehension
 begin
 
 section \<open>Conclusion of the proof (Filmus section 7)\<close>

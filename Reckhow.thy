@@ -1,5 +1,5 @@
-theory SystemTranslation
-  imports Section7
+theory Reckhow
+  imports S7_ProofBalancing
 begin
 
 section \<open>Translation between Frege systems over different alphabets\<close>
@@ -1584,7 +1584,7 @@ text \<open>
   \<^text>\<open>frege_closure\<close> needs only \<^text>\<open>frege_system F\<close>: it is a plain extension of
   \<^text>\<open>frege_balancing\<close>, whose sole assumption is \<^text>\<open>frege_system F\<close>.  In
   particular no \<^text>\<open>conn_closed\<close> assumption is involved -- the arity-reducing
-  \<^text>\<open>conn_fix\<close> identity is the only part of Section6 that needs closure, and it
+  \<^text>\<open>conn_fix\<close> identity is the only part of S6_Comprehension that needs closure, and it
   carries \<^text>\<open>conn_closed (alphabet F)\<close> as an explicit hypothesis rather than as a
   locale assumption; the Spira-balancing development itself goes through the
   arity-preserving \<^text>\<open>shc_subst_cons\<close> and \<^text>\<open>collapse_open\<close>.
@@ -1728,7 +1728,7 @@ qed
 subsection \<open>Modus ponens conversion inside Ftwo\<close>
 
 text \<open>
-  Section7's \<^text>\<open>iff_elimination\<close> lives in \<^text>\<open>frege_closure\<close>, but its proof
+  S7_ProofBalancing's \<^text>\<open>iff_elimination\<close> lives in \<^text>\<open>frege_closure\<close>, but its proof
   only ever uses \<^text>\<open>frege_balancing\<close>-level material (\<^text>\<open>entails_proof\<close>,
   \<^text>\<open>iff_form\<close>, the two fresh symmetry atoms, and \<^text>\<open>proof_substitution\<close>).
   Ftwo is an arbitrary Frege system and need not be closed, so the converter is
