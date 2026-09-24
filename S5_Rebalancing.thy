@@ -15,7 +15,7 @@ text \<open>
   It depends only on the public interface of theory Translation: the
   frege_balancing locale together with everything established there up to and
   including Lemma 4.3 (in particular custom_balancing, conn_iff, the semantic
-  translation spira_trans, and func_complete of the frege_system).
+  translation spira_trans, and func_complete of the frege_system_with_constants).
 \<close>
 
 context frege_balancing
@@ -124,14 +124,14 @@ lemma taut_proof_spec:
        \<and> thesis (taut_proof taut) = taut
        \<and> (\<forall> st \<in> set (steps (taut_proof taut)). formula_well_formed (alphabet F) st)"
 proof -
-  have fs_F: "frege_system F"
+  have fs_F: "frege_system_with_constants F"
     by (meson frege_balancing_axioms frege_balancing_def)
   have "(\<forall>f \<in> {}. formula_well_formed (alphabet F) f) \<longrightarrow>
         formula_well_formed (alphabet F) taut \<longrightarrow>
         (\<forall>val. (\<forall>f \<in> {}. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val taut) \<longrightarrow>
         (\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut
             \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
-    using frege_system.impl_complete[OF fs_F] by blast
+    using frege_system_with_constants.impl_complete[OF fs_F] by blast
   hence "\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut
             \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st)"
     using assms by simp
@@ -262,7 +262,7 @@ lemma provable_balanced_iff_subst:
     shows "provable_balanced_iff (sub_formula sub A) (sub_formula sub B)
              lines (sz * len_sub var_set sub) (dep + depth_sub var_set sub)"
 proof -
-  have fs_F: "frege_system F"
+  have fs_F: "frege_system_with_constants F"
     by (meson frege_balancing_axioms frege_balancing_def)
   from assms(1) obtain pr where pr:
     "valid_proof F pr" "assumptions pr = {}" "frege_proof.thesis pr = iff_form A B"
@@ -279,7 +279,7 @@ proof -
   qed
   let ?pr' = "sub_proof sub pr"
   have valid': "valid_proof F ?pr'"
-    using frege_system.proof_substitution[OF fs_F] pr(1) by blast
+    using frege_system_with_constants.proof_substitution[OF fs_F] pr(1) by blast
   have asm': "assumptions ?pr' = {}" using pr(2) by simp
   have thesis': "frege_proof.thesis ?pr'
                = iff_form (sub_formula sub A) (sub_formula sub B)"
@@ -424,14 +424,14 @@ lemma entails_proof_spec:
        \<and> thesis (entails_proof fs th) = th
        \<and> (\<forall> st \<in> set (steps (entails_proof fs th)). formula_well_formed (alphabet F) st)"
 proof -
-  have fs_F: "frege_system F"
+  have fs_F: "frege_system_with_constants F"
     by (meson frege_balancing_axioms frege_balancing_def)
   have "(\<forall>f \<in> fs. formula_well_formed (alphabet F) f) \<longrightarrow>
         formula_well_formed (alphabet F) th \<longrightarrow>
         (\<forall>val. (\<forall>f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th) \<longrightarrow>
         (\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th
             \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
-    using frege_system.impl_complete[OF fs_F] by blast
+    using frege_system_with_constants.impl_complete[OF fs_F] by blast
   hence "\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th
             \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st)"
     using assms by simp
@@ -532,7 +532,7 @@ lemma iff_trans:
                 + max (depth_formula A)
                       (max (depth_formula B) (depth_formula C)))))"
 proof -
-  have fs_F: "frege_system F"
+  have fs_F: "frege_system_with_constants F"
     by (meson frege_balancing_axioms frege_balancing_def)
   let ?x = "trans_atom_x" and ?y = "trans_atom_y" and ?z = "trans_atom_z"
   let ?sub = "\<lambda>w. if w = ?x then A else if w = ?y then B
@@ -582,7 +582,7 @@ proof -
   define ti where ti_def: "ti = sub_proof ?sub trans_base_proof"
   have valid_ti: "valid_proof F ti"
     unfolding ti_def
-    using frege_system.proof_substitution[OF fs_F] trans_base_proof_spec by blast
+    using frege_system_with_constants.proof_substitution[OF fs_F] trans_base_proof_spec by blast
   have ti_steps: "steps ti = map (sub_formula ?sub) (steps trans_base_proof)"
     unfolding ti_def by simp
   have ti_thesis: "frege_proof.thesis ti = iff_form A C"
@@ -682,7 +682,7 @@ proof -
   define c1 where c1_def: "c1 = combine_proofs pAB pBC"
   have valid_c1: "valid_proof F c1"
     unfolding c1_def
-    using frege_system.combining_valid_proofs[OF fs_F] pAB(1) pBC(1) by blast
+    using frege_system_with_constants.combining_valid_proofs[OF fs_F] pAB(1) pBC(1) by blast
   have c1_asm: "assumptions c1 = {}"
     unfolding c1_def using pAB(2) pBC(2) by simp
   have c1_steps: "steps c1 = steps pAB @ steps pBC"
@@ -691,7 +691,7 @@ proof -
   define cb where cb_def: "cb = combine_proofs c1 ti"
   have valid_cb: "valid_proof F cb"
     unfolding cb_def
-    using frege_system.combining_valid_proofs[OF fs_F] valid_c1 valid_ti by blast
+    using frege_system_with_constants.combining_valid_proofs[OF fs_F] valid_c1 valid_ti by blast
 
   have AB_in: "iff_form A B \<in> set (steps pAB)"
   proof -
@@ -1022,7 +1022,7 @@ lemma balance_cong:
                     (max (depth_formula Y) (max (depth_formula Y')
                       (max (depth_formula Z) (depth_formula Z')))))))))"
 proof -
-  have fs_F: "frege_system F"
+  have fs_F: "frege_system_with_constants F"
     by (meson frege_balancing_axioms frege_balancing_def)
   let ?a0 = "cong_atoms ! 0" and ?a1 = "cong_atoms ! 1"
   and ?a2 = "cong_atoms ! 2" and ?a3 = "cong_atoms ! 3"
@@ -1157,7 +1157,7 @@ proof -
   define ci where ci_def: "ci = sub_proof ?csub balance_cong_base_proof"
   have valid_ci: "valid_proof F ci"
     unfolding ci_def
-    using frege_system.proof_substitution[OF fs_F] balance_cong_base_proof_spec
+    using frege_system_with_constants.proof_substitution[OF fs_F] balance_cong_base_proof_spec
     by blast
   have ci_steps: "steps ci = map (sub_formula ?csub) (steps balance_cong_base_proof)"
     unfolding ci_def by simp
@@ -1257,7 +1257,7 @@ proof -
   define c1 where c1_def: "c1 = combine_proofs pX pY"
   have valid_c1: "valid_proof F c1"
     unfolding c1_def
-    using frege_system.combining_valid_proofs[OF fs_F] pX(1) pY(1) by blast
+    using frege_system_with_constants.combining_valid_proofs[OF fs_F] pX(1) pY(1) by blast
   have c1_asm: "assumptions c1 = {}"
     unfolding c1_def using pX(2) pY(2) by simp
   have c1_steps: "steps c1 = steps pX @ steps pY"
@@ -1266,7 +1266,7 @@ proof -
   define c2 where c2_def: "c2 = combine_proofs c1 pZ"
   have valid_c2: "valid_proof F c2"
     unfolding c2_def
-    using frege_system.combining_valid_proofs[OF fs_F] valid_c1 pZ(1) by blast
+    using frege_system_with_constants.combining_valid_proofs[OF fs_F] valid_c1 pZ(1) by blast
   have c2_asm: "assumptions c2 = {}"
     unfolding c2_def using c1_asm pZ(2) by simp
   have c2_steps: "steps c2 = steps pX @ steps pY @ steps pZ"
@@ -1278,7 +1278,7 @@ proof -
   define cb where cb_def: "cb = combine_proofs c2 ci"
   have valid_cb: "valid_proof F cb"
     unfolding cb_def
-    using frege_system.combining_valid_proofs[OF fs_F] valid_c2 valid_ci by blast
+    using frege_system_with_constants.combining_valid_proofs[OF fs_F] valid_c2 valid_ci by blast
 
   have XX_in: "iff_form X X' \<in> set (steps pX)"
   proof -
@@ -1642,7 +1642,7 @@ lemma iff_sym:
              (max d (sym_step_depth
                 + max (depth_formula A) (depth_formula B)))"
 proof -
-  have fs_F: "frege_system F"
+  have fs_F: "frege_system_with_constants F"
     by (meson frege_balancing_axioms frege_balancing_def)
   let ?x = "sym_atom_x" and ?y = "sym_atom_y"
   let ?sub = "\<lambda>w. if w = ?x then A else if w = ?y then B else Atom w"
@@ -1678,7 +1678,7 @@ proof -
   define si where si_def: "si = sub_proof ?sub sym_base_proof"
   have valid_si: "valid_proof F si"
     unfolding si_def
-    using frege_system.proof_substitution[OF fs_F] sym_base_proof_spec by blast
+    using frege_system_with_constants.proof_substitution[OF fs_F] sym_base_proof_spec by blast
   have si_steps: "steps si = map (sub_formula ?sub) (steps sym_base_proof)"
     unfolding si_def by simp
   have si_wf: "\<forall>t \<in> set (steps si). formula_well_formed (alphabet F) t"
@@ -1757,7 +1757,7 @@ proof -
   define cb where cb_def: "cb = combine_proofs pAB si"
   have valid_cb: "valid_proof F cb"
     unfolding cb_def
-    using frege_system.combining_valid_proofs[OF fs_F] pAB(1) valid_si by blast
+    using frege_system_with_constants.combining_valid_proofs[OF fs_F] pAB(1) valid_si by blast
 
   have AB_in: "iff_form A B \<in> set (steps pAB)"
   proof -
@@ -4896,7 +4896,7 @@ lemma plug_cong_exists:
              (max d (max (depth_formula \<phi>) (depth_formula \<psi>)
                      + depth_formula \<chi> + congc))"
 proof -
-  have fs_F: "frege_system F"
+  have fs_F: "frege_system_with_constants F"
     by (meson frege_balancing_axioms frege_balancing_def)
   from iff_congruent obtain congc congbnd where IC:
     "\<forall> \<phi> \<psi> \<chi> h.
@@ -4988,7 +4988,7 @@ proof -
     define cb where cb_def: "cb = combine_proofs p1 pc"
     have valid_cb: "valid_proof F cb"
       unfolding cb_def
-      using frege_system.combining_valid_proofs[OF fs_F] p1(1) pc(1) by blast
+      using frege_system_with_constants.combining_valid_proofs[OF fs_F] p1(1) pc(1) by blast
     have cb_steps: "steps cb = steps p1 @ steps pc"
       unfolding cb_def by simp
     have cb_asm: "assumptions cb = {}"
@@ -5534,7 +5534,7 @@ lemma reassoc_index_set_finite: "finite reassoc_index_set"
 proof -
   have "finite (UNIV :: 'c set)"
     by (meson frege_balancing_axioms frege_balancing_def
-              frege_system.finite_alphabet)
+              frege_system_with_constants.finite_alphabet)
   thus ?thesis unfolding reassoc_index_set_def by simp
 qed
 
@@ -6608,7 +6608,7 @@ proof (rule ccontr)
   hence k0: "?k = 0" by simp
   have alphabet_finite: "finite (UNIV :: 'c set)"
     by (meson frege_balancing_axioms frege_balancing_def
-              frege_system.finite_alphabet)
+              frege_system_with_constants.finite_alphabet)
   have all_arity_zero: "\<forall> c. arity (alphabet F) c = 0"
   proof
     fix c

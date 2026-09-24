@@ -470,28 +470,7 @@ lemma sub_formula_well_formed:
   shows "formula_well_formed alph (sub_formula sub g)"
   using assms by (induction g) auto
 
-locale frege_system =
-  fixes F :: "'c frege"
-  assumes sound: "\<forall> r \<in> rules F. sound_rule F r"
-  and impl_complete:
-    "\<forall> fs th.
-       (\<forall> f \<in> fs. formula_well_formed (alphabet F) f) \<longrightarrow>
-       formula_well_formed (alphabet F) th \<longrightarrow>
-       (\<forall> val. (\<forall> f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th)
-       \<longrightarrow> (\<exists> pr. valid_proof F pr
-                 \<and> assumptions pr = fs
-                 \<and> thesis pr = th
-                 \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
-  and finite: "finite (rules F)"
-  and finite_alphabet: "finite (UNIV :: 'c set)"
-  and func_complete:
-    "\<forall>f :: dm_conn formula.
-       \<exists> f' :: 'c formula. formula_well_formed (alphabet F) f' \<and>
-                           formulas_equiv f dm_alphabet f' (alphabet F)"
-  and has_top:
-    "\<exists> t. arity (alphabet F) t = 0 \<and> (\<forall> val. eval (alphabet F) val (Conn t []) = True)"
-  and has_bot:
-    "\<exists> b. arity (alphabet F) b = 0 \<and> (\<forall> val. eval (alphabet F) val (Conn b []) = False)"
+locale proof_calculus = fixes F :: "'c frege"
 begin
 
 lemma combining_valid_proofs_pr1:
@@ -723,6 +702,71 @@ proof -
     using assms steps_ok
     unfolding valid_proof_def by (simp add: last_map)
 qed
+
+end
+
+locale frege_system = proof_calculus F for F :: "'c frege" +
+  assumes sound: "\<forall> r \<in> rules F. sound_rule F r"
+  and impl_complete:
+    "\<forall> fs th.
+       (\<forall> f \<in> fs. formula_well_formed (alphabet F) f) \<longrightarrow>
+       formula_well_formed (alphabet F) th \<longrightarrow>
+       (\<forall> val. (\<forall> f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th)
+       \<longrightarrow> (\<exists> pr. valid_proof F pr
+                 \<and> assumptions pr = fs
+                 \<and> thesis pr = th
+                 \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
+  and finite: "finite (rules F)"
+  and finite_alphabet: "finite (UNIV :: 'c set)"
+  and func_complete:
+    "\<forall>f :: dm_conn formula.
+       \<exists> f' :: 'c formula. formula_well_formed (alphabet F) f' \<and>
+                           formulas_equiv f dm_alphabet f' (alphabet F)"
+
+begin
+
+lemmas combining_valid_proofs_pr1 = combining_valid_proofs_pr1
+lemmas combining_valid_proofs = combining_valid_proofs
+lemmas proof_substitution = proof_substitution
+
+lemma constant_formulas_exist:
+  shows "\<exists>T B. formula_well_formed (alphabet F) T
+       \<and> formula_well_formed (alphabet F) B
+       \<and> (\<forall>v. eval (alphabet F) v T = True)
+       \<and> (\<forall>v. eval (alphabet F) v B = False)"
+proof -
+  obtain T where T: "formula_well_formed (alphabet F) T"
+    "formulas_equiv (Conn Top []) dm_alphabet T (alphabet F)"
+    using func_complete by blast
+  obtain B where B: "formula_well_formed (alphabet F) B"
+    "formulas_equiv (Conn Bot []) dm_alphabet B (alphabet F)"
+    using func_complete by blast
+  show ?thesis
+    using T B unfolding formulas_equiv_def dm_alphabet_def by auto
+qed
+
+end
+
+text \<open>The balancing development uses literal one-node truth and falsity
+  formulas. Keep that stronger interface separate from the general notion of
+  a Frege system.\<close>
+
+locale frege_system_with_constants = frege_system F for F :: "'c frege" +
+  assumes has_top:
+    "\<exists> t. arity (alphabet F) t = 0 \<and> (\<forall> val. eval (alphabet F) val (Conn t []) = True)"
+  and has_bot:
+    "\<exists> b. arity (alphabet F) b = 0 \<and> (\<forall> val. eval (alphabet F) val (Conn b []) = False)"
+begin
+
+lemmas sound = sound
+lemmas impl_complete = impl_complete
+lemmas finite = finite
+lemmas finite_alphabet = finite_alphabet
+lemmas func_complete = func_complete
+lemmas combining_valid_proofs_pr1 = combining_valid_proofs_pr1
+lemmas combining_valid_proofs = combining_valid_proofs
+lemmas proof_substitution = proof_substitution
+
 end
 
 definition equiv_proofs :: "'c1 frege_proof \<Rightarrow> 'c1 frege \<Rightarrow> 'c2 frege_proof \<Rightarrow> 'c2 frege \<Rightarrow> bool" where

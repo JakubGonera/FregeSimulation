@@ -395,14 +395,14 @@ subsection \<open>A pair of Frege systems\<close>
 
 locale frege_pair =
   fixes Fone :: "'c1 frege" and Ftwo :: "'c2 frege"
-  assumes frege_system_one: "frege_system Fone"
-      and frege_system_two: "frege_system Ftwo"
+  assumes frege_system_with_constants_one: "frege_system_with_constants Fone"
+      and frege_system_with_constants_two: "frege_system_with_constants Ftwo"
 
-sublocale frege_pair \<subseteq> one: frege_system Fone
-  by (rule frege_system_one)
+sublocale frege_pair \<subseteq> one: frege_system_with_constants Fone
+  by (rule frege_system_with_constants_one)
 
-sublocale frege_pair \<subseteq> two: frege_system Ftwo
-  by (rule frege_system_two)
+sublocale frege_pair \<subseteq> two: frege_system_with_constants Ftwo
+  by (rule frege_system_with_constants_two)
 
 context frege_pair
 begin
@@ -1581,8 +1581,8 @@ sublocale rev: frege_pair Ftwo Fone
   by unfold_locales
 
 text \<open>
-  \<^text>\<open>frege_closure\<close> needs only \<^text>\<open>frege_system F\<close>: it is a plain extension of
-  \<^text>\<open>frege_balancing\<close>, whose sole assumption is \<^text>\<open>frege_system F\<close>.  In
+  \<^text>\<open>frege_closure\<close> needs only \<^text>\<open>frege_system_with_constants F\<close>: it is a plain extension of
+  \<^text>\<open>frege_balancing\<close>, whose sole assumption is \<^text>\<open>frege_system_with_constants F\<close>.  In
   particular no \<^text>\<open>conn_closed\<close> assumption is involved -- the arity-reducing
   \<^text>\<open>conn_fix\<close> identity is the only part of S6_Comprehension that needs closure, and it
   carries \<^text>\<open>conn_closed (alphabet F)\<close> as an explicit hypothesis rather than as a
@@ -4312,7 +4312,7 @@ subsection \<open>Ftwo simulates Fone\<close>
 text \<open>
   Both clauses of \<^const>\<open>simulates\<close>, with \<open>g = \<close>\<^const>\<open>reverse_translate\<close> and \<open>f\<close>
   picked out of the existence statement by choice.  Nothing about Fone or Ftwo is used
-  beyond \<^const>\<open>frege_system\<close>, so this is Reckhow's theorem for the pair.
+  beyond \<^const>\<open>frege_system_with_constants\<close>, so this is Reckhow's theorem for the pair.
 \<close>
 
 theorem reckhow_simulates: "simulates Fone Ftwo"
@@ -4386,17 +4386,17 @@ end
 
 text \<open>
   Reckhow's theorem.  Any two Frege systems simulate each other: the statement is symmetric
-  in the two systems, so one direction suffices.  Nothing beyond \<^const>\<open>frege_system\<close> ---
+  in the two systems, so one direction suffices.  Nothing beyond \<^const>\<open>frege_system_with_constants\<close> ---
   finiteness, soundness and implicational completeness of the rules --- is assumed of
   either alphabet.
 \<close>
 
-theorem Reckhow:
-  assumes "frege_system F1 \<and> frege_system F2"
+theorem Reckhow_with_constants:
+  assumes "frege_system_with_constants F1 \<and> frege_system_with_constants F2"
   shows "simulates F1 F2"
 proof -
-  have f1: "frege_system F1" using assms by blast
-  have f2: "frege_system F2" using assms by blast
+  have f1: "frege_system_with_constants F1" using assms by blast
+  have f2: "frege_system_with_constants F2" using assms by blast
   interpret frege_pair F1 F2 by (rule frege_pair.intro[OF f1 f2])
   show ?thesis by (rule reckhow_simulates)
 qed

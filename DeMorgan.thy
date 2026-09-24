@@ -83,7 +83,7 @@ qed
 locale de_morgan_frege =
   fixes F :: dfrege
   assumes alph: "alphabet F = dm_alphabet"
-  and "frege_system F"
+  and "frege_system_with_constants F"
   and rules_wf: "\<forall>r \<in> rules F. (\<forall>f \<in> set (prems r). formula_well_formed (alphabet F) f)
                                 \<and> formula_well_formed (alphabet F) (concl r)"
 begin
@@ -211,7 +211,7 @@ proof -
   proof -
     let ?set = "(\<lambda>r. card (var_set_rule r)) ` rules F"
     have "finite (rules F)"
-      using de_morgan_frege_axioms de_morgan_frege_def by (simp add: frege_system.finite)
+      using de_morgan_frege_axioms de_morgan_frege_def by (simp add: frege_system_with_constants.finite)
     hence "finite ?set" by simp
     thus ?thesis using Max_ge[of ?set] assms(1,4)
       by (meson image_iff trans_le_add1)
@@ -243,7 +243,7 @@ proof -
     using dm1 dm2 de_morgan_frege_def by fastforce
   hence val_sat: "\<forall> val. (\<forall> f \<in> set (prems rule). eval (alphabet F') val f)
                 \<longrightarrow> eval (alphabet F') val (concl rule)"
-    using dm1 assms frege_system.sound sound_rule_def
+    using dm1 assms frege_system_with_constants.sound sound_rule_def
     by (metis de_morgan_frege_def)
   have rwf0: "(\<forall>f\<in>set (prems rule). formula_well_formed (alphabet F) f)
               \<and> formula_well_formed (alphabet F) (concl rule)"
@@ -258,7 +258,7 @@ proof -
                           \<longrightarrow> (\<exists> pr. valid_proof F' pr
                                    \<and> assumptions pr = set (prems rule)
                                    \<and> thesis pr = concl rule)"
-    using dm2 frege_system.impl_complete[of F'] de_morgan_frege_def by blast
+    using dm2 frege_system_with_constants.impl_complete[of F'] de_morgan_frege_def by blast
   thus ?thesis using val_sat rwf by blast
 qed
 
@@ -304,9 +304,9 @@ proof -
     and base_assm: "assumptions (rule_proof_fun r) = set (prems r)"
     and base_th: "thesis (rule_proof_fun r) = concl r"
     by auto
-  have fsys: "frege_system F'"
+  have fsys: "frege_system_with_constants F'"
     using dm2 unfolding de_morgan_frege_def by simp
-  interpret fs: frege_system F'
+  interpret fs: frege_system_with_constants F'
     by (rule fsys)
   have sub_valid: "valid_proof F' (step_proof r s)"
     unfolding step_proof.simps using fs.proof_substitution[OF base_valid] .
@@ -455,10 +455,10 @@ proof -
     case False
     then have acc_valid': "valid_proof F' acc"
       using acc_valid by blast
-    have fsys: "frege_system F'"
+    have fsys: "frege_system_with_constants F'"
       using dm2 unfolding de_morgan_frege_def by simp
     show ?thesis
-      using eq acc_valid' step_props prems_seen fsys frege_system.combining_valid_proofs
+      using eq acc_valid' step_props prems_seen fsys frege_system_with_constants.combining_valid_proofs
       by blast
   qed
   have assm_next: "assumptions (sim_step pr k acc) = {}"
@@ -591,7 +591,7 @@ proof -
   let ?S = "(\<lambda>r. ?c * len_proof (rule_proof_fun r)) ` rules F"
   let ?g = "[:0, Max ?S:]"
   have fin_rules: "finite (rules F)"
-    using dm1 unfolding de_morgan_frege_def by (simp add: frege_system.finite)
+    using dm1 unfolding de_morgan_frege_def by (simp add: frege_system_with_constants.finite)
   hence fin_S: "finite ?S"
     by simp
   show ?thesis

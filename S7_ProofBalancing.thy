@@ -88,7 +88,7 @@ lemma iff_elimination:
                         + max (depth_formula A) (depth_formula B)))
             \<and> (\<forall>st \<in> set (steps cv). formula_well_formed (alphabet F) st)"
 proof -
-  have fs_F: "frege_system F"
+  have fs_F: "frege_system_with_constants F"
     by (meson frege_balancing_axioms frege_balancing_def)
   let ?x = "sym_atom_x" and ?y = "sym_atom_y"
   let ?sub = "\<lambda>w. if w = ?x then A else if w = ?y then B else Atom w"
@@ -115,7 +115,7 @@ proof -
   define mi where mi_def: "mi = sub_proof ?sub mp_base_proof"
   have valid_mi: "valid_proof F mi"
     unfolding mi_def
-    using frege_system.proof_substitution[OF fs_F] mp_base_proof_spec by blast
+    using frege_system_with_constants.proof_substitution[OF fs_F] mp_base_proof_spec by blast
   have mi_steps: "steps mi = map (sub_formula ?sub) (steps mp_base_proof)"
     unfolding mi_def by simp
   have mi_thesis: "frege_proof.thesis mi = B"
@@ -173,7 +173,7 @@ proof -
   define cv where cv_def: "cv = combine_proofs pAB mi"
   have valid_cv: "valid_proof F cv"
     unfolding cv_def
-    using frege_system.combining_valid_proofs[OF fs_F] pAB(1) valid_mi by blast
+    using frege_system_with_constants.combining_valid_proofs[OF fs_F] pAB(1) valid_mi by blast
   have iffin: "iff_form A B \<in> set (steps pAB)"
   proof -
     have ne: "steps pAB \<noteq> []" using pAB(1) unfolding valid_proof_def by simp
@@ -312,7 +312,7 @@ next
   proof (intro impI)
     assume vbase: "valid_proof F base"
     assume hyps: "\<forall>q \<in> set (p # ps). valid_proof F q"
-    have fs: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+    have fs: "frege_system_with_constants F" by (meson frege_balancing_axioms frege_balancing_def)
     have vp: "valid_proof F p" using hyps by simp
     have vps: "\<forall>q \<in> set ps. valid_proof F q" using hyps by simp
     have cp_th: "\<And>X. frege_proof.thesis (combine_proofs p X) = frege_proof.thesis X"
@@ -343,7 +343,7 @@ next
       unfolding fcons
     proof (intro conjI)
       show "valid_proof F (combine_proofs p (foldr combine_proofs ps base))"
-        using frege_system.combining_valid_proofs[OF fs] vp vin by blast
+        using frege_system_with_constants.combining_valid_proofs[OF fs] vp vin by blast
     next
       have e2: "assumptions (foldr combine_proofs ps base)
               \<subseteq> (\<Union>q \<in> set ps. assumptions q)
@@ -507,7 +507,7 @@ lemma transform_rule_simulation:
                   \<and> sz \<le> poly bnd M
                   \<and> real dep \<le> c * log 2 (real M + 1)))"
 proof -
-  have fs_F: "frege_system F"
+  have fs_F: "frege_system_with_constants F"
     by (meson frege_balancing_axioms frege_balancing_def)
   obtain bnd64 c64 where TCF:
     "\<forall> f sub. formula_well_formed (alphabet F) f
@@ -531,7 +531,7 @@ proof -
           + tcm * log 2 (real (len_formula g
                           + (\<Sum>w\<in>var_set_form g. len_formula (sub w))) + 1)"
     using depth_strans_le by blast
-  have finrules: "finite (rules F)" using frege_system.finite[OF fs_F] .
+  have finrules: "finite (rules F)" using frege_system_with_constants.finite[OF fs_F] .
 
   \<comment> \<open>The uniform depth budget for rule formulas, a constant by finiteness.\<close>
   define DR :: nat where
@@ -1133,7 +1133,7 @@ proof -
     define base where "base = combine_proofs prule cvQ"
     have bvalid: "valid_proof F base"
       unfolding base_def
-      using frege_system.combining_valid_proofs[OF fs_F] prule(1) cvQ(1) by blast
+      using frege_system_with_constants.combining_valid_proofs[OF fs_F] prule(1) cvQ(1) by blast
     have bsteps: "steps base = steps prule @ steps cvQ"
       unfolding base_def by simp
     have bthesis: "frege_proof.thesis base = ?AA (concl r)"
@@ -1599,7 +1599,7 @@ next
     assume hps: "\<forall>i < length (p # ps). assumptions ((p # ps) ! i)
                     \<subseteq> outer \<union> (\<Union>q \<in> set (take i (p # ps)). set (steps q))"
     assume hbase: "assumptions base \<subseteq> outer \<union> (\<Union>q \<in> set (p # ps). set (steps q))"
-    have fs: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+    have fs: "frege_system_with_constants F" by (meson frege_balancing_axioms frege_balancing_def)
     have vp: "valid_proof F p" using vps by simp
     have vps': "\<forall>q \<in> set ps. valid_proof F q" using vps by simp
     have cp_th: "\<And>X. frege_proof.thesis (combine_proofs p X) = frege_proof.thesis X"
@@ -1651,7 +1651,7 @@ next
       unfolding fcons
     proof (intro conjI)
       show "valid_proof F (combine_proofs p (foldr combine_proofs ps base))"
-        using frege_system.combining_valid_proofs[OF fs] vp vin by blast
+        using frege_system_with_constants.combining_valid_proofs[OF fs] vp vin by blast
     next
       have "assumptions (combine_proofs p (foldr combine_proofs ps base))
             = assumptions p \<union> (assumptions (foldr combine_proofs ps base) - set (steps p))"
@@ -1700,7 +1700,7 @@ lemma per_line_simulation:
                       \<le> cc * log 2 (real (len_proof pr) + 1))
                 \<and> (\<forall>s \<in> set (steps D). formula_well_formed (alphabet F) s)))"
 proof -
-  have fs_F: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+  have fs_F: "frege_system_with_constants F" by (meson frege_balancing_axioms frege_balancing_def)
   obtain B71 C71 where T71:
     "\<forall>r sub. r \<in> rules F
              \<and> (\<forall>p \<in> set (prems r). formula_well_formed (alphabet F) p)
@@ -1725,9 +1725,9 @@ proof -
   define bndfin where "bndfin = pcompose B71 (Polynomial.smult KM (monom 1 1))"
   have finRuleSz: "finite (insert 1
         ((\<lambda>r. sum_list (map len_formula (prems r)) + len_formula (concl r)) ` rules F))"
-    using frege_system.finite[OF fs_F] by simp
+    using frege_system_with_constants.finite[OF fs_F] by simp
   have finRuleVars: "finite (insert 1 ((\<lambda>r. card (var_set_rule r)) ` rules F))"
-    using frege_system.finite[OF fs_F] by simp
+    using frege_system_with_constants.finite[OF fs_F] by simp
   have KM1: "1 \<le> KM"
   proof -
     have "(1::nat) \<le> RuleSz" unfolding RuleSz_def by (rule Max_ge[OF finRuleSz, OF insertI1])
@@ -2464,7 +2464,7 @@ theorem proof_balancing:
                           + c * log 2 (real (len_proof pr) + 1))
                    \<and> (\<forall> line \<in> set (steps pr'). formula_well_formed (alphabet F) line))"
 proof -
-  have fs_F: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+  have fs_F: "frege_system_with_constants F" by (meson frege_balancing_axioms frege_balancing_def)
   obtain Bpl ccpl where ccpl0: "0 \<le> ccpl" and PL:
     "\<forall>pr. valid_proof F pr \<and> assumptions pr = {}
           \<and> (\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s) \<longrightarrow>
@@ -2686,7 +2686,7 @@ proof -
     define pbal where "pbal = combine_proofs G cvf"
     have pbal_valid: "valid_proof F pbal"
       unfolding pbal_def
-      by (rule frege_system.combining_valid_proofs[OF fs_F,
+      by (rule frege_system_with_constants.combining_valid_proofs[OF fs_F,
             OF conjI[OF Gvalid cvf(1)] refl])
     have pbal_thesis: "frege_proof.thesis pbal = thesis pr"
       unfolding pbal_def using cvf(3) by simp

@@ -337,9 +337,9 @@ subsection \<open>Arithmetic and depth infrastructure\<close>
 lemma arity_le_max:
   "arity (alphabet F) c \<le> Max (arity (alphabet F) ` UNIV)"
 proof -
-  have fs: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+  have fs: "frege_system_with_constants F" by (meson frege_balancing_axioms frege_balancing_def)
   have fin: "finite (arity (alphabet F) ` UNIV)"
-    using frege_system.finite_alphabet[OF fs] by simp
+    using frege_system_with_constants.finite_alphabet[OF fs] by simp
   show ?thesis using Max_ge[OF fin] by simp
 qed
 
@@ -1613,11 +1613,11 @@ proof -
           \<comment> \<open>assemble the witness from comp and discharge the three bounds\<close>
           show ?thesis
             apply (intro exI conjI)
-                 apply (rule comp)
-                apply blast
-               apply (use l0SL PTl PFl Lconst ASLB Teq in linarith)
-              apply (use P1 P2 P3 P4 P5 SZclean s0SL PTs PFs ASLB Teq in linarith)
-             apply (rule real_of_nat_max_le DL1 DL2 DL3 DL4 DL5 DL6 DL7 DL8)+
+               apply (rule comp)
+               apply blast
+              apply (use l0SL PTl PFl Lconst ASLB Teq in linarith)
+             apply (use P1 P2 P3 P4 P5 SZclean s0SL PTs PFs ASLB Teq in linarith)
+            apply (rule real_of_nat_max_le DL1 DL2 DL3 DL4 DL5 DL6 DL7 DL8)+
             done
         qed
       qed
@@ -2585,7 +2585,7 @@ proof -
       show ?thesis
         apply (unfold mapeq)
         apply (intro exI conjI)
-            apply (rule final)
+           apply (rule final)
           apply (fold G1_def G2_def G3_def G4_def G5_def G6_def G7_def G8_def G9_def)
           apply (rule depF
                  | (use P0l lTbnd lFbnd lines_const P0s sTbnd sFbnd
@@ -2714,13 +2714,13 @@ lemma conn_cong_max_ge:
    \<and> conn_cong_step_len c \<le> conn_cong_max_step_len
    \<and> conn_cong_step_depth c \<le> conn_cong_max_step_depth"
 proof -
-  have fs: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+  have fs: "frege_system_with_constants F" by (meson frege_balancing_axioms frege_balancing_def)
   have f1: "finite (insert 0 (conn_cong_lines ` UNIV))"
-    using frege_system.finite_alphabet[OF fs] by simp
+    using frege_system_with_constants.finite_alphabet[OF fs] by simp
   have f2: "finite (insert 0 (conn_cong_step_len ` UNIV))"
-    using frege_system.finite_alphabet[OF fs] by simp
+    using frege_system_with_constants.finite_alphabet[OF fs] by simp
   have f3: "finite (insert 0 (conn_cong_step_depth ` UNIV))"
-    using frege_system.finite_alphabet[OF fs] by simp
+    using frege_system_with_constants.finite_alphabet[OF fs] by simp
   have "conn_cong_lines c \<le> conn_cong_max_lines"
     unfolding conn_cong_max_lines_def by (rule Max_ge[OF f1]) simp
   moreover have "conn_cong_step_len c \<le> conn_cong_max_step_len"
@@ -2746,7 +2746,7 @@ next
   show ?case
   proof (intro impI)
     assume hyps: "\<forall>q \<in> set (p # ps). valid_proof F q \<and> assumptions q = {}"
-    have fs: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+    have fs: "frege_system_with_constants F" by (meson frege_balancing_axioms frege_balancing_def)
     have vp: "valid_proof F p" and ap: "assumptions p = {}" using hyps by auto
     have cp_th: "\<And>X. thesis (combine_proofs p X) = thesis X" by simp
     have cp_st: "\<And>X. steps (combine_proofs p X) = steps p @ steps X" by simp
@@ -2771,7 +2771,7 @@ next
       unfolding fcons
     proof (intro conjI)
       show "valid_proof F (combine_proofs p (foldr combine_proofs ps base))"
-        using frege_system.combining_valid_proofs[OF fs] vp vin by blast
+        using frege_system_with_constants.combining_valid_proofs[OF fs] vp vin by blast
     next
       show "assumptions (combine_proofs p (foldr combine_proofs ps base))
             = assumptions base - (\<Union>q \<in> set (p # ps). set (steps q))"
@@ -2805,7 +2805,7 @@ lemma conn_cong:
            \<and> dep \<le> max Dc (conn_cong_max_step_depth
                     + max (depth_formula (Conn c As)) (depth_formula (Conn c Bs)))"
 proof -
-  have fs_F: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+  have fs_F: "frege_system_with_constants F" by (meson frege_balancing_axioms frege_balancing_def)
   define kk where "kk = arity (alphabet F) c"
   define atoms where "atoms = conn_cong_atoms c"
   define vals where "vals = As @ Bs"
@@ -2938,7 +2938,7 @@ proof -
   define ci where "ci = sub_proof csub (conn_cong_base_proof c)"
   have valid_ci: "valid_proof F ci"
     unfolding ci_def
-    using frege_system.proof_substitution[OF fs_F] conn_cong_base_proof_spec by blast
+    using frege_system_with_constants.proof_substitution[OF fs_F] conn_cong_base_proof_spec by blast
   have ci_steps: "steps ci = map (sub_formula csub) (steps (conn_cong_base_proof c))"
     unfolding ci_def by simp
   have csub_wf: "\<And>v. formula_well_formed (alphabet F) (csub v)"
@@ -3925,9 +3925,9 @@ proof -
           finally show ?thesis .
         qed
         \<comment> \<open>length bounds for the size estimate\<close>
-        have fsF: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+        have fsF: "frege_system_with_constants F" by (meson frege_balancing_axioms frege_balancing_def)
         have finUNIV: "finite (UNIV :: 'a set)"
-          using frege_system.finite_alphabet[OF fsF] by simp
+          using frege_system_with_constants.finite_alphabet[OF fsF] by simp
         have arMA: "arity (alphabet F) cc0 \<le> MA"
           unfolding MA_def by (rule Max_ge[OF finite_imageI[OF finUNIV]]) simp
         have fsMA: "length fs \<le> MA" using arEq arMA by simp

@@ -148,7 +148,7 @@ qed
 
 locale frege_balancing =
   fixes F :: "'c frege"
-  assumes "frege_system F"
+  assumes "frege_system_with_constants F"
 begin
 
 (* 
@@ -168,9 +168,9 @@ lemma conn_iff_spec:
   shows "\<exists> f. formula_well_formed (alphabet F) f
              \<and> formulas_equiv f (alphabet F) iff_dm dm_alphabet"
 proof -
-  have fs_F: "frege_system F"
+  have fs_F: "frege_system_with_constants F"
     using frege_balancing_axioms frege_balancing_def by blast
-  from frege_system.func_complete[OF fs_F]
+  from frege_system_with_constants.func_complete[OF fs_F]
   have "\<exists> f'. formula_well_formed (alphabet F) f'
              \<and> formulas_equiv iff_dm dm_alphabet f' (alphabet F)"
     by blast
@@ -387,7 +387,7 @@ proof -
   hence i_lt_atoms: "i < length ?atoms" using i_bound by simp
   have i_lt_map: "i < length (map Atom ?atoms)" using i_lt_atoms by simp
 
-  have fs_F: "frege_system F"
+  have fs_F: "frege_system_with_constants F"
     by (meson frege_balancing_axioms frege_balancing_def)
 
 
@@ -544,7 +544,7 @@ proof -
               (\<exists>pr. valid_proof F pr \<and> assumptions pr = {conn_iff} \<and>
                     thesis pr = sub_formula ?sub' conn_iff \<and>
                     (\<forall>st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
-    using frege_system.impl_complete[OF fs_F] by blast
+    using frege_system_with_constants.impl_complete[OF fs_F] by blast
   show "\<exists>pr. valid_proof F pr \<and>
              assumptions pr = {conn_iff} \<and>
              thesis pr = sub_formula ?sub' conn_iff \<and>
@@ -591,7 +591,7 @@ definition base_index_set :: "('c \<times> nat) set" where
 lemma base_index_set_finite: "finite base_index_set"
 proof -
   have alphabet_finite: "finite (UNIV :: 'c set)"
-    by (meson frege_balancing_axioms frege_balancing_def frege_system.finite_alphabet)
+    by (meson frege_balancing_axioms frege_balancing_def frege_system_with_constants.finite_alphabet)
   have "base_index_set \<subseteq>
         (\<Union>c \<in> UNIV. (\<lambda>i. (c, i)) ` {i. i < arity (alphabet F) c})"
     unfolding base_index_set_def by auto
@@ -1185,12 +1185,12 @@ next
   qed
 
   (* Substitute pr_b *)
-  have fs_F: "frege_system F"
+  have fs_F: "frege_system_with_constants F"
     by (meson frege_balancing_axioms frege_balancing_def)
 
   let ?sub_pr_b = "sub_proof ?sub_lift ?pr_b"
   have spr_valid: "valid_proof F ?sub_pr_b"
-    using frege_system.proof_substitution[OF fs_F, where pr = ?pr_b and sub = ?sub_lift] b_props
+    using frege_system_with_constants.proof_substitution[OF fs_F, where pr = ?pr_b and sub = ?sub_lift] b_props
     by simp
   have spr_assms: "assumptions ?sub_pr_b = {sub_formula ?sub_lift conn_iff}"
     using b_props by simp
@@ -1214,7 +1214,7 @@ next
 
   let ?pr_combined = "combine_proofs pr_sigma ?sub_pr_b"
   have c_valid: "valid_proof F ?pr_combined"
-    using frege_system.combining_valid_proofs[OF fs_F, of pr_sigma ?sub_pr_b]
+    using frege_system_with_constants.combining_valid_proofs[OF fs_F, of pr_sigma ?sub_pr_b]
           pr_sigma_valid spr_valid by blast
 
   have c_assms: "assumptions ?pr_combined = {sub_formula ?sub conn_iff}"
@@ -1906,7 +1906,7 @@ definition dm_balancing where
 
 lemma balancing_formula_exists:
   shows "\<exists> f. formula_well_formed (alphabet F) f \<and> formulas_equiv dm_balancing dm_alphabet f (alphabet F)"
-  by (meson frege_balancing_axioms frege_balancing_def frege_system.func_complete)
+  by (meson frege_balancing_axioms frege_balancing_def frege_system_with_constants.func_complete)
   
   
 definition custom_balancing where
@@ -2070,7 +2070,7 @@ proof -
     proof -
       have alphabet_finite: "finite (UNIV :: 'c set)"
         by (meson frege_balancing_axioms frege_balancing_def
-                  frege_system.finite_alphabet)
+                  frege_system_with_constants.finite_alphabet)
       hence finite_image: "finite ((arity (alphabet F)) ` (UNIV :: 'c set))"
         by simp
       have "arity (alphabet F) c \<in> (arity (alphabet F)) ` (UNIV :: 'c set)"
@@ -2201,7 +2201,7 @@ proof -
     using assms(1) w(1) subformula_wf by blast
   have alphabet_finite: "finite (UNIV :: 'c set)"
     by (meson frege_balancing_axioms frege_balancing_def
-              frege_system.finite_alphabet)
+              frege_system_with_constants.finite_alphabet)
   hence finite_image: "finite ((arity (alphabet F)) ` (UNIV :: 'c set))"
     by simp
   have len_q_le_T: "len_formula q \<le> ?T"
@@ -2291,7 +2291,7 @@ lemma top_conn_spec:
 proof -
   have "\<exists> t. arity (alphabet F) t = 0
            \<and> (\<forall> val. eval (alphabet F) val (Conn t []) = True)"
-    by (meson frege_balancing_axioms frege_balancing_def frege_system.has_top)
+    by (meson frege_balancing_axioms frege_balancing_def frege_system_with_constants.has_top)
   thus ?thesis unfolding top_conn_def by (rule someI_ex)
 qed
 
@@ -2301,7 +2301,7 @@ lemma bot_conn_spec:
 proof -
   have "\<exists> b. arity (alphabet F) b = 0
            \<and> (\<forall> val. eval (alphabet F) val (Conn b []) = False)"
-    by (meson frege_balancing_axioms frege_balancing_def frege_system.has_bot)
+    by (meson frege_balancing_axioms frege_balancing_def frege_system_with_constants.has_bot)
   thus ?thesis unfolding bot_conn_def by (rule someI_ex)
 qed
 
@@ -3199,7 +3199,7 @@ proof -
           formulas have length at most 1, contradicting assms(2).\<close>
       have alphabet_finite: "finite (UNIV :: 'c set)"
         by (meson frege_balancing_axioms frege_balancing_def
-                  frege_system.finite_alphabet)
+                  frege_system_with_constants.finite_alphabet)
       have all_arity_zero: "\<forall> c. arity (alphabet F) c = 0"
       proof
         fix c
@@ -3293,7 +3293,7 @@ proof -
       with k_le have k0: "?k = 0" by simp
       have alphabet_finite: "finite (UNIV :: 'c set)"
         by (meson frege_balancing_axioms frege_balancing_def
-                  frege_system.finite_alphabet)
+                  frege_system_with_constants.finite_alphabet)
       have all_arity_zero: "\<forall> c. arity (alphabet F) c = 0"
       proof
         fix c
@@ -3647,7 +3647,7 @@ lemma wf_arity_zero_imp_len_1:
 proof -
   have alphabet_finite: "finite (UNIV :: 'c set)"
     by (meson frege_balancing_axioms frege_balancing_def
-              frege_system.finite_alphabet)
+              frege_system_with_constants.finite_alphabet)
   have all_zero: "\<forall> c. arity (alphabet F) c = 0"
   proof
     fix c
@@ -4193,7 +4193,7 @@ next
   let ?k = "Max ((arity (alphabet F)) ` (UNIV :: 'c set))"
   have alphabet_finite: "finite (UNIV :: 'c set)"
     by (meson frege_balancing_axioms frege_balancing_def
-              frege_system.finite_alphabet)
+              frege_system_with_constants.finite_alphabet)
   hence finite_image: "finite ((arity (alphabet F)) ` (UNIV :: 'c set))" by simp
   have len_eq: "length fs = arity (alphabet F) cn"
    and wf_each: "\<forall> g \<in> set fs. formula_well_formed (alphabet F) g"
