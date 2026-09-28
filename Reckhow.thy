@@ -15,6 +15,13 @@ text \<open>The third leg of Reckhow's construction: a proof whose lines have bo
 
 subsection \<open>Generic helpers\<close>
 
+text \<open>
+  We begin with elementary bounds for variables, formula sizes, substitutions, and
+  proof lists. These connect the size of individual pieces to the total size of a
+  proof. They will support the quantitative estimates when connective templates
+  and rule proofs are instantiated.
+\<close>
+
 lemma finite_var_set_form: "finite (var_set_form f)"
   by (induction f) auto
 
@@ -185,6 +192,13 @@ qed
 
 subsection \<open>Indexed rule application and its canonical choice\<close>
 
+text \<open>
+  For each line of a proof, we choose a rule and substitution witnessing how that
+  line was obtained. The substitution is normalized so that variables irrelevant
+  to the rule can be left unchanged. This gives a definite rule instance for each
+  line and avoids charging for arbitrary unused substitution values.
+\<close>
+
 definition derived_with :: "nat \<Rightarrow> 'c frege_proof \<Rightarrow> 'c rule \<Rightarrow> (string \<Rightarrow> 'c formula) \<Rightarrow> bool" where
   "derived_with i pr r s \<longleftrightarrow>
      i < length (steps pr)
@@ -238,6 +252,13 @@ qed
 
 subsection \<open>Marker variables and the marker substitution\<close>
 
+text \<open>
+  Connective templates use distinct marker variables as placeholders for their
+  arguments. We choose these markers and define the substitution that replaces
+  them by a supplied argument list. The accompanying lemmas ensure that each
+  placeholder receives the intended argument.
+\<close>
+
 definition marker_variables :: "nat \<Rightarrow> string list" where
   "marker_variables n = (SOME vs. length vs = n \<and> distinct vs)"
 
@@ -285,76 +306,91 @@ qed
 
 subsection \<open>The truth table of a boolean function as a De Morgan formula\<close>
 
-fun de_morgan_of_afp :: "string Formulas.formula \<Rightarrow> dm_conn formula" where
-  "de_morgan_of_afp (Formulas.Atom a) = Atom a"
-| "de_morgan_of_afp Formulas.Bot = Conn Bot []"
-| "de_morgan_of_afp (Formulas.Not G) = Conn Not [de_morgan_of_afp G]"
-| "de_morgan_of_afp (Formulas.And G H) = Conn And [de_morgan_of_afp G, de_morgan_of_afp H]"
-| "de_morgan_of_afp (Formulas.Or G H) = Conn Or [de_morgan_of_afp G, de_morgan_of_afp H]"
-| "de_morgan_of_afp (Formulas.Imp G H) = Conn Or [Conn Not [de_morgan_of_afp G], de_morgan_of_afp H]"
+text \<open>
+  For each input on which a Boolean function is true, we form a conjunction of
+  literals describing that input. The disjunction of these conjunctions has the
+  required truth function and mentions only the designated input variables.
+\<close>
 
-lemma de_morgan_of_afp_eval:
-  "eval dm_alphabet val (de_morgan_of_afp G) = formula_semantics val G"
-  by (induction G) (simp_all add: dm_alphabet_def)
+fun big_or :: "dm_conn formula list \<Rightarrow> dm_conn formula" where
+  "big_or [] = Conn Bot []"
+| "big_or (F # Fs) = Conn Or [F, big_or Fs]"
 
-lemma de_morgan_of_afp_var_set:
-  "var_set_form (de_morgan_of_afp G) = atoms G"
-  by (induction G) auto
+fun big_and :: "dm_conn formula list \<Rightarrow> dm_conn formula" where
+  "big_and [] = Conn Top []"
+| "big_and (F # Fs) = Conn And [F, big_and Fs]"
 
-definition truth_table_formula :: "(bool list \<Rightarrow> bool) \<Rightarrow> string list \<Rightarrow> dm_conn formula" where
-  "truth_table_formula g names = de_morgan_of_afp (mk_conn g (map Formulas.Atom names))"
+lemma big_or_eval:
+  "eval dm_alphabet A (big_or Fs) = (\<exists>F\<in>set Fs. eval dm_alphabet A F)"
+  by (induction Fs) (simp_all add: dm_alphabet_def)
+
+lemma big_and_eval:
+  "eval dm_alphabet A (big_and Fs) = (\<forall>F\<in>set Fs. eval dm_alphabet A F)"
+  by (induction Fs) (simp_all add: dm_alphabet_def)
+
+definition lit :: "bool \<Rightarrow> dm_conn formula \<Rightarrow> dm_conn formula" where
+  "lit b F = (if b then F else Conn Not [F])"
+
+lemma lit_eval: "eval dm_alphabet A (lit b F) = (b = eval dm_alphabet A F)"
+  by (auto simp: lit_def dm_alphabet_def)
+
+definition truth_table_formula ::
+  "(bool list \<Rightarrow> bool) \<Rightarrow> string list \<Rightarrow> dm_conn formula" where
+  "truth_table_formula g names =
+    big_or (map (\<lambda>v. big_and (map (\<lambda>i. lit (v ! i) (Atom (names ! i)))
+                                   [0..<length names]))
+                (filter g (List.n_lists (length names) [True, False])))"
 
 lemma truth_table_formula_eval:
   "eval dm_alphabet val (truth_table_formula g names) = g (map val names)"
 proof -
+  let ?n = "length names"
+  let ?w = "map val names"
+  have band: "eval dm_alphabet val
+        (big_and (map (\<lambda>i. lit (v ! i) (Atom (names ! i))) [0..<?n])) = (v = ?w)"
+    if "v \<in> set (List.n_lists ?n [True, False])" for v
+  proof -
+    from that have lv: "length v = ?n" by (simp add: set_n_lists)
+    have "eval dm_alphabet val
+          (big_and (map (\<lambda>i. lit (v ! i) (Atom (names ! i))) [0..<?n]))
+          = (\<forall>i<?n. v ! i = val (names ! i))"
+      by (auto simp: big_and_eval lit_eval)
+    also have "\<dots> = (v = ?w)" using lv by (auto intro!: nth_equalityI)
+    finally show ?thesis .
+  qed
   have "eval dm_alphabet val (truth_table_formula g names)
-      = formula_semantics val (mk_conn g (map Formulas.Atom names))"
-    unfolding truth_table_formula_def by (rule de_morgan_of_afp_eval)
-  also have "\<dots> = g (map (formula_semantics val) (map Formulas.Atom names))"
-    by (rule mk_conn_sema)
-  also have "\<dots> = g (map val names)"
-    by (simp add: comp_def)
+        = (\<exists>v \<in> set (filter g (List.n_lists ?n [True, False])).
+              eval dm_alphabet val
+                (big_and (map (\<lambda>i. lit (v ! i) (Atom (names ! i))) [0..<?n])))"
+    unfolding truth_table_formula_def by (simp add: big_or_eval)
+  also have "\<dots> = (\<exists>v \<in> set (List.n_lists ?n [True, False]). g v \<and> v = ?w)"
+    using band by auto
+  also have "\<dots> = g ?w" by (auto simp: set_n_lists)
   finally show ?thesis .
 qed
 
-lemma atoms_lit: "atoms (lit b G) = atoms G"
-  by (simp add: lit_def)
+lemma var_set_big_or:
+  "var_set_form (big_or Fs) = \<Union> (var_set_form ` set Fs)"
+  by (induction Fs) auto
 
-lemma atoms_big_or: "atoms (big_or Gs) = \<Union> (atoms ` set Gs)"
-  by (induction Gs) auto
-
-lemma atoms_big_and: "atoms (big_and Gs) = \<Union> (atoms ` set Gs)"
-  by (induction Gs) auto
-
-lemma atoms_mk_conn:
-  "atoms (mk_conn g args) \<subseteq> \<Union> (atoms ` set args)"
-proof
-  fix x assume "x \<in> atoms (mk_conn g args)"
-  then obtain v where
-    x_in: "x \<in> atoms (big_and (map (\<lambda>i. lit (v ! i) (args ! i)) [0..<length args]))"
-    unfolding mk_conn_def by (auto simp add: atoms_big_or)
-  from x_in obtain i where i_in: "i \<in> set [0..<length args]"
-    and x_lit: "x \<in> atoms (lit (v ! i) (args ! i))"
-    by (auto simp add: atoms_big_and)
-  have "x \<in> atoms (args ! i)" using x_lit by (simp add: atoms_lit)
-  moreover have "args ! i \<in> set args" using i_in by (auto intro: nth_mem)
-  ultimately show "x \<in> \<Union> (atoms ` set args)" by auto
-qed
+lemma var_set_big_and:
+  "var_set_form (big_and Fs) = \<Union> (var_set_form ` set Fs)"
+  by (induction Fs) auto
 
 lemma truth_table_formula_var_set:
   "var_set_form (truth_table_formula g names) \<subseteq> set names"
-proof -
-  have "var_set_form (truth_table_formula g names)
-      = atoms (mk_conn g (map Formulas.Atom names))"
-    unfolding truth_table_formula_def by (rule de_morgan_of_afp_var_set)
-  also have "\<dots> \<subseteq> \<Union> (atoms ` set (map Formulas.Atom names))"
-    by (rule atoms_mk_conn)
-  also have "\<dots> \<subseteq> set names" by auto
-  finally show ?thesis .
-qed
-
+  unfolding truth_table_formula_def lit_def
+  by (auto simp: var_set_big_or var_set_big_and intro: nth_mem)
 
 subsection \<open>Well-formed connective templates\<close>
+
+text \<open>
+  Functional completeness supplies a formula expressing a connective's truth
+  function, but it may mention irrelevant variables. We remove those variables
+  while preserving meaning and well-formedness. The resulting template uses only
+  its designated inputs, which is essential for translation to commute with
+  substitution.
+\<close>
 
 lemma connective_template_pruned:
   fixes alph :: "'c alphabet" and dmf :: "dm_conn formula" and f' :: "'c formula"
@@ -393,6 +429,13 @@ qed
 
 subsection \<open>A pair of Frege systems\<close>
 
+text \<open>
+  We now fix a source and a target Frege system, possibly over different
+  alphabets. The remaining translation constructions are carried out for this
+  pair. Their constants may depend on the two systems, while the eventual
+  polynomial bounds must hold uniformly over input formulas and proofs.
+\<close>
+
 locale frege_pair =
   fixes Fone :: "'c1 frege" and Ftwo :: "'c2 frege"
   assumes frege_system_one: "frege_system Fone"
@@ -408,6 +451,13 @@ context frege_pair
 begin
 
 subsection \<open>Extracting the well-formed rules\<close>
+
+text \<open>
+  Only well-formed rule schemes can occur in well-formed proof instances. We
+  isolate these usable rules from the finite source rule set and establish the
+  properties needed to translate them. This makes the subsequent choice of target
+  derivations apply precisely to the rules used in a source proof.
+\<close>
 
 definition well_formed_rules :: "('c1 rule) set" where
   "well_formed_rules = {r \<in> rules Fone.
@@ -461,6 +511,13 @@ proof -
 qed
 
 subsection \<open>Per-connective templates\<close>
+
+text \<open>
+  For each source connective, we choose a target formula with the same truth
+  function and only the designated marker variables. These formulas are the
+  translation templates. Since the source alphabet is finite, their sizes admit a
+  common bound depending only on the two systems.
+\<close>
 
 definition connective_template :: "'c1 \<Rightarrow> 'c2 formula" where
   "connective_template c = (SOME tmpl.
@@ -529,6 +586,14 @@ proof -
 qed
 
 subsection \<open>The formula translation\<close>
+
+text \<open>
+  Translation recursively replaces each source connective by its target template
+  and inserts the translated arguments. We prove preservation of truth values and
+  well-formedness, and show that translation commutes with substitution. Repeated
+  arguments in templates can cause growth exponential in source depth, so the size
+  and depth bounds are kept explicit.
+\<close>
 
 fun translate_formula :: "'c1 formula \<Rightarrow> 'c2 formula" where
   "translate_formula (Atom v) = Atom v"
@@ -973,6 +1038,13 @@ qed
 
 subsection \<open>Simulating one rule application\<close>
 
+text \<open>
+  A translated source rule is semantically valid in the target system.
+  Completeness therefore gives a fixed target derivation of its conclusion from
+  its premises. Instantiating this derivation with translated substitution values
+  simulates any application of the source rule.
+\<close>
+
 lemma proof_exists_for_translated_rule:
   assumes "r \<in> well_formed_rules"
   shows "\<exists> pr2. valid_proof Ftwo pr2
@@ -1105,6 +1177,13 @@ proof -
 qed
 
 subsection \<open>Assembling the simulated proof\<close>
+
+text \<open>
+  We process the source proof in order and append the target derivation chosen for
+  each rule application. Its translated premises have already been established by
+  earlier blocks, so they can be discharged. The assembled target proof concludes
+  with the translation of the source conclusion.
+\<close>
 
 definition simulation_step :: "'c1 frege_proof \<Rightarrow> nat \<Rightarrow> 'c2 frege_proof \<Rightarrow> 'c2 frege_proof" where
   "simulation_step pr i acc =
@@ -1296,6 +1375,13 @@ proof -
 qed
 
 subsection \<open>Length bounds\<close>
+
+text \<open>
+  We bound the size of each instantiated rule derivation and sum these costs over
+  the source proof. Finiteness of the rule set bounds the fixed derivations
+  uniformly. The resulting estimate separates a polynomial dependence on source
+  proof size from the exponential dependence on its line depth.
+\<close>
 
 definition rule_simulation_bound :: nat where
   "rule_simulation_bound
@@ -1500,6 +1586,13 @@ qed
 
 subsection \<open>The simulation theorem\<close>
 
+text \<open>
+  The assembled translation now yields a target proof with an explicit size bound
+  in terms of source proof size and depth. This is the translation theorem needed
+  for the final simulation. When the source lines have logarithmic depth, its
+  exponential depth factor becomes polynomial.
+\<close>
+
 theorem translated_proof_simulation:
   shows "\<exists> (szbound :: nat poly) (T :: nat). 1 \<le> T \<and>
      (\<forall> pr D. valid_proof Fone pr \<and> assumptions pr = {}
@@ -1615,15 +1708,11 @@ sublocale one_bal: frege_closure Fone
 subsection \<open>The reverse formula translation\<close>
 
 text \<open>
-  The translation \<^text>\<open>rev.translate_formula\<close> replaces each connective by a fixed
-  template, so its size bound carries a factor \<^text>\<open>T ^ depth\<close>, which is NOT
-  polynomial in the formula size on its own -- exactly Krajicek's nesting example
-  (Basic propositional logic, p.48-49: translating a k-fold nesting of \<open>\<equiv>\<close> blows up
-  to size \<open>\<Omega>(2\<^sup>k)\<close>).  Balancing the formula FIRST with Spira's transformation makes
-  the depth logarithmic (\<^text>\<open>two_bal.trans_c\<close>) while keeping the size polynomial
-  (\<^text>\<open>two_bal.trans_b\<close>), and then \<open>T ^ O(log n)\<close> is polynomial -- which is what
-  \<^text>\<open>power_ceiling_log_poly_bound\<close> delivers.  This is the reverse leg g required
-  by clause (A) of \<^const>\<open>simulates\<close>.
+  To define the formula map required by simulation, we start with a target
+  formula, balance it, and translate it into the source alphabet. Balancing gives
+  logarithmic depth before template expansion, so the resulting formula has
+  polynomial size. This reverse translation also preserves truth values and
+  provides a shallow conclusion for source proof balancing.
 \<close>
 
 definition reverse_translate :: "'c2 formula \<Rightarrow> 'c1 formula" where
@@ -1728,13 +1817,10 @@ qed
 subsection \<open>Modus ponens conversion inside Ftwo\<close>
 
 text \<open>
-  The proof-balancing theory's \<^text>\<open>iff_elimination\<close> lives in \<^text>\<open>frege_closure\<close>, but its proof
-  only ever uses \<^text>\<open>frege_balancing\<close>-level material (\<^text>\<open>entails_proof\<close>,
-  \<^text>\<open>iff_form\<close>, the two fresh symmetry atoms, and \<^text>\<open>proof_substitution\<close>).
-  Ftwo is an arbitrary Frege system and need not be closed, so the converter is
-  rebuilt here over \<^text>\<open>two_bal\<close>.  The base proof is taken over two ATOMS, so its
-  size is a constant of Ftwo; instantiating it by substitution is what keeps the size
-  of the conversion linear in \<^term>\<open>len_formula A + len_formula B\<close>.
+  The final target proof must recover a formula from a proved equivalent formula.
+  We construct the necessary equivalence-elimination derivation inside the target
+  system using a fixed proof over fresh variables. Substitution keeps the cost
+  linear in the sizes of the formulas involved.
 \<close>
 
 definition two_mp_base :: "'c2 frege_proof" where
@@ -1865,14 +1951,11 @@ qed
 subsection \<open>Roundtrip templates for each connective\<close>
 
 text \<open>
-  Composing the two per-connective translations gives a map from Ftwo-formulas to
-  Ftwo-formulas.  Each Ftwo-connective c thereby acquires an Ftwo-template
-  \<^text>\<open>roundtrip_template\<close>, which satisfies exactly the same specification an
-  Ftwo-template would: well-formed, and evaluating to c's own truth function applied
-  to the marker variables.  Since the alphabet is finite, the equivalence between the
-  template and the bare connective has a proof of CONSTANT size, and taking the
-  maximum over the (finitely many) connectives gives a single uniform bound.  These
-  are the base cases of the roundtrip induction.
+  Translating a target connective into the source alphabet and back gives another
+  target template with the same meaning. We record its well-formedness and
+  semantics, and obtain a fixed proof relating it to the original connective.
+  These local equivalences will be combined to undo a round trip for a whole
+  formula.
 \<close>
 
 definition roundtrip_template :: "'c2 \<Rightarrow> 'c2 formula" where
@@ -2022,12 +2105,10 @@ qed
 subsection \<open>A size-tracked provable equivalence for Ftwo\<close>
 
 text \<open>
-  \<^text>\<open>provable_balanced_iff\<close> tracks lines, step size and step depth separately,
-  which is what the Spira argument needs.  The roundtrip only ever needs the total
-  proof SIZE, so this lighter predicate keeps the induction's bookkeeping to a single
-  number.  Reflexivity and transitivity are obtained the same way the modus ponens
-  converter was: a base proof over FRESH ATOMS (hence of constant size) instantiated by
-  substitution, so the cost stays linear in the formulas involved.
+  For the final equivalence proofs we track total proof size in a single
+  predicate. We establish reflexivity and transitivity by instantiating fixed
+  derivations over fresh variables. Their size bounds provide the basic operations
+  for the roundtrip induction.
 \<close>
 
 definition two_prov_iff :: "'c2 formula \<Rightarrow> 'c2 formula \<Rightarrow> nat \<Rightarrow> bool" where
@@ -2263,6 +2344,13 @@ proof -
 qed
 
 subsection \<open>Per-slot congruence for Ftwo connectives\<close>
+
+text \<open>
+  A proved equivalence between two arguments can be lifted through one argument
+  position of a target connective. We obtain this rule from a fixed derivation
+  over fresh variables and bound the cost of instantiation. Finiteness of the
+  target alphabet gives a uniform bound across all connectives and positions.
+\<close>
 
 lemma sub_formula_atom_id: "sub_formula Atom (f :: 'c2 formula) = f"
   by (induction f) (simp_all add: map_idI)
@@ -2546,13 +2634,10 @@ qed
 subsection \<open>Folding congruence over argument positions\<close>
 
 text \<open>
-  \<^text>\<open>two_prov_iff_slot\<close> rewrites ONE argument of a connective.  Rewriting all of
-  them is an induction along the ``hybrid'' argument lists \<open>take k bs @ drop k as\<close>, whose
-  first \<open>k\<close> entries already come from \<open>bs\<close> while the remaining ones still come from \<open>as\<close>.
-  Advancing \<open>k\<close> by one is exactly one application of the per-slot lemma, glued on with
-  \<^text>\<open>two_prov_iff_trans\<close>.  Every formula occurring anywhere along the chain is
-  assembled from arguments of \<open>as\<close> and \<open>bs\<close>, so a single uniform per-step cost covers all
-  the steps, and the number of steps is bounded by the constant \<^const>\<open>two_max_arity\<close>.
+  We extend single-position congruence to all arguments by replacing them one at a
+  time. Each intermediate argument list contains the already replaced prefix
+  followed by the unchanged suffix. Transitivity joins these steps, and bounded
+  connective arity keeps their total cost under control.
 \<close>
 
 lemma sum_list_take_le: "sum_list (take k (ys :: nat list)) \<le> sum_list ys"
@@ -2869,14 +2954,11 @@ qed
 subsection \<open>The roundtrip base equivalence over fresh atoms\<close>
 
 text \<open>
-  A base proof stated over the MARKER variables is unusable here: those are produced by
-  \<^const>\<open>marker_variables\<close>, whose specification promises only length and distinctness --
-  in particular nothing keeps them away from the variables of \<^text>\<open>conn_iff\<close>.
-  Substituting into such a proof would therefore not commute with \<^text>\<open>iff_form\<close>.
-  Renaming the markers onto \<^text>\<open>two_bal.canonical_atoms\<close>, which ARE fresh for
-  \<open>conn_iff\<close> by construction, repairs this at no cost: the renamed template still meets the
-  template specification, so its equivalence with the bare connective again has a proof of
-  constant size.
+  Before instantiating a roundtrip template proof, its placeholders must be fresh
+  for the fixed formula expressing equivalence. We rename the markers to suitable
+  fresh atoms and prove the corresponding local equivalence. This ensures that
+  later substitutions replace the arguments without altering the equivalence
+  template itself.
 \<close>
 
 lemma roundtrip_template_var_set:
@@ -3188,15 +3270,11 @@ qed
 subsection \<open>The roundtrip induction\<close>
 
 text \<open>
-  The composed map \<open>\<Phi> = translate_formula \<circ> rev.translate_formula\<close> sends Ftwo-formulas to
-  Ftwo-formulas, and the two previous lemmas give, one node at a time, an Ftwo-proof that
-  \<open>\<Phi> \<sigma>\<close> is equivalent to \<open>\<sigma>\<close>.  Assembling them costs a bounded factor per LEVEL of \<open>\<sigma>\<close>:
-  each of the up to \<^const>\<open>two_max_arity\<close> slot rewrites pays separately for the
-  equivalence of the argument it rewrites, so the cost of a level is a constant multiple
-  of the cost of the level below.  The total is therefore a constant to the power of the
-  DEPTH, times the weight below.  That is exactly the shape the translation itself already
-  has (\<^text>\<open>rev.translate_formula_length\<close>), and it is polynomial for the
-  logarithmic-depth formulas Spira balancing produces.
+  Induction on a target formula combines the local roundtrip equivalences with the
+  equivalences for its arguments. We thus obtain a target proof that translating
+  into the source alphabet and back preserves the formula up to provable
+  equivalence. The cost is bounded exponentially in depth and polynomially in
+  size, so it is polynomial for balanced inputs.
 \<close>
 
 fun roundtrip_weight :: "'c2 formula \<Rightarrow> nat" where
@@ -3841,15 +3919,10 @@ qed
 subsection \<open>Undoing the balancing inside Ftwo\<close>
 
 text \<open>
-  The last leg of the chain: an Ftwo-proof of \<open>spira_trans \<tau> \<longleftrightarrow> \<tau>\<close>.  It is
-  \<^text>\<open>two_bal.transform_commutes_form\<close> instantiated at the IDENTITY substitution
-  \<^const>\<open>Atom\<close>: both sides of the commutation then collapse, the left one to
-  \<^text>\<open>spira_trans \<tau>\<close> and the right one to \<open>\<tau>\<close> itself, because \<open>spira_trans\<close> fixes
-  atoms.
-
-  This is available for an ARBITRARY Ftwo only because \<^text>\<open>frege_closure\<close> carries no
-  closure assumption.  It is what keeps the last leg INSIDE Ftwo: every route that leaves
-  Ftwo pays a factor exponential in the depth of \<open>\<tau>\<close>, which is unbounded.
+  Commutation with the identity substitution gives a target proof relating a
+  balanced formula to its original form. Its size is polynomial in the original
+  formula size. This proof may contain deep lines, which causes no further
+  translation cost because the proof is already in the target alphabet.
 \<close>
 
 lemma two_prov_iff_of_balanced:
@@ -3945,9 +4018,10 @@ qed
 subsection \<open>Chaining the two Ftwo-internal equivalences\<close>
 
 text \<open>
-  Steps 4 and 5 composed: the roundtrip image of the balanced formula is Ftwo-provably
-  equivalent to \<open>\<tau>\<close> itself.  Transitivity costs one more constant-size base proof
-  instantiated at the three formulas involved, all of which are polynomially bounded.
+  We combine the roundtrip equivalence for the balanced formula with the
+  equivalence undoing balancing. Transitivity then relates the translated reverse
+  image directly to the original target formula. The additional proof cost remains
+  polynomial in the size of that formula.
 \<close>
 
 lemma phi_spira_iff_tau:
@@ -4023,6 +4097,14 @@ proof -
 qed
 
 subsection \<open>Balancing the Fone-proof and translating it into Ftwo\<close>
+
+text \<open>
+  Given a source proof of the reverse translation, we first balance the proof and
+  then translate it to the target system. Its conclusion is already shallow by
+  construction of the reverse translation, so all lines of the balanced proof have
+  logarithmic depth in the combined input size. The translation theorem therefore
+  gives a target proof of polynomial size.
+\<close>
 
 lemma log2_mono_nat:
   fixes m n :: nat
@@ -4208,10 +4290,11 @@ qed
 subsection \<open>Clause (B) of the simulation predicate\<close>
 
 text \<open>
-  The whole chain.  From an Fone-proof of \<open>g \<tau>\<close> we obtain an Ftwo-proof of the roundtrip
-  image of the balanced formula (steps 1--3), an Ftwo-proof that this image is equivalent
-  to \<open>\<tau>\<close> (steps 4--5), and one constant-size modus ponens conversion joins them into an
-  Ftwo-proof of \<open>\<tau>\<close> itself.
+  We append the target equivalence proof that undoes the round trip and balancing,
+  then use equivalence elimination to recover the requested target formula. The
+  resulting proof has no assumptions and has size polynomial in the source proof
+  and target formula sizes. This establishes the proof-translation clause of
+  simulation.
 \<close>
 
 lemma simulation_exists:
@@ -4311,9 +4394,10 @@ qed
 subsection \<open>Ftwo simulates Fone\<close>
 
 text \<open>
-  Both clauses of \<^const>\<open>simulates\<close>, with \<open>g = \<close>\<^const>\<open>reverse_translate\<close> and \<open>f\<close>
-  picked out of the existence statement by choice.  Nothing about Fone or Ftwo is used
-  beyond \<^const>\<open>frege_system\<close>, so this is Reckhow's theorem for the pair.
+  The reverse formula translation and the existence of bounded target proofs now
+  satisfy the two clauses of the simulation predicate. Choice selects an output
+  proof for each valid input pair. Since the systems were arbitrary, the theorem
+  applies to any pair of Frege systems and establishes polynomial-size simulation.
 \<close>
 
 theorem reckhow_simulates: "simulates Fone Ftwo"

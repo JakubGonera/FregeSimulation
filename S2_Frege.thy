@@ -74,6 +74,62 @@ fun var_set_proof :: "'c frege_proof \<Rightarrow> string set" where
                       \<Union> (var_set_form ` (set (steps pr))) \<union>
                          var_set_form (thesis pr)"
 
+text \<open>
+  Substitution changes the valuation of the original formula according to the
+  formulas substituted for its variables. We also record how substitution affects
+  occurring variables, and that irrelevant variables do not affect evaluation.
+\<close>
+
+lemma sub_formula_eval:
+  "eval alph val (sub_formula s g) = eval alph (\<lambda>a. eval alph val (s a)) g"
+proof (induction g)
+  case (Atom a)
+  show ?case by simp
+next
+  case (Conn c gs)
+  have m: "map (eval alph val) (map (sub_formula s) gs)
+           = map (eval alph (\<lambda>a. eval alph val (s a))) gs"
+    by (simp add: Conn.IH)
+  have "eval alph val (sub_formula s (Conn c gs))
+        = conn_evals alph c (map (eval alph val) (map (sub_formula s) gs))"
+    by simp
+  also have "\<dots> = conn_evals alph c (map (eval alph (\<lambda>a. eval alph val (s a))) gs)"
+    by (simp only: m)
+  also have "\<dots> = eval alph (\<lambda>a. eval alph val (s a)) (Conn c gs)" by simp
+  finally show ?case .
+qed
+
+lemma sub_formula_cong:
+  assumes "\<And>v. v \<in> var_set_form f \<Longrightarrow> s1 v = s2 v"
+  shows "sub_formula s1 f = sub_formula s2 f"
+  using assms by (induction f) auto
+
+lemma var_set_sub:
+  "var_set_form (sub_formula s f) = (\<Union>a\<in>var_set_form f. var_set_form (s a))"
+  by (induction f) auto
+
+
+lemma eval_cong:
+  assumes "\<And>v. v \<in> var_set_form f \<Longrightarrow> v1 v = v2 v"
+  shows "eval al v1 f = eval al v2 f"
+  using assms
+proof (induction f)
+  case (Atom a)
+  thus ?case by simp
+next
+  case (Conn c fs)
+  have m: "map (eval al v1) fs = map (eval al v2) fs"
+  proof (rule map_cong[OF refl])
+    fix x assume x: "x \<in> set fs"
+    show "eval al v1 x = eval al v2 x"
+    proof (rule Conn.IH[OF x])
+      fix v assume "v \<in> var_set_form x"
+      thus "v1 v = v2 v" using Conn.prems x by auto
+    qed
+  qed
+  show ?case by (simp only: eval.simps m)
+qed
+
 definition rule_restricted_sub :: "'c rule \<Rightarrow> (string \<Rightarrow> 'c formula) \<Rightarrow> bool" where
   "rule_restricted_sub rule sub \<longleftrightarrow> (\<forall> v. v \<notin> var_set_rule rule \<longrightarrow> sub v = Atom v)"
 

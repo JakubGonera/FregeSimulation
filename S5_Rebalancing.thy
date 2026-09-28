@@ -3,15 +3,12 @@ theory S5_Rebalancing
 begin
 
 text \<open>
-  Lemma 5.1 of the Reckhow development, factored out of theory Translation.
+  Lemma 5.1 of the Filmus script.
 
   This theory contains the rebalancing construction and its polynomial
   simulation proof: the equivalence abstraction layer, proof combinators,
   three case constructions, recurrence bounds, and the main proof-balancing
   result.
-
-  It depends on the balancing development through Lemma 4.3, including
-  the semantic translation and functional completeness of the Frege system.
 \<close>
 
 context frege_balancing
@@ -22,9 +19,11 @@ section \<open>Rebalancing formulas (Lemma 5.1)\<close>
 subsection \<open>The iff abstraction and the PBI predicate\<close>
 
 text \<open>
-  The equivalence formula is obtained by substituting two arguments into a
-  fixed witness for De Morgan equivalence.  The witness is specified by its
-  semantics, so the proofs use its evaluation lemma rather than its syntax.
+  We represent logical equivalence by a fixed formula over the chosen alphabet.
+  The predicate for provable balanced equivalence records a proof from no
+  assumptions together with separate bounds on its number of lines, line size, and
+  line depth. Keeping these bounds explicit lets us account for each step of the
+  rebalancing construction.
 \<close>
 
 definition iff_sub :: "'c formula \<Rightarrow> 'c formula \<Rightarrow> string \<Rightarrow> 'c formula" where
@@ -213,6 +212,13 @@ qed
 text \<open>Reflexivity comes from substituting into a fixed equivalence
   identity over one fresh atom.\<close>
 subsection \<open>Reflexivity and tautological equivalence\<close>
+
+text \<open>
+  A formula is provably equivalent to itself, and a fixed tautological equivalence
+  remains provable after substitution. We establish these basic ways of producing
+  equivalence proofs with controlled costs. They supply the base cases and the
+  fixed identities used in larger constructions.
+\<close>
 
 definition refl_atom :: string where
   "refl_atom = fresh_atoms 1 ! 0"
@@ -406,6 +412,13 @@ text \<open>
 \<close>
 
 subsection \<open>Transitivity of balanced equivalence\<close>
+
+text \<open>
+  Two equivalence proofs can be chained to relate the first formula to the last.
+  We obtain the connecting derivation by substituting into a fixed proof of
+  transitivity. The bounds account for both input proofs and this additional
+  derivation, so transitivity can be used throughout the induction.
+\<close>
 
 definition entails_proof :: "'c formula set \<Rightarrow> 'c formula \<Rightarrow> 'c frege_proof" where
   "entails_proof fs th =
@@ -847,6 +860,13 @@ text \<open>
 \<close>
 
 subsection \<open>Balance congruence (Filmus 3.2)\<close>
+
+text \<open>
+  Equivalent inputs give equivalent outputs of the balancing conditional. We lift
+  the input equivalence proofs through this fixed formula and bound the resulting
+  proof. This is how recursive rebalancing results are combined into an
+  equivalence between larger balanced formulas.
+\<close>
 
 lemma sub_formula_balance:
   assumes "\<And>v. v \<in> var_set_form custom_balancing \<Longrightarrow> v \<noteq> ''x'' \<Longrightarrow> v \<noteq> ''y''
@@ -1479,10 +1499,11 @@ qed
 subsection \<open>Rebalancing: definition and basic facts\<close>
 
 text \<open>
-  Rebalancing selects a subtree and forms a balancing connective from its
-  positive and negative fixings and the translated subtree.  This definition
-  has no threshold guard: the three recursive cases therefore use the same
-  construction, while the below-threshold case is handled separately.
+  Rebalancing prescribes the first split at an arbitrary chosen occurrence, then
+  applies ordinary balancing to the selected subformula and the two constant
+  replacements. Unlike the canonical split, this occurrence need not satisfy any
+  size condition. We define this operation and establish the basic facts needed to
+  compare it with ordinary balancing.
 \<close>
 
 definition rebalancing :: "'c formula \<Rightarrow> nat list \<Rightarrow> 'c formula" where
@@ -1567,6 +1588,13 @@ qed
 text \<open>Symmetry comes from a fixed equivalence proof over two fresh
   atoms.\<close>
 subsection \<open>Symmetry of balanced equivalence\<close>
+
+text \<open>
+  We may need an equivalence in the opposite direction from the one supplied by
+  induction. A fixed proof of symmetry gives this conversion after substitution.
+  We bound its extra cost so that reversing an equivalence remains compatible with
+  the later size and depth estimates.
+\<close>
 
 definition sym_atom_x :: string where "sym_atom_x = fresh_atoms 2 ! 0"
 definition sym_atom_y :: string where "sym_atom_y = fresh_atoms 2 ! 1"
@@ -1880,10 +1908,11 @@ qed
 subsection \<open>The case-one selector-reassociation identity\<close>
 
 text \<open>
-  Expanding the rebalanced diagrams leaves balancing trees over a fixed set
-  of generic leaves.  Their equivalence follows from fixed tautologies: the
-  first two cases share a reassociation identity, while the third uses a
-  separate six-leaf identity.
+  When the two chosen occurrences are nested, comparing the two splits reduces to
+  a fixed identity between conditional expressions. This identity moves a
+  conditional out of another conditional's selector. We prove it once over
+  placeholder variables; both nested cases will use substitution instances of the
+  same proof.
 \<close>
 
 definition reassoc_atoms :: "string list" where
@@ -1975,6 +2004,13 @@ text \<open>
 \<close>
 
 subsection \<open>Size and depth budgets for the combinators\<close>
+
+text \<open>
+  The recursive constructions repeatedly use symmetry, transitivity, and
+  congruence for the balancing conditional. We collect bounds for the size and
+  depth of the formulas and proofs these operations produce. These estimates
+  separate their fixed overhead from the costs of the recursive proofs.
+\<close>
 
 definition case_one_glue_lines :: nat where
   "case_one_glue_lines = 3 * refl_lines + 2 * sym_lines + 2 * balance_cong_lines
@@ -2284,6 +2320,13 @@ text \<open>
 
 subsection \<open>The shared selector-reassociation substitution\<close>
 
+text \<open>
+  The abstract reassociation identity must be instantiated with the balanced
+  pieces of the actual formula. We specify this substitution and check that its
+  two sides are the expressions required by the nested cases. This gives a common
+  interface to the fixed identity used in both constructions.
+\<close>
+
 definition reassoc_sigma ::
   "'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula
    \<Rightarrow> string \<Rightarrow> 'c formula" where
@@ -2477,6 +2520,14 @@ proof -
 qed
 
 subsection \<open>The case-one construction\<close>
+
+text \<open>
+  In the first nested case, the requested occurrence lies inside the occurrence
+  chosen by ordinary balancing. Recursive equivalences compare the smaller pieces
+  obtained by the two splits. Congruence, the reassociation identity, and
+  transitivity then assemble them into the desired equivalence, with explicit
+  bounds on the assembly cost.
+\<close>
 
 lemma case_one_construction:
   assumes wfP: "formula_well_formed (alphabet F) P"
@@ -3014,9 +3065,10 @@ qed
 subsection \<open>The case-two construction\<close>
 
 text \<open>
-  In Case 2, the Spira-selected node lies below the rebalancing target.
-  The recursive equivalences are combined as in Case 1, with the fixed
-  reassociation identity used in the reverse direction.
+  In the second nested case, the occurrence chosen by ordinary balancing lies
+  inside the requested occurrence. We again compare smaller pieces by induction
+  and combine their equivalences through the conditional. The same reassociation
+  identity is now used in the reverse direction.
 \<close>
 
 definition case_two_glue_lines :: nat where
@@ -3545,6 +3597,13 @@ proof -
 qed
 
 subsection \<open>The case-three identity and construction\<close>
+
+text \<open>
+  When the two occurrences are disjoint, replacing either one leaves the other
+  intact, and the two replacements commute. We expand both splits into the same
+  four doubly replaced pieces. A fixed identity exchanges the order of the two
+  conditionals, allowing the recursive equivalences to be joined.
+\<close>
 
 definition case_three_lhs :: "'c formula" where
   "case_three_lhs =
@@ -4501,9 +4560,11 @@ qed
 subsection \<open>The termination measure\<close>
 
 text \<open>
-  The induction measure encodes two quantities: formula size and the size
-  outside the selected subtree.  A smaller formula always decreases the
-  measure; when formula size stays fixed, shrinking the second quantity does.
+  Formula size alone does not decrease in every recursive call: replacing an
+  atomic occurrence by a constant can leave it unchanged. We therefore also track
+  the size outside the requested subtree. The resulting measure decreases either
+  when the whole formula becomes smaller or, at equal size, when the requested
+  subtree becomes larger.
 \<close>
 
 definition rebal_measure :: "'c formula \<Rightarrow> nat list \<Rightarrow> nat" where
@@ -4719,6 +4780,14 @@ text \<open>
 
 subsection \<open>The pos = [] degenerate case\<close>
 
+text \<open>
+  If the requested occurrence is the root, its two constant replacements are
+  simply true and false. The rebalanced formula therefore reduces to a conditional
+  selecting between these constants according to the balanced original formula. A
+  fixed tautology proves the required equivalence directly, without recursive
+  calls.
+\<close>
+
 lemma rebalancing_at_root:
   "rebalancing P [] = balance true_const false_const (spira_trans P)"
 proof -
@@ -4842,10 +4911,11 @@ lemma case_pos_empty_construction:
 subsection \<open>Connective (slot) congruence\<close>
 
 text \<open>
-  A balanced equivalence proof can be lifted through a context with one hole.
-  The congruence proof has polynomial line and size costs and adds the context
-  depth to its depth bound.  Combining it with the premise proof discharges
-  the assumption that the two inserted formulas are equivalent.
+  An equivalence can be carried through one argument of a connective, or more
+  generally through a formula with one distinguished hole. We prove this lifting
+  rule and account for the surrounding formula's size and depth. It will let the
+  small-formula construction move an equivalence along the path to the requested
+  occurrence.
 \<close>
 
 lemma plug_cong_exists:
@@ -5085,9 +5155,10 @@ lemma plug_cong:
 subsection \<open>Selector reassociation for a general connective\<close>
 
 text \<open>
-  Pushing a balancing connective out through one argument slot is justified
-  by a fixed tautology for that connective and slot.  Substitution replaces
-  its fresh atoms by the actual sibling formulas.
+  Shannon expansion at one argument of a connective can be moved outside that
+  connective. For each connective and argument position, a fixed tautology
+  justifies this change of form. Substituting the actual argument formulas gives
+  the local step used to move a conditional towards the root.
 \<close>
 
 definition reassoc_conn_atoms :: "'c \<Rightarrow> string list" where
@@ -5557,6 +5628,13 @@ text \<open>
 
 subsection \<open>Position and size lemmas for the Shannon construction\<close>
 
+text \<open>
+  Moving a split along a formula requires precise facts about occurrence paths,
+  replacements, and subtree sizes. We collect these structural lemmas and show how
+  the relevant sizes change at each step. They justify the recursion and estimates
+  in the following Shannon construction.
+\<close>
+
 lemma rebalancing_below_eq:
   assumes wf: "formula_well_formed (alphabet F) P"
       and small: "len_formula P < spira_threshold"
@@ -5958,9 +6036,11 @@ qed
 subsection \<open>The below-threshold Shannon construction\<close>
 
 text \<open>
-  A single uniform constant bounds the base proof and every construction
-  step.  Below the threshold, formula size is bounded, so these costs are
-  absorbed into the same constant.
+  Below the balancing threshold, ordinary balancing leaves the formula unchanged,
+  but the requested split still needs a proof of equivalence. We construct that
+  proof by moving Shannon expansion along the path to the chosen occurrence. Since
+  these formulas have bounded size, a uniform constant covers the base proof and
+  all construction steps.
 \<close>
 
 definition shannon_balmax :: nat where
@@ -6406,10 +6486,11 @@ qed
 subsection \<open>Polynomial bounds\<close>
 
 text \<open>
-  The three recursive cases satisfy a common recurrence for line count.
-  Its arguments contract according to the maximum connective arity.  A
-  sufficiently high fixed polynomial degree absorbs the recursive terms,
-  yielding the bound required by Lemma 5.1.
+  Termination alone does not guarantee polynomial proof size, because some
+  recursive calls barely reduce the formula. We establish the arithmetic estimates
+  that also track the largest piece of the requested split. A sufficiently large
+  fixed exponent makes a polynomial bound absorb the recursive costs and the cost
+  of combining their proofs.
 \<close>
 
 lemma pow_succ_lower:
@@ -6737,6 +6818,13 @@ text \<open>
 \<close>
 
 subsection \<open>The recurrence and its bounds\<close>
+
+text \<open>
+  We collect the construction constants into a common bound depending on the whole
+  formula and the largest piece of the requested split. The estimates show that
+  this bound covers each recursive case as well as its additional proof steps.
+  They provide the numerical part of the final induction.
+\<close>
 
 definition rebal_base_K :: nat where
   "rebal_base_K = case_one_glue_lines + case_two_glue_lines
@@ -7121,6 +7209,14 @@ proof -
 qed
 
 subsection \<open>The main induction (Lemma 5.1)\<close>
+
+text \<open>
+  We now prove that ordinary balancing and rebalancing at any valid occurrence
+  have a short, shallow proof of equivalence. Induction on the termination measure
+  combines the small-formula and root cases with the three possible relative
+  positions of the splits. The recurrence bounds give polynomial line count and
+  line size, while line depth remains logarithmic.
+\<close>
 
 lemma rebalancing_provable:
   shows "\<exists> (bnd :: nat poly) (c :: real).

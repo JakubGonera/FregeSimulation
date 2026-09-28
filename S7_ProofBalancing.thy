@@ -10,9 +10,10 @@ begin
 subsection \<open>Bounded derivations from premises\<close>
 
 text \<open>
-  Bounded derivations generalize the earlier equivalence proofs to proofs
-  from premises.  The judgment records bounds on line count, line size, and
-  line depth; it is used to simulate each rule application after balancing.
+  To simulate a rule application, we need derivations that may use its balanced
+  premises as assumptions. We extend the earlier bounds to this setting, recording
+  line count, line size, and line depth. These derivations will later be joined so
+  that their assumptions are discharged by earlier proof lines.
 \<close>
 
 definition derives_balanced where
@@ -27,9 +28,10 @@ definition derives_balanced where
 subsection \<open>Eliminating a proven equivalence\<close>
 
 text \<open>
-  A fixed modus ponens proof uses two fresh atoms.  Substituting formulas
-  for those atoms turns a proven equivalence into a derivation of its right
-  side from its left side.
+  A proof of equivalence allows us to pass from one side to the other once that
+  side has been established. We choose a fixed derivation over fresh variables and
+  instantiate it with the formulas in question. Its bounds account for the
+  conversion steps used before and after an application of the original rule.
 \<close>
 
 definition mp_base_proof where
@@ -287,9 +289,10 @@ qed
 subsection \<open>Folding derivations that carry assumptions\<close>
 
 text \<open>
-  Folding proofs that carry assumptions preserves validity and the base
-  conclusion.  The remaining assumptions come from the folded proofs and
-  from base assumptions that no folded proof establishes.
+  We need to combine a derivation with proofs of some of its assumptions. The
+  folding lemmas justify this operation and describe which assumptions remain
+  afterwards. This is the mechanism for assembling local simulation steps into a
+  proof with no assumptions.
 \<close>
 
 lemma combine_fold_asms:
@@ -367,8 +370,10 @@ qed
 subsection \<open>The instantiated rule step\<close>
 
 text \<open>
-  An instantiated rule is a one-step derivation from its instantiated
-  premises to its instantiated conclusion.
+  Applying a rule under a substitution gives a one-step derivation from the
+  substituted premises to the substituted conclusion. We state this explicitly for
+  use inside the balancing construction. It is the central rule step between
+  converting the balanced premises and converting the conclusion back.
 \<close>
 
 lemma rule_step_proof:
@@ -428,6 +433,13 @@ qed
 
 subsection \<open>Auxiliary bounds\<close>
 
+text \<open>
+  The costs of a simulated step must be bounded in terms of its original premises
+  and conclusion. We collect estimates for their subformulas and substitution
+  values, together with arithmetic bounds used below. These estimates connect the
+  general commutation theorem to the size of a particular rule application.
+\<close>
+
 lemma length_le_sum_list_len:
   "length xs \<le> sum_list (map len_formula xs)"
 proof (induction xs)
@@ -482,10 +494,11 @@ qed
 subsection \<open>Simulating a rule application (Lemma 7.1)\<close>
 
 text \<open>
-  Lemma 7.1 lifts any instantiated rule to the balanced translations of its
-  premises and conclusion.  The resulting derivation has polynomially
-  bounded line count and line size, and logarithmically bounded depth.
-  The constants are uniform across the finite rule set and all substitutions.
+  We simulate an original rule application by converting its balanced premises
+  into instances under a common substitution of balanced formulas. The original
+  rule then applies, and a final equivalence converts its conclusion back to the
+  balanced conclusion. The finite rule set gives uniform polynomial size and
+  logarithmic depth bounds for these derivations.
 \<close>
 
 lemma transform_rule_simulation:
@@ -1422,8 +1435,11 @@ qed
 subsection \<open>Foundational helpers for the final assembly\<close>
 
 text \<open>
-  Substitution preserves the connective skeleton.  If the result is
-  well-formed, the original formula had the correct connective arities.
+  Before assembling the whole proof, we establish the structural facts needed to
+  extract and reuse rule instances. These include well-formedness under
+  substitution and bounds relating individual formulas to the surrounding proof.
+  They ensure that the local simulation results apply with a common size
+  parameter.
 \<close>
 
 lemma sub_formula_wf_skeleton:
@@ -1506,7 +1522,6 @@ next
   show ?case using step lt by linarith
 qed
 
-text \<open>The number of distinct variables is at most the formula size.\<close>
 lemma card_var_set_le_len:
   "card (var_set_form f) \<le> len_formula f"
 proof (induction f)
@@ -1542,7 +1557,6 @@ next
   finally show ?case .
 qed
 
-text \<open>The identity substitution leaves a formula unchanged.\<close>
 lemma sub_formula_atom_id: "sub_formula Atom f = f"
 proof (induction f)
   case (Atom a)
@@ -1556,7 +1570,7 @@ qed
 
 text \<open>
   Chained combination discharges a proof's assumptions against the steps of
-  proofs earlier in the sequence.  Only genuinely external assumptions
+  proofs earlier in the sequence.  Only external assumptions
   remain.  This strengthens the preceding fold, which discharges only the
   base proof's assumptions.
 \<close>
@@ -1675,10 +1689,10 @@ qed
 subsection \<open>Simulating each proof line\<close>
 
 text \<open>
-  Apply Lemma 7.1 to each line of the original proof.  Its balanced
-  sub-derivation uses only balanced earlier lines as premises.  Finiteness
-  of the rule set gives one polynomial for all line and size bounds, and a
-  logarithmic depth bound for every line.
+  We apply the rule-simulation theorem to each original proof line. The resulting
+  derivation of its balanced form uses only balanced earlier lines as premises. A
+  single polynomial controls all these blocks, and each block has logarithmic line
+  depth in the size of the original proof.
 \<close>
 
 lemma per_line_simulation:
@@ -2138,10 +2152,11 @@ qed
 subsection \<open>Recovering the original conclusion\<close>
 
 text \<open>
-  Instantiating Lemma 6.4 with the identity substitution relates the
-  balanced translation of the conclusion to the conclusion itself.  The
-  modus ponens converter then derives the original conclusion, with
-  polynomial size and logarithmic depth bounds.
+  The assembled blocks prove the balanced conclusion; we must still recover the
+  original formula. Commutation with the identity substitution supplies a
+  polynomial-size equivalence proof, and equivalence elimination completes the
+  conversion. Its line-depth bound includes the depth of the original conclusion
+  as well as a logarithmic term.
 \<close>
 
 lemma final_conversion:
@@ -2446,8 +2461,13 @@ qed
 
 subsection \<open>Proof balancing (final theorem)\<close>
 
-text \<open>This is the proof-balancing theorem corresponding to Filmus'
-  Theorem 1.1.\<close>
+text \<open>
+  Joining the simulated blocks and the final conversion produces a proof of the
+  same conclusion from no assumptions. Its total size grows only polynomially, and
+  its line depth is bounded by the conclusion's depth plus a logarithmic term in
+  the original proof size. This is the proof-balancing theorem used before
+  changing alphabets.
+\<close>
 
 theorem proof_balancing:
   shows "\<exists> bound :: nat poly. \<exists> c :: real.

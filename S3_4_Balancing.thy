@@ -8,6 +8,14 @@ text \<open>The lemma numbers in this theory follow Filmus' exposition.\<close>
 
 subsection \<open>Congruence under substitution (Lemma 3.2)\<close>
 
+text \<open>
+  Replacing a formula by an equivalent one should preserve equivalence inside any
+  surrounding formula. We establish this substitution principle together with
+  bounds on the proof needed to justify the replacement. These bounds will let
+  later constructions combine small equivalence proofs without losing control of
+  size or depth.
+\<close>
+
 definition plug :: "string \<Rightarrow> 'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula" where
   "plug h \<tau> \<chi> = sub_formula (\<lambda>v. if v = h then \<tau> else Atom v) \<chi>"
 
@@ -1900,6 +1908,13 @@ qed
 
 subsection \<open>A balancing connective (Lemma 4.1)\<close>
 
+text \<open>
+  We choose a fixed formula that acts as a conditional: it returns one branch when
+  its selector is true and the other when it is false. Functional completeness
+  supplies this formula in the given alphabet. It will combine the three recursive
+  pieces of the balancing construction.
+\<close>
+
 definition dm_balancing where
   "dm_balancing = Conn Or [Conn And [Atom ''x'', Atom ''z''], 
                            Conn And [Atom ''y'', Conn Not [Atom ''z'']]]"
@@ -1960,6 +1975,13 @@ proof -
 qed
 
 subsection \<open>Finding a balanced subformula (Lemma 4.2)\<close>
+
+text \<open>
+  Balancing needs a subformula that is neither too small nor too large. Descending
+  through sufficiently large children finds such an occurrence, with size bounds
+  determined by the maximum connective arity. These bounds ensure that replacing
+  the occurrence by a constant leaves a smaller problem.
+\<close>
 
 
 fun children :: "'c formula \<Rightarrow> 'c formula set" where
@@ -2273,7 +2295,22 @@ definition spiras_sel :: "'c formula \<Rightarrow> 'c formula" where
 
 subsection \<open>Lemma 4.3\<close>
 
+text \<open>
+  We now construct the balanced form of a formula and prove its three main
+  properties: the same truth value, logarithmic depth, and polynomial size. The
+  construction repeatedly splits at the occurrence selected above. Small formulas
+  form the base cases of the recursion.
+\<close>
+
 subsubsection \<open>The balancing construction and equivalence\<close>
+
+text \<open>
+  A position records one particular occurrence of a subformula, so replacing it
+  does not affect other occurrences of the same formula. We define replacement by
+  a Boolean constant and recursively balance the two replacements and the selected
+  subformula. Shannon expansion then proves that combining these pieces preserves
+  the original truth value.
+\<close>
 
 definition top_conn :: "'c" where
   "top_conn = (SOME t. arity (alphabet F) t = 0
@@ -3475,6 +3512,13 @@ qed
 
 subsubsection \<open>Logarithmic depth\<close>
 
+text \<open>
+  Above the fixed size threshold, every recursive input is smaller by a fixed
+  factor. Consequently, each branch of the construction has only logarithmically
+  many recursive levels. Since the conditional template adds a fixed amount of
+  depth at each level, the resulting formula has logarithmic depth.
+\<close>
+
 
 lemma balance_depth_bound:
   shows "depth_formula (balance x y z)
@@ -4033,6 +4077,13 @@ proof -
 qed
 
 subsubsection \<open>Well-formedness and polynomial size\<close>
+
+text \<open>
+  The construction uses only connectives from the original alphabet and respects
+  their arities. A formula with bounded arity has size at most exponential in its
+  depth. Applying this estimate to the logarithmic depth bound gives a polynomial
+  bound on the size of the balanced formula.
+\<close>
 
 lemma sub_formula_wf:
   fixes sub :: "string \<Rightarrow> 'c formula" and g :: "'c formula"

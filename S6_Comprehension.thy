@@ -1,17 +1,17 @@
 theory S6_Comprehension
-  imports TruthTables S5_Rebalancing
+  imports S5_Rebalancing
 begin
 
 section \<open>Comprehension and connective commutation\<close>
 
 subsection \<open>Setting: slot-fixing inside a single Frege system\<close>
 
-text \<open>Spira balancing needs no closure assumption whatsoever.  The arity-preserving Shannon
-  identity \<open>shc_subst_cons\<close> and the collapse \<open>collapse_open\<close> do all the work, so
-  \<open>frege_closure\<close> is a plain extension of \<open>frege_balancing\<close> and EVERY Frege system
-  interprets it.  That is what lets the last leg of Reckhow's theorem be carried out inside
-  an arbitrary target system, and what made the connective-closure construction that earlier
-  versions of this development went through unnecessary.\<close>
+text \<open>
+  We work inside a single arbitrary Frege system and keep the original connective
+  when fixing one of its arguments to a constant. Shannon expansion can therefore
+  be used without adding connectives to the alphabet. This setup lets the
+  rebalancing results apply to every Frege system in the final simulation.
+\<close>
 
 locale frege_closure = frege_balancing
 begin
@@ -40,6 +40,14 @@ lemma spira_trans_false_const: "spira_trans false_const = false_const"
 
 
 subsection \<open>Shannon expansion: the multiplexer identity\<close>
+
+text \<open>
+  Expanding one argument of a connective into its true and false cases gives a
+  conditional expression with the same truth value. We express this Shannon
+  identity using distinct placeholder variables and obtain a fixed proof by
+  completeness. Substitution then supplies the identity for arbitrary argument
+  formulas.
+\<close>
 
 definition shc_atoms where
   "shc_atoms d = fresh_atoms (arity (alphabet F) d + 1)"
@@ -236,11 +244,13 @@ qed
 
 subsection \<open>Uniform cost bounds for the schematic proofs\<close>
 
-text \<open>The Shannon step in the shape needed when a frozen slot is written out as a constant
-  argument of \<open>c\<close> rather than absorbed into a connective of smaller arity: expanding
-  argument \<open>j\<close> of \<open>gs\<close> becomes expanding argument \<open>Suc j\<close> of \<open>cb # gs\<close>, at the SAME
-  connective \<open>c\<close>.  This is what lets the auxiliary commutation lemma below avoid the
-  arity-reducing \<open>conn_fix\<close> entirely, and with it the closure assumption.\<close>
+text \<open>
+  There are only finitely many connectives and argument positions, so the
+  corresponding fixed Shannon proofs admit common cost bounds. We also put the
+  identity in the form needed when an argument has already been fixed to a
+  constant. These uniform estimates will be reused at every step of the
+  comprehension construction.
+\<close>
 
 lemma shc_subst_cons:
   assumes ar: "1 \<le> arity (alphabet F) c"
@@ -333,6 +343,13 @@ proof -
 qed
 
 subsection \<open>Arithmetic and depth infrastructure\<close>
+
+text \<open>
+  The upcoming induction counts arguments that are more than atoms or constants.
+  We establish how this count changes when an argument is fixed, together with
+  size and depth estimates for argument lists. These facts show that the recursion
+  progresses and that its bounds remain uniform.
+\<close>
 
 lemma arity_le_max:
   "arity (alphabet F) c \<le> Max (arity (alphabet F) ` UNIV)"
@@ -538,6 +555,14 @@ proof -
 qed
 
 subsection \<open>The bounded comprehension engine\<close>
+
+text \<open>
+  We build the core proof that balancing a connective application is compatible
+  with balancing its arguments. Each step splits on a nontrivial argument, invokes
+  rebalancing, and handles the constant branches recursively. Tracking the number
+  of remaining nontrivial arguments bounds the branching and the costs of the
+  resulting proof.
+\<close>
 
 lemma commutes_aux:
   shows "\<exists> (SL :: nat poly) (DD :: real) (DDC :: real). \<forall> c b qs N.
@@ -1628,10 +1653,13 @@ qed
 
 subsection \<open>Bounded collapse\<close>
 
-text \<open>Collapsing a balanced Shannon expansion back into a single connective node, with the
-  frozen slot written out as a CONSTANT ARGUMENT of @{term c} rather than absorbed into a
-  connective of smaller arity.  Keeping the arity is what makes this free of any closure
-  assumption: it is exactly the Shannon identity @{thm [source] shc_subst} at slot \<open>0\<close>.\<close>
+text \<open>
+  After the recursive branches have been processed, their conditional expression
+  must be folded back into a single connective application. We instantiate the
+  Shannon identity to prove this collapse with controlled cost. The fixed argument
+  remains an explicit constant, so the connective and its arity stay within the
+  original alphabet.
+\<close>
 
 lemma collapse_open:
   shows "\<exists> Kc :: nat. \<forall> c gbar z.
@@ -1754,6 +1782,14 @@ proof -
 qed
 
 subsection \<open>Bounded commutation: Lemma 6.2\<close>
+
+text \<open>
+  We assemble the auxiliary construction into the single-connective commutation
+  theorem: balancing the whole application is provably equivalent to applying the
+  connective to balanced arguments. Its proof has polynomial size and logarithmic
+  line depth. This is the local step needed to move balancing through an arbitrary
+  formula.
+\<close>
 
 lemma transform_commutes_conn:
   shows "\<exists> (bnd :: nat poly) (c :: real).
@@ -2595,7 +2631,22 @@ qed
 
 subsection \<open>Structural commutation: Lemma 6.4\<close>
 
+text \<open>
+  We extend commutation from one connective to an entire formula under
+  substitution. The desired equivalence relates balancing the substituted formula
+  to substituting balanced values into its original structure. The next lemmas
+  prepare the congruence and size estimates needed for the structural induction.
+\<close>
+
 subsubsection \<open>A depth-tight connective congruence\<close>
+
+text \<open>
+  To preserve the final depth bound, we replace all corresponding arguments of a
+  connective using one fixed congruence derivation. Substitution instantiates this
+  derivation with the actual formulas and their equivalence proofs. Its depth
+  overhead is fixed, which allows the original formula's depth to be tracked
+  through the structural induction.
+\<close>
 
 definition conn_cong_atoms where
   "conn_cong_atoms c = fresh_atoms (2 * arity (alphabet F) c)"
@@ -3263,6 +3314,13 @@ qed
 
 subsubsection \<open>Size and depth bounds for substitution\<close>
 
+text \<open>
+  Substitution can duplicate a value when a variable occurs repeatedly. We bound
+  the resulting size using the original formula and the sizes of values
+  substituted for its occurring variables. We also bound depth, providing the
+  estimates used to control every subformula in the commutation proof.
+\<close>
+
 lemma occ_len_le:
   assumes "v \<in> var_set_form g"
   shows "len_formula (sub v) \<le> (\<Sum> w \<in> var_set_form g. len_formula (sub w))"
@@ -3440,10 +3498,11 @@ qed
 subsubsection \<open>Lemma 6.4: the bounded structural commutation\<close>
 
 text \<open>
-  The input-size measure adds the size of the original formula to the sizes
-  of substituted values for its variables.  Line count and line size are
-  polynomial in this measure.  The depth bound also includes the original
-  formula depth, which is necessary because the conclusion is the final step.
+  Structural induction now proves that balancing commutes with substitution up to
+  a bounded proof of equivalence. At each connective we use single-connective
+  commutation, then replace its arguments using the induction hypotheses. Proof
+  size is polynomial in the input-size measure; line depth includes the original
+  formula's depth plus a logarithmic term.
 \<close>
 
 lemma transform_commutes_form:
