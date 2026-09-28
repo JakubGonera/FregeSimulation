@@ -2,6 +2,8 @@ theory Arithmetic
   imports Complex_Main "HOL-Computational_Algebra.Polynomial"
 begin
 
+section \<open>Arithmetic bounds\<close>
+
 text \<open>Pure arithmetic / list-arithmetic lemmas, independent of any
       formula-specific types. These are used throughout the project's
       combinatorial bounds.\<close>

@@ -2,7 +2,7 @@ theory Reckhow
   imports S7_ProofBalancing
 begin
 
-section \<open>Translation between Frege systems over different alphabets\<close>
+section \<open>Simulation between Frege systems\<close>
 
 text \<open>The third leg of Reckhow's construction: a proof whose lines have bounded
       depth in one Frege system is translated into a valid proof in any other
@@ -354,7 +354,7 @@ proof -
 qed
 
 
-subsection \<open>Pruning a functional-completeness witness to a well-formed template\<close>
+subsection \<open>Well-formed connective templates\<close>
 
 lemma connective_template_pruned:
   fixes alph :: "'c alphabet" and dmf :: "dm_conn formula" and f' :: "'c formula"
@@ -846,13 +846,13 @@ proof -
   thus ?thesis using connective_template_depth[of undefined] by linarith
 qed
 
-(*
-  The depth analogue of translate_formula_length: compositional translation
-  multiplies depth by at most the largest template depth.  Together with the
-  length bound this is what keeps g = translate o balance polynomial AND
-  logarithmic-depth, which is what makes the T ^ D factor of
-  translated_proof_simulation polynomial.
-*)
+text \<open>
+  Compositional translation multiplies depth by at most the largest template
+  depth.  Together with the size bound, this keeps the translated balanced
+  formula at logarithmic depth and makes the resulting proof-size factor
+  polynomial.
+\<close>
+
 lemma translate_formula_depth:
   assumes "formula_well_formed (alphabet Fone) f"
   shows "depth_formula (translate_formula f)
@@ -1567,11 +1567,11 @@ proof -
   qed
 qed
 
-subsection \<open>Phase E: the reverse translation, roundtrip, and final assembly\<close>
+section \<open>Reverse translation and final simulation\<close>
 
 text \<open>
   The reverse leg (Ftwo-formula to Fone-formula) is just \<^const>\<open>translate_formula\<close>
-  under the SYMMETRIC pair, obtained by locally interpreting frege_pair with the
+  under the SYMMETRIC pair, obtained by locally interpreting \<^text>\<open>frege_pair\<close> with the
   two systems swapped.  Everything Phase B proved generically (well-formedness,
   semantic equivalence, the length and depth bounds) becomes available for free
   as \<^text>\<open>rev.translate_formula\<close>, \<^text>\<open>rev.translate_formula_length\<close>, etc.
@@ -1584,7 +1584,7 @@ text \<open>
   \<^text>\<open>frege_closure\<close> needs only \<^text>\<open>frege_system F\<close>: it is a plain extension of
   \<^text>\<open>frege_balancing\<close>, whose sole assumption is \<^text>\<open>frege_system F\<close>.  In
   particular no \<^text>\<open>conn_closed\<close> assumption is involved -- the arity-reducing
-  \<^text>\<open>conn_fix\<close> identity is the only part of S6_Comprehension that needs closure, and it
+  \<^text>\<open>conn_fix\<close> identity is the only part of the comprehension theory that needs closure, and it
   carries \<^text>\<open>conn_closed (alphabet F)\<close> as an explicit hypothesis rather than as a
   locale assumption; the Spira-balancing development itself goes through the
   arity-preserving \<^text>\<open>shc_subst_cons\<close> and \<^text>\<open>collapse_open\<close>.
@@ -1612,7 +1612,7 @@ text \<open>
 sublocale one_bal: frege_closure Fone
   by unfold_locales
 
-subsection \<open>The reverse formula translation g and its polynomial size bound\<close>
+subsection \<open>The reverse formula translation\<close>
 
 text \<open>
   The translation \<^text>\<open>rev.translate_formula\<close> replaces each connective by a fixed
@@ -1728,7 +1728,7 @@ qed
 subsection \<open>Modus ponens conversion inside Ftwo\<close>
 
 text \<open>
-  S7_ProofBalancing's \<^text>\<open>iff_elimination\<close> lives in \<^text>\<open>frege_closure\<close>, but its proof
+  The proof-balancing theory's \<^text>\<open>iff_elimination\<close> lives in \<^text>\<open>frege_closure\<close>, but its proof
   only ever uses \<^text>\<open>frege_balancing\<close>-level material (\<^text>\<open>entails_proof\<close>,
   \<^text>\<open>iff_form\<close>, the two fresh symmetry atoms, and \<^text>\<open>proof_substitution\<close>).
   Ftwo is an arbitrary Frege system and need not be closed, so the converter is
@@ -1862,7 +1862,7 @@ proof -
     using valid_pr pr_asm pr_thesis len_pr len_mi by force
 qed
 
-subsection \<open>The roundtrip templates and their per-connective base equivalences\<close>
+subsection \<open>Roundtrip templates for each connective\<close>
 
 text \<open>
   Composing the two per-connective translations gives a map from Ftwo-formulas to
@@ -2543,7 +2543,7 @@ proof -
     using valid_pr pr_asm pr_th pr_wf pr_len pAB(4) ti_len by force
 qed
 
-subsection \<open>Folding the per-slot congruence over all argument positions\<close>
+subsection \<open>Folding congruence over argument positions\<close>
 
 text \<open>
   \<^text>\<open>two_prov_iff_slot\<close> rewrites ONE argument of a connective.  Rewriting all of
@@ -3706,8 +3706,9 @@ qed
 
 text \<open>
   Step 4 of the chain, made polynomial.  \<^text>\<open>roundtrip_provable\<close> costs
-  \<open>roundtrip_const ^ depth \<sigma> * roundtrip_weight \<sigma>\<close>, which is polynomial precisely when \<sigma> is
-  BALANCED --- and \<sigma> is always \<^text>\<open>spira_trans \<tau>\<close> here.  The same balancing bounds the
+  an exponential factor in formula depth, which is polynomial precisely when
+  the formula is balanced.  Here it is always the balanced translation of the
+  target formula.  The same balancing bounds the
   size of the roundtrip image itself, which the modus-ponens conversion later has to pay
   for.  All three bounds are collected under a single polynomial.
 \<close>
@@ -4038,7 +4039,7 @@ text \<open>
   balancing is the DEPTH bound it produces: the template translation into Ftwo costs
   \<open>T ^ D\<close> with \<open>D\<close> the largest line depth, and \<^text>\<open>one_bal.proof_balancing\<close> makes \<open>D\<close>
   logarithmic in the proof size plus the depth of the thesis.  The thesis here is
-  \<^const>\<open>reverse_translate\<close> of \<tau>, i.e. a template translation of the BALANCED
+  \<^const>\<open>reverse_translate\<close> of the target formula, i.e. a template translation of the BALANCED
   \<^text>\<open>spira_trans \<tau>\<close>, so its own depth is logarithmic in \<open>len_formula \<tau>\<close> as well.
   Both logarithms are therefore in \<open>len_proof w + len_formula \<tau>\<close>, and \<open>T ^ D\<close> is polynomial
   in it --- which is exactly the bound clause (B) of \<^const>\<open>simulates\<close> allows.

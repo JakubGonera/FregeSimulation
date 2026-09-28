@@ -1,0 +1,49 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage{isabelle,isabellesym}
+
+% Keep pdfsetup last.
+\usepackage{pdfsetup}
+
+\urlstyle{rm}
+\isabellestyle{it}
+% Render informal proof comments, including underscores and Isabelle symbols.
+\def\fregecommentsymbol#1>{\ensuremath{\csname #1\endcsname}}
+\newcommand{\fregecommentbody}[1]{{\isastylecmt--- #1}\endgroup}
+\renewcommand{\isamarkupcmt}{%
+  \begingroup
+  \catcode`\_=12
+  \catcode`\^=12
+  \catcode`\#=12
+  \let\<\fregecommentsymbol
+  \fregecommentbody}
+
+\begin{document}
+
+\title{Polynomial-Size Simulation of Frege Systems}
+\author{Jakub Gonera}
+\date{}
+\maketitle
+
+\begin{abstract}
+  This entry formalizes a polynomial-size simulation result for Frege systems
+  over possibly different finite connective alphabets. Assuming that both
+  systems satisfy the formalized Frege-system conditions, it proves that one
+  simulates the other with a polynomial bound on proof size. The result does
+  not establish that the proof translation is computable in polynomial time.
+\end{abstract}
+
+\tableofcontents
+\clearpage
+
+\section*{Introduction}
+The formalization follows the treatment of Frege-system simulation by
+Reckhow~\cite{Reckhow1976}, Kraj\'i\v{c}ek~\cite{Krajicek1995}, and
+Filmus~\cite{Filmus2010}.
+
+\input{session}
+
+\bibliographystyle{abbrv}
+\bibliography{root}
+
+\end{document}

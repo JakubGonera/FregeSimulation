@@ -2,7 +2,7 @@ theory S6_Comprehension
   imports TruthTables S5_Rebalancing
 begin
 
-section \<open>Pushing the balancing translation through connectives (Filmus section 6)\<close>
+section \<open>Comprehension and connective commutation\<close>
 
 subsection \<open>Setting: slot-fixing inside a single Frege system\<close>
 
@@ -537,7 +537,7 @@ proof -
   show "1 + (MA + 1) * p \<le> Cc * (MA + 1) * (p + 1)" using b3 scale by (rule order_trans)
 qed
 
-subsection \<open>The bounded comprehension engine (commutes_aux)\<close>
+subsection \<open>The bounded comprehension engine\<close>
 
 lemma commutes_aux:
   shows "\<exists> (SL :: nat poly) (DD :: real) (DDC :: real). \<forall> c b qs N.
@@ -1753,10 +1753,7 @@ proof -
   thus ?thesis by blast
 qed
 
-\<comment> \<open>\<open>shc_subst_cons\<close> is stated with the rest of the Shannon machinery, before \<open>commutes_aux\<close>.\<close>
-
-subsection \<open>Bounded commutation: Lemma 6.2 (transform_commutes_conn)\<close>
-subsection \<open>Bounded commutation: Lemma 6.2 (transform_commutes_conn)\<close>
+subsection \<open>Bounded commutation: Lemma 6.2\<close>
 
 lemma transform_commutes_conn:
   shows "\<exists> (bnd :: nat poly) (c :: real).
@@ -2596,7 +2593,7 @@ proof -
   show ?thesis using main by blast
 qed
 
-subsection \<open>Structural commutation: Lemma 6.4 (transform_commutes_form)\<close>
+subsection \<open>Structural commutation: Lemma 6.4\<close>
 
 subsubsection \<open>A depth-tight connective congruence\<close>
 
@@ -3442,9 +3439,13 @@ qed
 
 subsubsection \<open>Lemma 6.4: the bounded structural commutation\<close>
 
-(* M = |P| + Sum |Qi| = len f + (sum v in var_set_form f. |sub v|), the input-size
-   measure.  Bounds: lines/size <= poly bnd M (= M^O(1)); depth <= depth f + c*log2(M+1)
-   (the +depth f is forced since thesis = last step makes dep >= depth (S' f) >= depth f). *)
+text \<open>
+  The input-size measure adds the size of the original formula to the sizes
+  of substituted values for its variables.  Line count and line size are
+  polynomial in this measure.  The depth bound also includes the original
+  formula depth, which is necessary because the conclusion is the final step.
+\<close>
+
 lemma transform_commutes_form:
   shows "\<exists> (bnd :: nat poly) (c :: real).
            \<forall> f sub. formula_well_formed (alphabet F) f

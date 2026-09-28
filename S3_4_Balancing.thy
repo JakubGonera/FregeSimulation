@@ -2,9 +2,11 @@ theory S3_4_Balancing
   imports S2_Frege Arithmetic "HOL.Transcendental"
 begin
 
-(* The numbering of lemmas follows Yuval Filmus' manuscript *)
+section \<open>Balancing formulas\<close>
 
-subsection \<open>Lemma 3.2\<close>
+text \<open>The lemma numbers in this theory follow Filmus' exposition.\<close>
+
+subsection \<open>Congruence under substitution (Lemma 3.2)\<close>
 
 definition plug :: "string \<Rightarrow> 'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula" where
   "plug h \<tau> \<chi> = sub_formula (\<lambda>v. if v = h then \<tau> else Atom v) \<chi>"
@@ -151,11 +153,11 @@ locale frege_balancing =
   assumes "frege_system F"
 begin
 
-(* 
-   iff_dm \<equiv> (a \<and> b) \<or> (\<not>a \<and> \<not>b) 
-   for now we will hardcode variable names to get the artificial connective
-   without proving the general equivalence over all formulas substituted.
-*)
+text \<open>
+  A fixed De Morgan formula represents equivalence.  The variables in this
+  witness are fixed here; later substitution lemmas supply arbitrary formulas.
+\<close>
+
 definition iff_dm :: "dm_conn formula" where
   "iff_dm = Conn Or [Conn And [Atom ''a'', Atom ''b''], 
                      Conn And [Conn Not [Atom ''a''], Conn Not [Atom ''b'']]]"
@@ -187,7 +189,8 @@ lemma conn_iff_wf: "formula_well_formed (alphabet F) conn_iff"
 lemma conn_iff_equiv: "formulas_equiv conn_iff (alphabet F) iff_dm dm_alphabet"
   unfolding conn_iff_def using someI_ex[OF conn_iff_spec] by blast
 
-(* lemma 3.1 already proven in S2_Frege.thy *)
+text \<open>The corresponding result for Lemma 3.1 was established in the
+  theory of Frege systems.\<close>
 
 fun contains_atom :: "'c formula \<Rightarrow> string \<Rightarrow> bool" where
   "contains_atom (Atom s) h = (h = s)" |
@@ -240,12 +243,12 @@ fun distinguished :: "'c formula \<Rightarrow> string \<Rightarrow> bool" where
         (\<exists>! i. i < length fs \<and> contains_atom (fs ! i) h)
       \<and> (\<forall> f \<in> set fs. distinguished f h))"
 
-(*
-  hole_depth \<chi> h: depth at which the variable h sits inside \<chi>. Used as the
-  induction measure for iff_congruent --- when distinguished \<chi> h holds, the
-  path from the root of \<chi> down to h is unique, so this measure is well-behaved
-  and strictly decreases when descending along that unique path.
-*)
+text \<open>
+  The hole depth measures the path to a distinguished variable in a formula.
+  That path is unique, so descending along it decreases the induction measure
+  used for congruence.
+\<close>
+
 fun hole_depth :: "'c formula \<Rightarrow> string \<Rightarrow> nat" where
   "hole_depth (Atom a) h = 0" |
   "hole_depth (Conn _ fs) h =
@@ -326,11 +329,11 @@ next
   finally show ?case .
 qed
 
-(*
-  We prove the existence of a fixed proof for congruence of each connective,
-  but to be able to say that this contributes only a constant factor we
-  designate a "canonical" instantiation of a connective and variables as children
-*)
+text \<open>
+  Each connective has a fixed congruence proof.  A canonical instantiation
+  of its argument variables lets us bound the cost of these proofs uniformly.
+\<close>
+
 definition canonical_atoms :: "'c \<Rightarrow> string list" where
   "canonical_atoms c = (SOME vs.
        length vs = arity (alphabet F) c
@@ -552,13 +555,12 @@ proof -
     using inst fs_wf th_wf one_premise by blast
 qed
 
-(*
-  Pick, once and for all, a representative base proof for every (connective,
-  position) pair. Because the alphabet is finite and arities are bounded, we
-  can take the maximum step count, step length and step depth across all such
-  proofs --- these are the universal constants we will scale by under
-  substitution.
-*)
+text \<open>
+  Choose a base proof for each connective and argument position.  Finiteness
+  of the alphabet and bounded arities give uniform maxima for the number of
+  steps, their size, and their depth.  Substitution scales these constants.
+\<close>
+
 definition base_proof :: "'c \<Rightarrow> nat \<Rightarrow> 'c frege_proof" where
   "base_proof c i = (SOME pr. valid_proof F pr \<and>
        assumptions pr = {conn_iff} \<and>
@@ -746,13 +748,12 @@ proof -
   finally show ?thesis .
 qed
 
-(*
-  Inductive core of lemma 3.2: structural induction along the unique path
-  from the root of \<chi> down to h. The bounds are explicit in the universal
-  constants base_max_steps, base_max_step_len, base_max_step_depth so that
-  the polynomial in the public statement of iff_congruent can be read off
-  directly.
-*)
+text \<open>
+  The core of Lemma 3.2 is induction along the unique path to the
+  distinguished variable.  Uniform bounds on the base proofs make the
+  polynomial cost in the final congruence statement explicit.
+\<close>
+
 lemma iff_congruent_inductive:
   fixes \<phi> \<psi> \<chi> :: "'c formula" and h :: string
   assumes "distinguished \<chi> h" "contains_atom \<chi> h"
@@ -1719,7 +1720,6 @@ next
     using c_valid c_assms c_thesis c_len_bound step_bnd step_wf by blast
 qed
 
-(* lemma 3.2: *)
 lemma iff_congruent:
   shows "\<exists> c bound :: nat poly. \<forall> \<phi> \<psi> \<chi> h.
            let sub  = \<lambda>v. if v = ''a'' then \<phi> else if v = ''b'' then \<psi> else Atom v;
@@ -1898,7 +1898,7 @@ proof -
   qed
 qed
 
-subsection  \<open>Lemma 4.1\<close>
+subsection \<open>A balancing connective (Lemma 4.1)\<close>
 
 definition dm_balancing where
   "dm_balancing = Conn Or [Conn And [Atom ''x'', Atom ''z''], 
@@ -1959,9 +1959,7 @@ proof -
   thus ?thesis using unfold step_sub step_equiv step_dm by simp
 qed
 
-(* I do not formalise the lemma 4.1 to see what exact form would be the most useful *)
-
-subsection \<open>Lemma 4.2\<close>
+subsection \<open>Finding a balanced subformula (Lemma 4.2)\<close>
 
 
 fun children :: "'c formula \<Rightarrow> 'c formula set" where
@@ -2275,7 +2273,7 @@ definition spiras_sel :: "'c formula \<Rightarrow> 'c formula" where
 
 subsection \<open>Lemma 4.3\<close>
 
-paragraph \<open>(a)\<close>
+subsubsection \<open>The balancing construction and equivalence\<close>
 
 definition top_conn :: "'c" where
   "top_conn = (SOME t. arity (alphabet F) t = 0
@@ -2335,13 +2333,13 @@ lemma false_const_len:
   shows "len_formula false_const = 1"
   unfolding false_const_def by simp
 
-(*
-  A position is a path of child indices from the root: [] is the whole
-  formula and i # js descends into the i-th child then follows js. It lets
-  spira_trans single out one specific node rather than every subformula
-  that happens to share its shape --- the distinction Reckhow's P_{Q=x}
-  notation relies on (a node, not a value).
-*)
+text \<open>
+  A position is a path of child indices from the root.  The empty path
+  denotes the whole formula.  Positions identify a particular node, even
+  when several subformulas have the same shape; this distinction is needed
+  when fixing a selected subformula during balancing.
+\<close>
+
 fun subterm_at :: "'c formula \<Rightarrow> nat list \<Rightarrow> 'c formula" where
   "subterm_at p [] = p" |
   "subterm_at (Atom v) (i # js) = Atom v" |
@@ -2352,7 +2350,7 @@ fun valid_position :: "'c formula \<Rightarrow> nat list \<Rightarrow> bool" whe
   "valid_position (Atom v) (i # js) = False" |
   "valid_position (Conn c fs) (i # js) = (i < length fs \<and> valid_position (fs ! i) js)"
 
-(* Replace the subtree at one specific position by a constant. *)
+text \<open>Fixing a position replaces only that subtree by a constant.\<close>
 fun fix_at :: "nat list \<Rightarrow> bool \<Rightarrow> 'c formula \<Rightarrow> 'c formula" where
   "fix_at [] b p = (if b then true_const else false_const)" |
   "fix_at (i # js) b (Atom v) = Atom v" |
@@ -2561,11 +2559,12 @@ next
   thus ?case using p_eq by simp
 qed
 
-(*
-  Exact size of a fixed formula: fix_at replaces the subtree at pos (of size
-  |subterm_at p pos|) by a single constant node, so the formula loses exactly
-  |subterm_at p pos| - 1 nodes. Stated additively to avoid nat subtraction.
-*)
+text \<open>
+  Fixing a position replaces its subtree by a single constant node.  The
+  following additive identity records the exact size change without natural
+  number subtraction.
+\<close>
+
 lemma fix_at_len_eq:
   assumes "valid_position p pos"
   shows "len_formula (fix_at pos b p) + len_formula (subterm_at p pos)
@@ -2686,11 +2685,11 @@ next
   finally show ?case .
 qed
 
-(*
-  The position witnessing spiras_sel: spiras_sel p is some subformula of p,
-  and this is one path at which that subformula occurs. See
-  spiras_sel_position_spec for the defining property.
-*)
+text \<open>
+  The selected subformula is assigned a witnessing position, so later
+  constructions operate on a specific occurrence of that subformula.
+\<close>
+
 definition spiras_sel_position :: "'c formula \<Rightarrow> nat list" where
   "spiras_sel_position p =
      (SOME pos. valid_position p pos \<and> subterm_at p pos = spiras_sel p)"
@@ -2742,13 +2741,11 @@ proof -
   finally show ?thesis .
 qed
 
-(*
-  Position calculus. The lemmas below relate subterm_at, valid_position and
-  fix_at along a path: how a position decomposes over append, what fixing a
-  node does when seen from an ancestor (the key identity for rebalancing,
-  Reckhow's P_{R=b,Q=c} = P_{Q=c}), and how fixes at unrelated positions
-  commute. They are the structural toolbox for Lemma 5.1.
-*)
+text \<open>
+  The following position lemmas describe path decomposition, fixing a node
+  below an ancestor, and commuting fixes at disjoint positions.  They supply
+  the structural facts used in the rebalancing proof of Lemma 5.1.
+\<close>
 
 lemma subterm_at_atom:
   "subterm_at (Atom v) rp = Atom v"
@@ -2838,11 +2835,12 @@ proof -
   ultimately show ?thesis using p_eq by simp
 qed
 
-(*
-  Fixing an ancestor at qp wipes out any earlier fix made at a descendant
-  qp @ rp below it. This is the position-based form of the identity that the
-  formula-based fix_sub_formula could not express (multi-occurrence corner).
-*)
+text \<open>
+  Fixing an ancestor overrides any previous fix at one of its descendants.
+  Positions make this statement precise even when identical subformulas occur
+  more than once.
+\<close>
+
 lemma fix_at_ancestor_overrides:
   "fix_at qp c (fix_at (qp @ rp) b p) = fix_at qp c p"
 proof (induction qp arbitrary: p)
@@ -2872,10 +2870,11 @@ next
   qed
 qed
 
-(*
-  Seen from the ancestor qp, fixing the descendant qp @ rp is the same as
-  fixing rp inside the subterm at qp --- i.e. Q_{R=b} where Q is at qp.
-*)
+text \<open>
+  Viewed from an ancestor, fixing a descendant is the same as fixing the
+  corresponding position inside the ancestor's subtree.
+\<close>
+
 lemma subterm_at_fix_at_prefix:
   "valid_position p qp
    \<Longrightarrow> subterm_at (fix_at (qp @ rp) b p) qp = fix_at rp b (subterm_at p qp)"
@@ -2896,10 +2895,11 @@ next
   finally show ?case using p_eq by simp
 qed
 
-(*
-  positions_disjoint qp rp: neither position is a prefix of the other, so the
-  subtrees they point to are non-overlapping.
-*)
+text \<open>
+  Two positions are disjoint when neither is a prefix of the other.  Their
+  selected subtrees then do not overlap.
+\<close>
+
 fun positions_disjoint :: "nat list \<Rightarrow> nat list \<Rightarrow> bool" where
   "positions_disjoint [] rp = False" |
   "positions_disjoint qp [] = False" |
@@ -3069,7 +3069,7 @@ next
   qed
 qed
 
-(* Fixing a descendant keeps the ancestor's position valid. *)
+text \<open>Fixing a descendant preserves the position of its ancestor.\<close>
 lemma valid_position_fix_at_prefix:
   "valid_position p (qp @ rp) \<Longrightarrow> valid_position (fix_at (qp @ rp) b p) qp"
 proof (induction qp arbitrary: p)
@@ -3086,7 +3086,7 @@ next
   thus ?case using p_eq i_lt by simp
 qed
 
-(* Fixing at a disjoint position keeps a position valid. *)
+text \<open>Fixing a disjoint position preserves the other position.\<close>
 lemma valid_position_fix_at_disjoint:
   "positions_disjoint qp rp \<Longrightarrow> valid_position p qp
    \<Longrightarrow> valid_position (fix_at rp b p) qp"
@@ -3120,7 +3120,8 @@ next
   qed
 qed
 
-(* Fixing at a non-root position leaves a Conn with children: length \<ge> 2. *)
+text \<open>Fixing a non-root position retains the outer connective and its
+  children.\<close>
 lemma fix_at_len_ge_2:
   assumes "valid_position p pos" and "pos \<noteq> []"
   shows "len_formula (fix_at pos b p) \<ge> 2"
@@ -3472,7 +3473,7 @@ proof (induction "len_formula f" arbitrary: f rule: less_induct)
   qed
 qed
 
-paragraph \<open>(c)\<close>
+subsubsection \<open>Logarithmic depth\<close>
 
 
 lemma balance_depth_bound:
@@ -4031,7 +4032,7 @@ proof -
   qed
 qed
 
-paragraph \<open>(b)\<close>
+subsubsection \<open>Well-formedness and polynomial size\<close>
 
 lemma sub_formula_wf:
   fixes sub :: "string \<Rightarrow> 'c formula" and g :: "'c formula"

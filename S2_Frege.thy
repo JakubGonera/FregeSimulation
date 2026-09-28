@@ -2,8 +2,10 @@ theory S2_Frege
   imports Main "HOL-Computational_Algebra.Polynomial"
 begin
 
-(* A formula can be built over arbitrary connectives,
-  evaluation of which we supply later in a Frege *)
+section \<open>Frege systems and simulation\<close>
+
+text \<open>Formulas may use arbitrary connectives.  Their arities and evaluation
+  are supplied by the alphabet of a Frege system.\<close>
 
 datatype 'c formula =
   Atom string |
@@ -732,33 +734,19 @@ definition equiv_proofs :: "'c1 frege_proof \<Rightarrow> 'c1 frege \<Rightarrow
                                    formulas_equiv (thesis pr1) (alphabet F1) (thesis pr2) (alphabet F2))"
 
 
-(*
-  F2 simulates F1.  The requirements on the formula translation g are stated
-  UNCONDITIONALLY (outside the implication below), and demand that g be
-  faithful: on every well-formed F2-formula it must return a well-formed,
-  semantically equal F1-formula of polynomially bounded size.
+text \<open>
+  A simulation uses a faithful translation of formulas: every well-formed
+  target formula must map to an equivalent, well-formed source formula of
+  polynomially bounded size.  This condition is unconditional.  Without it,
+  an ill-formed translation could make the proof condition vacuous, because
+  every step of a valid source proof must be well-formed.
 
-  Keeping these requirements outside the implication is essential.  If g were
-  left unconstrained, the predicate would be vacuously satisfiable: choosing
-  g \<tau> to be an ill-formed formula (e.g. Conn b [Atom ''x''] for a nullary b,
-  which exists by has_bot) makes the antecedent unsatisfiable for every w,
-  because valid_proof forces thesis w = last (steps w) to be one of the steps
-  and the antecedent requires every step to be well-formed.
+  The translated proof has size polynomial in the source proof size plus the
+  target formula size, as in the two-language setting discussed by Kraj\'i\v{c}ek.
+  The predicate below specifies size bounds; it does not require the
+  translation functions to run in polynomial time.
+\<close>
 
-  The size of the produced proof is bounded polynomially in len_proof w PLUS
-  len_formula \<tau>.  This matches Cook-Reckhow / Krajicek (Basic propositional
-  logic, Definition 4.1.3(b), extended to two languages on p.48): there a
-  p-simulation is a polynomial time function f(w, \<tau>) of BOTH arguments, so its
-  output is bounded by a polynomial in |w| + |\<tau>|.  In the one-language case the
-  two readings agree, since \<tau> is then the output of the poly-time proof
-  predicate on w and hence already of size poly(|w|); across two languages they
-  differ, because P(w) = g(\<tau>) only bounds |g \<tau>|, and g is assumed merely
-  polynomial-time and tautology-preserving -- never size-expansive.  Demanding
-  poly q (len_proof w) alone would therefore be strictly stronger than
-  p-simulation as classically defined, forcing len_formula \<tau> \<le> poly(len_proof w)
-  for every proof w of g \<tau>, i.e. an expansiveness property of g that Reckhow's
-  theorem does not require.
-*)
 definition simulates :: "'c1 frege \<Rightarrow> 'c2 frege \<Rightarrow> bool" where
   "simulates F1 F2 \<longleftrightarrow>
      (\<exists> f g p q.
@@ -774,13 +762,5 @@ definition simulates :: "'c1 frege \<Rightarrow> 'c2 frege \<Rightarrow> bool" w
                \<and> thesis (f w \<tau>) = \<tau>
                \<and> assumptions (f w \<tau>) = {}
                \<and> len_proof (f w \<tau>) \<le> poly q (len_proof w + len_formula \<tau>)))"
-
-(*
-  Reckhow's theorem -- any two Frege systems simulate each other -- is proved as
-  theorem Reckhow at the end of Reckhow.thy, where the whole construction
-  (closure-free Spira balancing, the template translation, the roundtrip, and the
-  modus ponens conversion) is available.  It is stated for simulates as defined
-  above; for p-simulation one additionally needs f and g to be polynomial time.
-*)
 
 end

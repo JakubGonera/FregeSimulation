@@ -6,32 +6,26 @@ text \<open>
   Lemma 5.1 of the Reckhow development, factored out of theory Translation.
 
   This theory contains the rebalancing construction and its polynomial
-  simulation proof: the iff abstraction layer (iff_form, provable_balanced_iff),
-  the proof combinators (iff_trans, iff_sym, iff_refl, balance_cong,
-  provable_balanced_iff_subst/_weaken), the rebalancing function, the three
-  case constructions, the L(n,m) recurrence machinery (rebal_L and friends),
-  and the main results rebalancing_provable (Lemma 5.1) and proof_balancing.
+  simulation proof: the equivalence abstraction layer, proof combinators,
+  three case constructions, recurrence bounds, and the main proof-balancing
+  result.
 
-  It depends only on the public interface of theory Translation: the
-  frege_balancing locale together with everything established there up to and
-  including Lemma 4.3 (in particular custom_balancing, conn_iff, the semantic
-  translation spira_trans, and func_complete of the frege_system).
+  It depends on the balancing development through Lemma 4.3, including
+  the semantic translation and functional completeness of the Frege system.
 \<close>
 
 context frege_balancing
 begin
 
-section \<open>Lemma 5.1: the rebalancing construction and polynomial simulation\<close>
+section \<open>Rebalancing formulas (Lemma 5.1)\<close>
 
 subsection \<open>The iff abstraction and the PBI predicate\<close>
 
-(*
-  The iff layer. iff_form A B is the ambient-alphabet formula that asserts
-  "A and B are equivalent": conn_iff (the witness for the De Morgan iff)
-  with its two variables ''a'', ''b'' substituted by A and B. Since conn_iff
-  is only a semantic witness (B1), every fact about iff_form is established
-  through its eval lemma, never through its unknown syntactic shape.
-*)
+text \<open>
+  The equivalence formula is obtained by substituting two arguments into a
+  fixed witness for De Morgan equivalence.  The witness is specified by its
+  semantics, so the proofs use its evaluation lemma rather than its syntax.
+\<close>
 
 definition iff_sub :: "'c formula \<Rightarrow> 'c formula \<Rightarrow> string \<Rightarrow> 'c formula" where
   "iff_sub A B = (\<lambda>v. if v = ''a'' then A else if v = ''b'' then B else Atom v)"
@@ -64,12 +58,12 @@ lemma iff_form_wf:
   unfolding iff_form_def
   by (rule sub_formula_well_formed[OF conn_iff_wf]) (auto simp: iff_sub_def assms)
 
-(*
-  Lifting: substituting into iff_form A B is the same as building iff_form on
-  the substituted sides --- provided sub leaves conn_iff's own variables other
-  than ''a'', ''b'' untouched. This is how a fixed proof over fresh atoms is
-  instantiated to the actual formulas (Filmus' lemma 3.1).
-*)
+text \<open>
+  Substitution commutes with the equivalence formula when it leaves the
+  witness's other variables untouched.  This side condition preserves the
+  fixed semantic interpretation of equivalence.
+\<close>
+
 lemma sub_formula_iff_form:
   assumes "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
                  \<Longrightarrow> sub w = Atom w"
@@ -105,12 +99,12 @@ proof -
   finally show ?thesis .
 qed
 
-(*
-  taut_proof taut: a fixed, no-assumption Frege proof of any tautology,
-  obtained from impl_complete. For the finitely many fixed identities used
-  below (reflexivity, transitivity, balance congruence, the case identities)
-  this gives proofs of constant size, scaled later by proof_substitution.
-*)
+text \<open>
+  Implicational completeness supplies a closed proof of each tautology.
+  Only finitely many fixed identities are needed below, so their proofs can
+  be chosen once and used with uniform bounds.
+\<close>
+
 definition taut_proof :: "'c formula \<Rightarrow> 'c frege_proof" where
   "taut_proof taut =
      (SOME pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut
@@ -138,12 +132,12 @@ proof -
   thus ?thesis unfolding taut_proof_def by (rule someI_ex)
 qed
 
-(*
-  provable_balanced_iff A B lines sz dep: there is a no-assumption Frege proof
-  of A \<leftrightarrow> B with at most "lines" steps, every step of length at most "sz" and
-  depth at most "dep". Bundling the three bounds together is what lets the
-  per-line depth/size invariant compose across proof combinations (E2).
-*)
+text \<open>
+  Bounded equivalence proofs carry three budgets: the number of lines, the
+  size of each line, and the depth of each line.  Keeping these bounds together
+  lets them compose when proofs are combined.
+\<close>
+
 definition provable_balanced_iff ::
   "'c formula \<Rightarrow> 'c formula \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool" where
   "provable_balanced_iff A B lines sz dep \<longleftrightarrow>
@@ -161,12 +155,12 @@ lemma provable_balanced_iff_weaken:
   using assms unfolding provable_balanced_iff_def
   by (meson order.trans)
 
-(*
-  Fresh atoms. avoid_atoms collects every variable the fixed gluing formulas
-  (conn_iff, custom_balancing) and the literal atoms ''a''..''z'' use; the
-  fresh_atoms pool steers clear of all of them, so a fixed identity over fresh
-  variables can be substituted into actual formulas without capture (B6).
-*)
+text \<open>
+  Fresh atoms are chosen outside the variables used by the fixed equivalence
+  and balancing formulas.  This permits substitution into their fixed proofs
+  without collisions.
+\<close>
+
 definition avoid_atoms :: "string set" where
   "avoid_atoms = {''a'', ''b'', ''x'', ''y'', ''z''}
                  \<union> var_set_form conn_iff \<union> var_set_form custom_balancing"
@@ -174,10 +168,12 @@ definition avoid_atoms :: "string set" where
 lemma avoid_atoms_finite: "finite avoid_atoms"
   unfolding avoid_atoms_def by (simp add: var_set_form_finite)
 
-\<comment> \<open>A substitution that is the identity outside an avoid-disjoint atom set fixes
-    every variable of conn_iff (resp. custom_balancing) other than a,b (resp.
-    x,y,z) --- the recurring substitution-hygiene obligation discharged at every
-    fixed-proof lift site.\<close>
+text \<open>
+  Substitution into a fixed proof must leave unrelated variables of the
+  equivalence and balancing witnesses unchanged.  The following hygiene
+  lemma discharges that obligation for the later proof lifts.
+\<close>
+
 lemma fresh_sub_conn:
   assumes disj: "set atoms \<inter> avoid_atoms = {}"
       and sid: "\<forall>v. v \<notin> set atoms \<longrightarrow> sub v = Atom v"
@@ -214,8 +210,9 @@ proof -
   thus ?thesis unfolding fresh_atoms_def by (rule someI_ex)
 qed
 
-(* iff_refl: a balanced proof of A \<leftrightarrow> A, from the fixed identity z \<leftrightarrow> z. *)
-subsection \<open>Reflexivity and lifting tautologies to Frege proofs (Filmus 3.1)\<close>
+text \<open>Reflexivity comes from substituting into a fixed equivalence
+  identity over one fresh atom.\<close>
+subsection \<open>Reflexivity and tautological equivalence\<close>
 
 definition refl_atom :: string where
   "refl_atom = fresh_atoms 1 ! 0"
@@ -245,13 +242,12 @@ definition refl_step_len :: nat where
 definition refl_step_depth :: nat where
   "refl_step_depth = Max (insert 1 (depth_formula ` set (steps refl_base_proof)))"
 
-(*
-  Substitution lifting for provable_balanced_iff (Filmus' lemma 3.1): a
-  balanced proof of A \<leftrightarrow> B becomes one of (sub A) \<leftrightarrow> (sub B), the line count
-  preserved, per-line size scaled by len_sub, per-line depth raised by
-  depth_sub. sub must be the identity off var_set and on conn_iff's own
-  variables (other than ''a'', ''b'').
-*)
+text \<open>
+  Substitution lifts a bounded equivalence proof to the substituted
+  formulas.  Its line count is preserved, while line size and depth are
+  controlled by the substitution measures.
+\<close>
+
 lemma provable_balanced_iff_subst:
   assumes "provable_balanced_iff A B lines sz dep"
       and "finite var_set"
@@ -330,11 +326,11 @@ proof -
     using valid' asm' thesis' len' step_len' step_dep' step_wf' by blast
 qed
 
-(*
-  iff_from_taut: when iff_form A B is a tautology, its taut_proof is a balanced
-  proof of A \<leftrightarrow> B. The bounds are read off that fixed proof, so for fixed A, B
-  (the case identities) they are constants.
-*)
+text \<open>
+  A tautological equivalence has a closed Frege proof.  Reading the line,
+  size, and depth bounds from that proof yields a bounded equivalence proof.
+\<close>
+
 lemma iff_from_taut:
   assumes wfA: "formula_well_formed (alphabet F) A"
     and wfB: "formula_well_formed (alphabet F) B"
@@ -403,11 +399,12 @@ proof -
     by (simp add: len_sub_eq depth_sub_eq)
 qed
 
-(*
-  entails_proof fs th: a fixed Frege proof of th from assumptions fs, whenever
-  fs semantically entails th. The assumption-bearing generalisation of
-  taut_proof, used to build the fixed transitivity / congruence proofs.
-*)
+text \<open>
+  Implicational completeness also gives a fixed proof from assumptions
+  whenever they semantically entail a conclusion.  This is the version
+  needed for the fixed transitivity and congruence proofs.
+\<close>
+
 subsection \<open>Transitivity of balanced equivalence\<close>
 
 definition entails_proof :: "'c formula set \<Rightarrow> 'c formula \<Rightarrow> 'c frege_proof" where
@@ -438,7 +435,8 @@ proof -
   thus ?thesis unfolding entails_proof_def by (rule someI_ex)
 qed
 
-(* iff_trans: transitivity, from the fixed identity (x \<leftrightarrow> y), (y \<leftrightarrow> z) \<turnstile> (x \<leftrightarrow> z). *)
+text \<open>Transitivity is obtained by substituting into a fixed proof over
+  three fresh atoms.\<close>
 definition trans_atom_x :: string where "trans_atom_x = fresh_atoms 3 ! 0"
 definition trans_atom_y :: string where "trans_atom_y = fresh_atoms 3 ! 1"
 definition trans_atom_z :: string where "trans_atom_z = fresh_atoms 3 ! 2"
@@ -841,12 +839,13 @@ proof -
   qed
 qed
 
-(*
-  Congruence lifting through balance. Since balance is custom_balancing under
-  substitution and custom_balancing is only a func_complete witness (B2), the
-  single-hole iff_congruent does not apply; balance congruence is handled
-  directly from the semantics. sub_formula_balance is the syntactic half.
-*)
+text \<open>
+  Balancing congruence cannot be obtained directly from the one-hole
+  congruence lemma, because the balancing formula is specified only by its
+  semantics.  The construction therefore uses a fixed tautology and
+  substitution to lift the input equivalences.
+\<close>
+
 subsection \<open>Balance congruence (Filmus 3.2)\<close>
 
 lemma sub_formula_balance:
@@ -897,8 +896,8 @@ proof -
   finally show ?thesis .
 qed
 
-(* balance_cong: the fixed congruence (x\<leftrightarrow>x'),(y\<leftrightarrow>y'),(z\<leftrightarrow>z')
-   \<turnstile> balance x y z \<leftrightarrow> balance x' y' z', over six fresh atoms. *)
+text \<open>Balancing congruence uses a fixed proof over six fresh atoms:
+  equivalent arguments yield equivalent balancing formulas.\<close>
 definition cong_atoms :: "string list" where
   "cong_atoms = fresh_atoms 6"
 
@@ -1477,19 +1476,14 @@ proof -
   qed
 qed
 
-(*
-  rebalancing p pos: Reckhow's t(P/R) --- the top-level subtree at pos is
-  pulled out and the formula rebalanced around it. The threshold guard makes
-  rebalancing collapse to spira_trans p below threshold and at the
-  spira-selected position, so the easy cases of Lemma 5.1 are reflexivity (E3).
-*)
-(*
-  rebalancing p pos: Reckhow's t(P/R) --- balance(t(P_{R=1}), t(P_{R=0}),
-  t(R)). Faithful to Definition 5.1, with no threshold guard, so the three
-  hard cases of Lemma 5.1 open up uniformly; the below-threshold degeneracy
-  is concentrated in one easy case instead.
-*)
 subsection \<open>Rebalancing: definition and basic facts\<close>
+
+text \<open>
+  Rebalancing selects a subtree and forms a balancing connective from its
+  positive and negative fixings and the translated subtree.  This definition
+  has no threshold guard: the three recursive cases therefore use the same
+  construction, while the below-threshold case is handled separately.
+\<close>
 
 definition rebalancing :: "'c formula \<Rightarrow> nat list \<Rightarrow> 'c formula" where
   "rebalancing p pos =
@@ -1547,12 +1541,13 @@ proof -
   show ?thesis unfolding rebalancing_def using balance_wf[OF w1 w2 w3] by simp
 qed
 
-(*
-  Case 1's key identity (Reckhow's P_{R=b,Q=c} = P_{Q=c}): rebalancing the
-  R-fixed formula P_{R=b} at the ancestor position qp gives a balance whose
-  outer leaves are t(P_{Q=True}), t(P_{Q=False}) --- the R-fix is overridden
-  by the ancestor fix --- and whose inner node is t(Q_{R=b}).
-*)
+text \<open>
+  In the first recursive case, fixing the descendant and then the
+  ancestor gives the same outer branches as fixing the ancestor directly.
+  This identity aligns the recursive rebalancing proof with the balancing
+  construction.
+\<close>
+
 lemma case1_right_leaf:
   assumes "valid_position p qp"
     shows "rebalancing (fix_at (qp @ rp) b p) qp
@@ -1569,7 +1564,8 @@ proof -
   show ?thesis unfolding rebalancing_def using t f s by simp
 qed
 
-(* iff_sym: symmetry, from the fixed identity (x \<leftrightarrow> y) \<turnstile> (y \<leftrightarrow> x). *)
+text \<open>Symmetry comes from a fixed equivalence proof over two fresh
+  atoms.\<close>
 subsection \<open>Symmetry of balanced equivalence\<close>
 
 definition sym_atom_x :: string where "sym_atom_x = fresh_atoms 2 ! 0"
@@ -1881,14 +1877,14 @@ proof -
   qed
 qed
 
-(*
-  The case identities. Opening up the rebalanced diagrams of Lemma 5.1's
-  Cases 1/2/3 leaves balance-trees over a fixed set of generic leaves; the two
-  diagrams are then equivalent by a fixed propositional tautology. Cases 1 and
-  2 share the reassociation identity (Case 2 is its mirror, via iff_sym);
-  Case 3 is a six-leaf identity.
-*)
 subsection \<open>The case-one selector-reassociation identity\<close>
+
+text \<open>
+  Expanding the rebalanced diagrams leaves balancing trees over a fixed set
+  of generic leaves.  Their equivalence follows from fixed tautologies: the
+  first two cases share a reassociation identity, while the third uses a
+  separate six-leaf identity.
+\<close>
 
 definition reassoc_atoms :: "string list" where
   "reassoc_atoms = fresh_atoms 5"
@@ -1965,27 +1961,19 @@ proof -
     unfolding case_one_lines_def case_one_step_len_def case_one_step_depth_def .
 qed
 
-(*
-  Case 1 of Lemma 5.1 (R a descendant of Q). Given the three recursive
-  equivalences --- t(Q) \<leftrightarrow> rebalancing Q at s, and t(P_{R=b}) \<leftrightarrow>
-  rebalancing P_{R=b} at the spira node, for b \<in> {True, False} --- the
-  rebalancing equivalence t(P) \<leftrightarrow> rebalancing P pos is provable by a
-  balanced no-assumption proof. The chain is
+text \<open>
+  In Case 1, the rebalancing target lies below the Spira-selected node.
+  Recursive equivalences for that node and the two fixed formulas are lifted
+  by balancing congruence.  A fixed reassociation identity joins them into
+  the target equivalence.  The construction is separate from its polynomial
+  cost bound, proved through the recurrence below.
+\<close>
+text \<open>
+  The first case combines a fixed number of reflexivity, symmetry,
+  congruence, reassociation, and transitivity proofs.  Their total line
+  overhead is a constant added to the recursive costs.
+\<close>
 
-    t(P) = balance XT XF (t Q)
-         \<leftrightarrow> balance XT XF (balance RT RF TR)          (balance_cong on the spira node)
-         \<leftrightarrow> balance (balance XT XF RT) (balance XT XF RF) TR   (case_one reassociation)
-         \<leftrightarrow> rebalancing P pos                          (balance_cong of the flipped IHs)
-
-  chained by iff_trans. This lemma supplies the construction; the
-  polynomial bound on its size is the separate L(n,m) recurrence.
-*)
-(*
-  Line-count glue for Case 1: the constant overhead of the three-step chain
-  (two iff_trans, two balance_cong, two iff_sym, three iff_refl, the case_one
-  reassociation). Exposing it gives the recurrence lines = lQ + lT + lF + const,
-  the additive shape poly_master_closure consumes.
-*)
 subsection \<open>Size and depth budgets for the combinators\<close>
 
 definition case_one_glue_lines :: nat where
@@ -2053,13 +2041,12 @@ proof -
   finally show ?thesis .
 qed
 
-(*
-  Budget lemmas shared by the three case constructions. Each construction
-  defines opaque budgets cb/dcb, LS/DS and the two-step ladders NN1/NN,
-  SDB1/SDB; these lemmas carry the definitional equations as hypotheses so a
-  construction re-binds them via [OF cbdef NN1def] etc. A balance of three
-  LS-bounded (resp. NN1-/DS-/SDB1-bounded) formulas fits the next budget.
-*)
+text \<open>
+  The three recursive constructions use common size and depth budgets.
+  The following lemmas expose the relationships between those budgets so
+  that later case proofs can reuse them.
+\<close>
+
 lemma balance_len_below:
   assumes cbdef: "cb = len_formula custom_balancing"
       and NN1def: "NN1 = cb * (3 * LS + 1)"
@@ -2143,14 +2130,12 @@ proof -
   finally show ?thesis .
 qed
 
-(*
-  Bounded combinators. iff_sym / balance_cong / iff_trans state their per-line
-  size as a sum of step costs and their depth as a max; for the L(n,m) recurrence
-  the constructions need a composable bound in which every glued formula's
-  len / depth is replaced by single budgets N / DN. These wrappers do that
-  weakening once, so a construction chains pre-bounded steps and never has to
-  manipulate the raw cost expressions.
-*)
+text \<open>
+  The proof combinators express their line costs as sums and their depth
+  costs as maxima.  The recurrence uses a common polynomial envelope for
+  these bounds.
+\<close>
+
 lemma iff_sym_bnd:
   assumes a: "provable_balanced_iff A B l s d"
       and sS: "s \<le> S" and dD: "d \<le> D"
@@ -2245,14 +2230,12 @@ proof (rule provable_balanced_iff_weaken
               max.coboundedI2[OF add_left_mono[OF pp]])
 qed
 
-(*
-  Glue coefficients for the construction size / depth bounds. Every formula
-  glued into a construction chain is a balance of spira_trans leaves; its size
-  is linear, and its depth additive, in those leaves. These (generous) constants
-  absorb the per-step costs so a construction can expose
-  sz \<le> \<Sum>(IH sizes) + rebal_glue_coeff * (\<Sum> leaf sizes + 1) and the
-  analogous max-composed depth bound.
-*)
+text \<open>
+  Every intermediate formula is assembled from translated leaves with
+  bounded size and depth.  Fixed coefficients cover the overhead of the
+  proof-combination steps in all three recursive cases.
+\<close>
+
 definition rebal_glue_coeff :: nat where
   "rebal_glue_coeff = 4096 * (len_formula custom_balancing + 1)
      * (len_formula custom_balancing + 1)
@@ -2264,13 +2247,12 @@ definition rebal_dep_coeff :: nat where
      + sym_step_depth + trans_step_depth + balance_cong_step_depth
      + case_one_step_depth + 1)"
 
-\<comment> \<open>The two glue-cost envelopes shared by the three case constructions.
-    glue_coeff_envelope is the size-coefficient core (a coefficient sum bounded
-    by 72*S fits the 4096-form glue constant); dep_coeff_envelope is the depth
-    core (a base depth K below DC, with the +9*DS slack, fits DC*(DS+1)). Each
-    construction keeps its case-specific bound on the coefficient sum / base
-    depth and the unfolding to rebal_glue_coeff(3) / rebal_dep_coeff(3), then
-    applies the envelope.\<close>
+text \<open>
+  The three case constructions share size and depth envelopes for their
+  fixed proof-combination overhead.  Each case establishes its own concrete
+  coefficients and then applies these common envelope lemmas.
+\<close>
+
 lemma glue_coeff_envelope:
   fixes C S cb :: nat
   assumes "C \<le> 72 * S"
@@ -2294,10 +2276,12 @@ proof -
   thus ?thesis by (simp add: algebra_simps)
 qed
 
-\<comment> \<open>The selector-reassociation step shared by Cases 1 and 2.  Both instantiate
-    the fixed identity reassoc_lhs \<leftrightarrow> reassoc_rhs at the same five generic atoms
-    with their own five leaf formulas; the substitution and its size/depth budgets
-    are identical, so they are factored here once over A0..A4.\<close>
+text \<open>
+  Cases 1 and 2 instantiate the same fixed reassociation identity.
+  Their substitution size and depth bounds are therefore proved once for
+  five generic leaves.
+\<close>
+
 subsection \<open>The shared selector-reassociation substitution\<close>
 
 definition reassoc_sigma ::
@@ -3027,19 +3011,13 @@ proof -
   qed
 qed
 
-(*
-  Case 2 of Lemma 5.1 (Q a descendant of R). The spira node Q sits inside the
-  rebalancing target R. Given the recursive equivalences --- t(P_{Q=b}) \<leftrightarrow>
-  rebalancing P_{Q=b} at pos, for b \<in> {True, False}, and t(R) \<leftrightarrow>
-  rebalancing R at s --- the rebalancing equivalence is provable. The chain
-  mirrors Case 1 but runs the reassociation backwards (iff_sym of case_one):
-
-    t(P) = balance QT QF (t Q)
-         \<leftrightarrow> balance (balance PRT PRF RsT) (balance PRT PRF RsF) (t Q)  (balance_cong, IHs at Q)
-         \<leftrightarrow> balance PRT PRF (balance RsT RsF (t Q))                  (case_one reversed)
-         \<leftrightarrow> rebalancing P pos                                       (balance_cong, IH at R)
-*)
 subsection \<open>The case-two construction\<close>
+
+text \<open>
+  In Case 2, the Spira-selected node lies below the rebalancing target.
+  The recursive equivalences are combined as in Case 1, with the fixed
+  reassociation identity used in the reverse direction.
+\<close>
 
 definition case_two_glue_lines :: nat where
   "case_two_glue_lines = 3 * refl_lines + 2 * sym_lines + 2 * balance_cong_lines
@@ -3639,26 +3617,23 @@ proof -
     unfolding case_three_lines_def case_three_step_len_def case_three_step_depth_def .
 qed
 
-(*
-  Case 3 of Lemma 5.1 (Q and R disjoint subtrees). Fixing Q and fixing R
-  commute, so the doubly-fixed formulas P_{Q=b,R=c} are well-defined and the
-  recursion forks four ways. Given the four recursive equivalences ---
-  t(P_{Q=b}) \<leftrightarrow> rebalancing P_{Q=b} at pos and t(P_{R=c}) \<leftrightarrow>
-  rebalancing P_{R=c} at the spira node --- the rebalancing equivalence is
-  provable. The chain commutes the Q-selector and R-selector via case_three:
+text \<open>
+  In Case 3, the two selected subtrees are disjoint, so fixing them commutes
+  and the induction supplies four recursive equivalences.  The six-leaf
+  selector-commutation identity rearranges the resulting balancing tree;
+  congruence then yields the target equivalence.
+\<close>
 
-    t(P) = balance QT QF (t Q)
-         \<leftrightarrow> balance (balance GTT GTF R) (balance GFT GFF R) (t Q)   (balance_cong, IHs at Q)
-         \<leftrightarrow> balance (balance GTT GFT Q) (balance GTF GFF Q) (t R)   (case_three)
-         \<leftrightarrow> rebalancing P pos                                      (balance_cong, IHs at R)
-*)
 definition case_three_glue_lines :: nat where
   "case_three_glue_lines = 2 * refl_lines + 2 * sym_lines + 2 * balance_cong_lines
      + case_three_lines + 2 * trans_lines"
 
-\<comment> \<open>Glue coefficients for Case 3. Identical in spirit to rebal_glue_coeff /
-    rebal_dep_coeff, but the reassociation step here is the case_three tautology,
-    so case_three_step_len / case_three_step_depth replace the case_one ones.\<close>
+text \<open>
+  Case 3 uses a different selector-commutation identity.  Its glue
+  coefficients have the same role as those of Cases 1 and 2, with costs
+  taken from the six-leaf base proof.
+\<close>
+
 definition rebal_glue_coeff3 :: nat where
   "rebal_glue_coeff3 = 4096 * (len_formula custom_balancing + 1)
      * (len_formula custom_balancing + 1)
@@ -4523,14 +4498,13 @@ proof -
   qed
 qed
 
-(*
-  The well-founded measure for Lemma 5.1's induction: the lexical pair
-  (|P|, |P| - |subterm_at P pos|) linearised to a single nat. The first
-  component dominates --- any drop in |P| decreases the measure regardless
-  of the second component (rebal_measure_lt_of_len_lt) --- while an atom-R
-  recursion keeps |P| fixed and decreases only the second.
-*)
 subsection \<open>The termination measure\<close>
+
+text \<open>
+  The induction measure encodes two quantities: formula size and the size
+  outside the selected subtree.  A smaller formula always decreases the
+  measure; when formula size stays fixed, shrinking the second quantity does.
+\<close>
 
 definition rebal_measure :: "'c formula \<Rightarrow> nat list \<Rightarrow> nat" where
   "rebal_measure P pos =
@@ -4558,13 +4532,11 @@ proof -
   finally show ?thesis .
 qed
 
-(*
-  Case 1 measure decrease: the three recursive sub-problems --- (Q, s) and
-  (P_{R=b}, q) for b \<in> {True, False} --- all strictly decrease rebal_measure.
-  (Q, s) shrinks |P| outright; (P_{R=b}, q) shrinks |P| unless R is a single
-  node, in which case |P| is fixed but Q_{R=b} (of length \<ge> 2) replaces the
-  length-1 R, so the second component drops.
-*)
+text \<open>
+  In the first case, the subtree recursion reduces formula size and the
+  two fixed-formula recursions also decrease the well-founded measure.
+\<close>
+
 lemma case_one_measure:
   assumes wfP: "formula_well_formed (alphabet F) P"
       and geP: "len_formula P \<ge> spira_threshold"
@@ -4630,12 +4602,12 @@ proof -
   show ?thesis using m1 m2[of True] m2[of False] by blast
 qed
 
-(*
-  Case 2 measure decrease (Q a descendant of R). The sub-problem (R, s) shrinks
-  |P| since R is a proper subformula (pos \<noteq> []); the sub-problems (P_{Q=b}, pos)
-  shrink |P| because the spira node Q has length \<ge> 2, so fixing it to a
-  constant strictly reduces the formula. Both go through rebal_measure_lt_of_len_lt.
-*)
+text \<open>
+  In the second case, recursion into the selected subtree reduces formula
+  size.  Fixing the Spira-selected node reduces the size of the other
+  recursive inputs.
+\<close>
+
 lemma case_two_measure:
   assumes wfP: "formula_well_formed (alphabet F) P"
       and geP: "len_formula P \<ge> spira_threshold"
@@ -4667,13 +4639,12 @@ proof -
   show ?thesis using mR mQ[of True] mQ[of False] by blast
 qed
 
-(*
-  Case 3 measure decrease (Q and R disjoint). The sub-problems (P_{Q=b}, pos)
-  shrink |P| (the spira node Q has length \<ge> 2). The sub-problems (P_{R=b}, q)
-  shrink |P| unless R is a single node, in which case |P| is fixed but the
-  subterm at q --- the spira node, length \<ge> 2 --- replaces the length-1 R,
-  so the second measure component drops.
-*)
+text \<open>
+  In the disjoint case, fixing either selected node usually reduces
+  formula size.  The remaining atomic case decreases the second component
+  of the well-founded measure.
+\<close>
+
 lemma case_three_measure:
   assumes wfP: "formula_well_formed (alphabet F) P"
       and geP: "len_formula P \<ge> spira_threshold"
@@ -4740,12 +4711,12 @@ proof -
   show ?thesis using mQ[of True] mQ[of False] mR[of True] mR[of False] by blast
 qed
 
-(*
-  The pos = [] degenerate sub-case of Lemma 5.1 (rebalancing at the root).
-  Here rebalancing P [] opens as balance true_const false_const (spira_trans P),
-  and t(P) \<leftrightarrow> rebalancing P [] is the fixed mux identity
-  z \<leftrightarrow> balance true_const false_const z, substituted at z := spira_trans P.
-*)
+text \<open>
+  At the root position, rebalancing becomes a fixed multiplexer around
+  the original balanced translation.  A single equivalence proof handles
+  this degenerate case.
+\<close>
+
 subsection \<open>The pos = [] degenerate case\<close>
 
 lemma rebalancing_at_root:
@@ -4794,13 +4765,11 @@ definition pos_empty_step_depth :: nat where
      Max (insert 1 (depth_formula ` set (steps (taut_proof
             (iff_form pos_empty_lhs pos_empty_rhs)))))"
 
-(*
-  The mux collapse: for any formula G, G \<leftrightarrow> balance true_const false_const G
-  by a balanced no-assumption proof --- the fixed mux tautology with the single
-  fresh atom substituted by G. The line count is constant, the per-line size
-  scales with |G| and the per-line depth is raised by depth G. This is the
-  base case (pos = []) of the rebalancing equivalence.
-*)
+text \<open>
+  A fixed multiplexer tautology proves that a formula is equivalent to
+  the balancing connective applied to true, false, and that formula.
+\<close>
+
 lemma mux_collapse_iff:
   assumes wfG: "formula_well_formed (alphabet F) G"
   shows "provable_balanced_iff G (balance true_const false_const G)
@@ -4856,11 +4825,11 @@ proof -
   qed
 qed
 
-(*
-  The construction for pos = []: t(P) \<leftrightarrow> rebalancing P [] is the mux collapse
-  at G = spira_trans P, since rebalancing P [] opens as
-  balance true_const false_const (spira_trans P).
-*)
+text \<open>
+  The root-position construction instantiates the multiplexer collapse
+  with the balanced translation of the input formula.
+\<close>
+
 lemma case_pos_empty_construction:
   assumes wfP: "formula_well_formed (alphabet F) P"
   shows "provable_balanced_iff (spira_trans P) (rebalancing P [])
@@ -4870,16 +4839,14 @@ lemma case_pos_empty_construction:
   using mux_collapse_iff[OF spira_trans_wf[OF wfP]]
   unfolding rebalancing_at_root[symmetric] .
 
-(*
-  Context congruence at the provable_balanced_iff level: a balanced proof of
-  \<phi> \<leftrightarrow> \<psi> lifts to one of (plug h \<phi> \<chi>) \<leftrightarrow> (plug h \<psi> \<chi>) --- substituting the
-  proven equivalence into the single-hole context \<chi>. The line count grows by a
-  polynomial in |\<chi>|, the per-line size by a polynomial in |\<phi>|+|\<psi>|+|\<chi>|, the
-  per-line depth by depth \<chi> plus a constant. The congruence engine is
-  iff_congruent; this wrapper combines its proof with the premise proof,
-  discharging the single assumption iff_form \<phi> \<psi>.
-*)
 subsection \<open>Connective (slot) congruence\<close>
+
+text \<open>
+  A balanced equivalence proof can be lifted through a context with one hole.
+  The congruence proof has polynomial line and size costs and adds the context
+  depth to its depth bound.  Combining it with the premise proof discharges
+  the assumption that the two inserted formulas are equivalent.
+\<close>
 
 lemma plug_cong_exists:
   "\<exists> (congbnd :: nat poly) (congc :: nat).
@@ -5063,12 +5030,12 @@ proof -
   qed
 qed
 
-(*
-  Naming the context-congruence cost: cong_poly bounds the line-count and
-  per-line-size overhead, cong_const the per-line-depth overhead. Defined as
-  SOME witnesses of plug_cong_exists, they turn that existential into the named
-  lemma plug_cong with explicit, composable bounds.
-*)
+text \<open>
+  The context-congruence line and size costs are bounded by a fixed
+  polynomial, and its depth overhead by a fixed constant.  These witnesses
+  are reused in the later constructions.
+\<close>
+
 definition cong_body :: "nat \<Rightarrow> nat poly \<Rightarrow> bool" where
   "cong_body congc congbnd \<longleftrightarrow>
      (\<forall> \<phi> \<psi> \<chi> h l s d.
@@ -5115,13 +5082,13 @@ lemma plug_cong:
                      + depth_formula \<chi> + cong_const))"
   using cong_spec assms unfolding cong_body_def by blast
 
-(*
-  Per-connective reassociation: pushing a balance out through a connective.
-  Placing balance p q r at argument slot i of c is equivalent to the balance
-  whose two branches place p resp. q at slot i. A fixed (per c, i) tautology
-  over fresh atoms; the construction below substitutes it to actual formulas.
-*)
 subsection \<open>Selector reassociation for a general connective\<close>
+
+text \<open>
+  Pushing a balancing connective out through one argument slot is justified
+  by a fixed tautology for that connective and slot.  Substitution replaces
+  its fresh atoms by the actual sibling formulas.
+\<close>
 
 definition reassoc_conn_atoms :: "'c \<Rightarrow> string list" where
   "reassoc_conn_atoms c = fresh_atoms (arity (alphabet F) c + 3)"
@@ -5248,11 +5215,11 @@ proof -
               reassoc_conn_step_depth_def .
 qed
 
-(*
-  The substitution lifting the per-connective reassociation tautology to actual
-  sibling formulas: the k slot atoms map to the siblings gs, and the three mux
-  atoms p, q, r map to E, F, Z respectively.
-*)
+text \<open>
+  The fixed reassociation identity is instantiated by mapping slot atoms
+  to the sibling formulas and selector atoms to the formulas being balanced.
+\<close>
+
 definition reassoc_conn_sub ::
   "'c \<Rightarrow> 'c formula list \<Rightarrow> 'c formula \<Rightarrow> 'c formula \<Rightarrow> 'c formula
    \<Rightarrow> (string \<Rightarrow> 'c formula)" where
@@ -5401,11 +5368,11 @@ proof -
   show ?thesis using subst_pbi[unfolded subL subR] by blast
 qed
 
-(*
-  Closed forms for the substitution measures of the reassociation: the k slot
-  atoms map onto the siblings gs and the three mux atoms onto E, G, Z, so the
-  substitution size is just the total size of those formulas.
-*)
+text \<open>
+  The substitution size and depth measures for reassociation reduce to
+  the sizes and depths of the sibling and selector formulas.
+\<close>
+
 lemma reassoc_conn_sub_map:
   assumes "length gs = arity (alphabet F) c"
   shows "map (reassoc_conn_sub c gs E G Z) (reassoc_conn_atoms c)
@@ -5521,12 +5488,11 @@ proof -
   finally show ?thesis .
 qed
 
-(*
-  Uniform cost bounds for the per-connective reassociation. The (c, i) index
-  set is finite (finite alphabet, bounded arities), so the maxima below are
-  genuine constants --- this is what lets the Shannon assembly bound proof
-  sizes despite taut_proof carrying no size spec.
-*)
+text \<open>
+  The alphabet and all arities are finite, so a maximum over connective
+  and slot pairs gives uniform constants for reassociation proofs.
+\<close>
+
 definition reassoc_index_set :: "('c \<times> nat) set" where
   "reassoc_index_set = (SIGMA c:(UNIV :: 'c set). {..< arity (alphabet F) c})"
 
@@ -5550,8 +5516,11 @@ definition reassoc_max_step_depth :: nat where
   "reassoc_max_step_depth =
      Max (insert 0 ((\<lambda>(c,i). reassoc_conn_step_depth c i) ` reassoc_index_set))"
 
-\<comment> \<open>Shared shape of the three _le bounds: f(c,i) for (c,i) in the finite
-    reassoc_index_set is bounded by Max over that set.\<close>
+text \<open>
+  A maximum over the finite set of connective and slot pairs bounds every
+  reassociation cost uniformly.
+\<close>
+
 lemma reassoc_max_ge:
   fixes f :: "'c \<Rightarrow> nat \<Rightarrow> nat"
   assumes "i < arity (alphabet F) c"
@@ -5580,10 +5549,12 @@ lemma reassoc_conn_step_depth_le:
   using reassoc_max_ge[OF assms, of reassoc_conn_step_depth]
   unfolding reassoc_max_step_depth_def .
 
-(*
-  Below threshold spira_trans is the identity, so rebalancing collapses to a
-  plain Shannon split: balance of the two fixings over the subterm.
-*)
+text \<open>
+  Below the threshold, the balancing translation is the identity.
+  Rebalancing therefore reduces to an ordinary Shannon split at the
+  selected subtree.
+\<close>
+
 subsection \<open>Position and size lemmas for the Shannon construction\<close>
 
 lemma rebalancing_below_eq:
@@ -5646,12 +5617,12 @@ lemma contains_atom_iff_var: "contains_atom g h = (h \<in> var_set_form g)"
 lemma distinguished_of_fresh: "h \<notin> var_set_form g \<Longrightarrow> distinguished g h"
   by (induction g) (auto simp: contains_atom_iff_var)
 
-(*
-  Congruence under one argument slot of a connective: a balanced proof of
-  A \<leftrightarrow> B lifts to one of Conn c (gs[i:=A]) \<leftrightarrow> Conn c (gs[i:=B]). Obtained from
-  plug_cong_exists with the single-hole context Conn c (gs[i := Atom h]) for a
-  fresh hole atom h.
-*)
+text \<open>
+  An equivalence proof for one argument lifts through a well-formed
+  connective application.  The proof uses the one-hole context congruence
+  result and bounds the cost uniformly for that slot.
+\<close>
+
 lemma sum_list_update_le:
   "i < length (xs :: nat list) \<Longrightarrow> v \<le> xs ! i
    \<Longrightarrow> sum_list (xs[i := v]) \<le> sum_list xs"
@@ -5724,11 +5695,11 @@ proof -
   finally show ?thesis using ne by simp
 qed
 
-(*
-  Size bounds for balance: it is a fixed formula (custom_balancing) with its
-  three slots substituted, so its size/depth is bounded by that of
-  custom_balancing scaled by the slot formulas.
-*)
+text \<open>
+  Balancing substitutes three formulas into a fixed witness, so its size
+  and depth are bounded by those of the witness and its arguments.
+\<close>
+
 lemma conn_slot_cong:
   assumes prem: "provable_balanced_iff A B l s d"
       and wfA: "formula_well_formed (alphabet F) A"
@@ -5875,7 +5846,8 @@ proof -
   show ?thesis using pc b1 b2 b3 by blast
 qed
 
-(* Supporting size bounds for the Shannon assembly. *)
+text \<open>The next bounds account for the formulas assembled by the
+  Shannon construction.\<close>
 lemma depth_formula_le_len: "depth_formula f \<le> len_formula f"
 proof (induction f)
   case (Atom v) thus ?case by simp
@@ -5983,12 +5955,13 @@ proof -
   finally show ?thesis .
 qed
 
-(*
-  The Shannon construction for the below-threshold case. shannon_M is a single
-  generous constant dominating the base case and every per-step glue; since a
-  below-threshold formula is bounded, all the per-step costs collapse to it.
-*)
 subsection \<open>The below-threshold Shannon construction\<close>
+
+text \<open>
+  A single uniform constant bounds the base proof and every construction
+  step.  Below the threshold, formula size is bounded, so these costs are
+  absorbed into the same constant.
+\<close>
 
 definition shannon_balmax :: nat where
   "shannon_balmax = len_formula custom_balancing * (3 * spira_threshold + 1)"
@@ -6430,15 +6403,14 @@ proof -
   qed
 qed
 
-(*
-  The L(n,m) polynomial line-count bound (Lemma 5.1, Filmus section 5). The
-  three case recurrences collapse, via L(n,m) = max ell(P,R), to
-    L(n,m) <= O(n) + 2 L(cn,cn) + 2 L(m,cn),   cn = kk/(kk+1) * n
-  where kk = max arity (the Spira contraction ratio). The closed form
-  L n m = A*n^d + 2*A*m^d with d = 10*(2*kk+1) absorbs this because
-  (2*kk+2)^d >= 11*(2*kk+1)^d, i.e. 10 cn^d < n^d.
-*)
-subsection \<open>The polynomial-bound machinery\<close>
+subsection \<open>Polynomial bounds\<close>
+
+text \<open>
+  The three recursive cases satisfy a common recurrence for line count.
+  Its arguments contract according to the maximum connective arity.  A
+  sufficiently high fixed polynomial degree absorbs the recursive terms,
+  yielding the bound required by Lemma 5.1.
+\<close>
 
 lemma pow_succ_lower:
   fixes x :: nat
@@ -6494,8 +6466,12 @@ qed
 definition rebal_kk :: nat where
   "rebal_kk = max (Max ((arity (alphabet F)) ` (UNIV :: 'c set))) 2"
 
-\<comment> \<open>The spira_trans size polynomial, fixed globally so rebal_deg can be
-    sized to dominate its degree (needed for the size bound, not just lines).\<close>
+text \<open>
+  Fix a polynomial size bound for the balancing translation.  The degree
+  used in the rebalancing recurrence is chosen to dominate this bound as
+  well as the line-count recurrence.
+\<close>
+
 definition rebal_tb :: "nat poly" where
   "rebal_tb = (SOME p :: nat poly. \<forall> f :: 'c formula.
                  formula_well_formed (alphabet F) f \<longrightarrow>
@@ -6506,9 +6482,11 @@ lemma rebal_tb_spec:
   shows "len_formula (spira_trans f) \<le> poly rebal_tb (len_formula f)"
   using someI_ex[OF trans_b] assms unfolding rebal_tb_def by blast
 
-\<comment> \<open>Leaf bounds shared by every recursive case of the main induction: the Spira
-    transform of any subformula of size \<le> N has size \<le> poly rebal_tb N, and
-    (given Spira's depth theorem tc_spec) depth \<le> max tc 1 * log 2 (N+1).\<close>
+text \<open>
+  Every translated leaf of size at most the current input size has a
+  uniform polynomial size bound and a logarithmic depth bound.
+\<close>
+
 lemma spira_trans_len_le_tb:
   assumes "formula_well_formed (alphabet F) L" and "len_formula L \<le> N"
   shows "len_formula (spira_trans L) \<le> poly rebal_tb N"
@@ -6565,11 +6543,12 @@ proof -
   thus ?thesis by simp
 qed
 
-\<comment> \<open>rebal_cn has additive slack 2 (not 1): the recursive sub-problem
-    (fix_at pos b P, spira_pos) lands at L-second-argument |P| - |Q| + 1, and
-    |P| - |Q| \<le> rebal_kk * |P| div (rebal_kk + 1) + 1 (spira_sel_lower has a
-    +rebal_kk slack, fix_at adds +1) --- so +2 is needed for it to fit rebal_cn.
-    The price is rebal_cn_bound's threshold rising to 4 * rebal_kk + 4.\<close>
+text \<open>
+  The contraction bound needs two units of additive slack.  One comes
+  from the selected-subformula estimate and one from replacing a subtree
+  by a constant; the threshold is chosen to absorb both.
+\<close>
+
 definition rebal_cn :: "nat \<Rightarrow> nat" where
   "rebal_cn n = rebal_kk * n div (rebal_kk + 1) + 2"
 
@@ -6634,10 +6613,12 @@ proof (rule ccontr)
   with ge show False by simp
 qed
 
-\<comment> \<open>The two spira-node estimates share one selection predicate: the ratio
-    bound (the node is not too big) and the lower bound (the node is big enough
-    that |p| - |q| is itself contracted) are the two arithmetic conjuncts of the
-    same SOME-witness.  Prove them together and re-export the two names.\<close>
+text \<open>
+  The selected-node upper and lower size estimates come from the same
+  selection predicate.  They are proved together before being used in the
+  separate recursive cases.
+\<close>
+
 lemma spiras_sel_pred:
   assumes wf: "formula_well_formed (alphabet F) p"
       and ge: "len_formula p \<ge> spira_threshold"
@@ -6683,8 +6664,11 @@ qed
 lemmas spiras_sel_ratio = spiras_sel_pred[THEN conjunct1]
 lemmas spiras_sel_lower = spiras_sel_pred[THEN conjunct2]
 
-\<comment> \<open>The below-threshold (Shannon) bound, fixed globally as a flat constant
-    (length pos \<le> spira_threshold there) so rebal_glue_K can dominate it.\<close>
+text \<open>
+  The below-threshold Shannon proof has a uniform constant cost because
+  both formula size and position length are bounded by the threshold.
+\<close>
+
 definition rebal_shc :: nat where
   "rebal_shc = (SOME m. \<forall> P pos.
        formula_well_formed (alphabet F) P \<and> valid_position P pos
@@ -6746,10 +6730,13 @@ lemma rebal_shc_spec:
          \<and> lines \<le> rebal_shc \<and> sz \<le> rebal_shc \<and> dep \<le> rebal_shc"
   using someI_ex[OF rebal_shc_ex] assms unfolding rebal_shc_def by blast
 
-\<comment> \<open>rebal_base_K: the sum of every glue / base-case constant.  rebal_glue_K
-    scales it by (10 * poly rebal_tb 1 + 1) so that, against n ^ rebal_deg, all of
-    them sit below rebal_glue_K * n ^ rebal_deg (see rebal_L_dom).\<close>
-subsection \<open>The L(n,m) recurrence function and its bounds\<close>
+text \<open>
+  A base constant collects the costs of all easy cases and proof glue.
+  Scaling it by the translation bound gives one coefficient for the
+  polynomial recurrence.
+\<close>
+
+subsection \<open>The recurrence and its bounds\<close>
 
 definition rebal_base_K :: nat where
   "rebal_base_K = case_one_glue_lines + case_two_glue_lines
@@ -6841,16 +6828,20 @@ proof -
     unfolding rebal_L_def by (simp add: algebra_simps)
 qed
 
-(*
-  Lemma 5.1. spira_trans P and rebalancing P pos are provably equivalent by a
-  balanced Frege proof: polynomially many lines, every line polynomial-size and
-  of O(log |P|) depth. The proof is a well-founded induction on the lexical
-  measure (|P|, |P| - |subterm_at P pos|), here linearised to a single nat.
-  Two easy cases (below threshold; pos the spira position) are reflexivity;
-  the three hard cases follow Filmus' R\<subset>Q, Q\<subset>R, Q\<bottom>R analysis.
-*)
-\<comment> \<open>The second L-parameter: max of the rebalancing target size |R| and
-    |P| - |R| + 1.  Bounded by |P|, and the recursion contracts it to rebal_cn.\<close>
+text \<open>
+  Lemma 5.1 proves a balanced equivalence between the original balancing
+  translation and the rebalanced formula.  It provides polynomial bounds on
+  line count and size, with logarithmic depth.  The proof uses the termination
+  measure above: the easy cases are reflexive, and the remaining cases depend
+  on whether the selected subtree is inside, contains, or is disjoint from
+  the Spira-selected subtree.
+\<close>
+text \<open>
+  The second recurrence argument is the larger of the selected subtree
+  size and its complement in the host formula.  It is bounded by host size
+  and contracts in the recursive cases.
+\<close>
+
 definition rebal_m :: "'c formula \<Rightarrow> nat list \<Rightarrow> nat" where
   "rebal_m P pos = max (len_formula (subterm_at P pos))
                        (len_formula P - len_formula (subterm_at P pos) + 1)"
@@ -6866,9 +6857,11 @@ proof -
   show ?thesis unfolding rebal_m_def using r1 r2 by linarith
 qed
 
-\<comment> \<open>Fit rebal_m below a bound by discharging the two max-branches: the subterm
-    size and the host-minus-subterm size.  Replaces the per-site rebal_m_def
-    max-split unfolding in the main induction's measure-fitting steps.\<close>
+text \<open>
+  To bound the second recurrence argument, it suffices to bound its
+  subtree and complement branches separately.
+\<close>
+
 lemma rebal_m_fit:
   assumes "subterm_at A pos = R"
       and "len_formula R \<le> bnd"
@@ -6876,13 +6869,17 @@ lemma rebal_m_fit:
     shows "rebal_m A pos \<le> bnd"
   using assms unfolding rebal_m_def by simp
 
-\<comment> \<open>Every base-case constant K \<le> rebal_base_K, multiplied by poly rebal_tb n,
-    sits below rebal_L n m.  This discharges the reflexivity / pos = [] / Shannon
-    cases against the rebal_L invariant.\<close>
-\<comment> \<open>Common shape factored out of the four bound lemmas below:
-    tbpow_helper bounds poly rebal_tb n by poly rebal_tb 1 \<cdot> n^rebal_deg;
-    rebal_base_to_glue absorbs the base constant into the glue constant;
-    rebal_glue_to_L lifts a glue_K \<cdot> n^rebal_deg bound to rebal_L n m.\<close>
+text \<open>
+  Base-case constants, even after multiplication by the translation
+  polynomial, fit within the recurrence bound.  This covers the reflexive,
+  root-position, and Shannon cases.
+\<close>
+text \<open>
+  The following lemmas lift a translation polynomial bound into the fixed
+  recurrence degree, absorb base constants into the glue coefficient, and
+  then place that bound under the recurrence itself.
+\<close>
+
 lemma tbpow_helper:
   assumes "1 \<le> n"
   shows "poly rebal_tb n \<le> poly rebal_tb 1 * n ^ rebal_deg"
@@ -6940,7 +6937,11 @@ proof -
   finally show ?thesis .
 qed
 
-\<comment> \<open>Constant-only version: any K \<le> rebal_base_K fits in rebal_L for n \<ge> 1.\<close>
+text \<open>
+  A base constant alone also fits below the recurrence whenever the
+  input size is positive.
+\<close>
+
 lemma rebal_L_dom_const:
   assumes Kle: "K \<le> rebal_base_K" and n1: "1 \<le> n"
   shows "K \<le> rebal_L n m"
@@ -6957,8 +6958,11 @@ proof -
   finally show ?thesis .
 qed
 
-\<comment> \<open>The spira node Q satisfies |Q| \<le> rebal_cn |P|: directly from spiras_sel_ratio
-    (Q \<le> kk*P / (kk+1)) and rebal_cn = kk*P div (kk+1) + 2.\<close>
+text \<open>
+  The selected Spira subtree has size at most the contracted host size.
+  This follows directly from the upper half of its selection ratio.
+\<close>
+
 lemma spiras_sel_le_cn:
   assumes wf: "formula_well_formed (alphabet F) p"
       and ge: "len_formula p \<ge> spira_threshold"
@@ -6995,8 +6999,11 @@ proof -
   finally show ?thesis .
 qed
 
-\<comment> \<open>The complementary bound: |P| - |Q| + 1 \<le> rebal_cn |P|.  This is the bound
-    that drives the +2 in rebal_cn (instead of +1).\<close>
+text \<open>
+  The host size outside the selected Spira subtree, plus the replacement
+  node, also fits the contracted size bound.
+\<close>
+
 lemma P_minus_spira_le_cn:
   assumes wf: "formula_well_formed (alphabet F) p"
       and ge: "len_formula p \<ge> spira_threshold"
@@ -7060,8 +7067,11 @@ proof -
   finally show ?thesis .
 qed
 
-\<comment> \<open>Constant glue: K \<le> rebal_base_K is bounded by rebal_glue_K * n ^ rebal_deg
-    for n \<ge> 1.  Used for the lines glue in recursive cases.\<close>
+text \<open>
+  Fixed proof-combination costs fit under the polynomial glue bound in
+  every recursive case.
+\<close>
+
 lemma rebal_glue_const_bound:
   assumes Kle: "K \<le> rebal_base_K" and n1: "1 \<le> n"
   shows "K \<le> rebal_glue_K * n ^ rebal_deg"
@@ -7073,9 +7083,12 @@ proof -
   finally show ?thesis .
 qed
 
-\<comment> \<open>Polynomial glue: K * (S + 1) \<le> rebal_glue_K * n ^ rebal_deg when
-    K \<le> rebal_base_K and S \<le> 10 * poly rebal_tb n.  Covers the sz glue in
-    all three recursive cases (Cases 1/2 have 8 leaves, Case 3 has 10).\<close>
+text \<open>
+  Costs linear in the sizes of translated leaves also fit under the
+  polynomial glue bound.  This covers the per-line size overhead in all
+  three recursive cases.
+\<close>
+
 lemma rebal_glue_poly_bound:
   assumes Kle: "K \<le> rebal_base_K"
       and Sle: "S \<le> 10 * poly rebal_tb n"

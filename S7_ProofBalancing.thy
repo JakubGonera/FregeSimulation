@@ -2,21 +2,19 @@ theory S7_ProofBalancing
   imports S6_Comprehension
 begin
 
-section \<open>Conclusion of the proof (Filmus section 7)\<close>
+section \<open>Balancing Frege proofs\<close>
 
 context frege_closure
 begin
 
 subsection \<open>Bounded derivations from premises\<close>
 
-(*
-  derives_balanced asms B lines sz dep: there is a Frege derivation of B from
-  assumptions contained in asms, with at most "lines" steps, every step of
-  length at most "sz" and depth at most "dep". This generalises
-  provable_balanced_iff from no-assumption iff proofs to derivations from
-  premises --- the judgment in which a rule application of the original proof
-  is simulated on the balanced translations.
-*)
+text \<open>
+  Bounded derivations generalize the earlier equivalence proofs to proofs
+  from premises.  The judgment records bounds on line count, line size, and
+  line depth; it is used to simulate each rule application after balancing.
+\<close>
+
 definition derives_balanced where
   "derives_balanced asms B (lines :: nat) (sz :: nat) (dep :: nat) \<longleftrightarrow>
      (\<exists>pr. valid_proof F pr \<and> assumptions pr \<subseteq> asms
@@ -26,14 +24,14 @@ definition derives_balanced where
            \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> dep)
            \<and> (\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s))"
 
-subsection \<open>Eliminating a proven equivalence: the modus ponens converter\<close>
+subsection \<open>Eliminating a proven equivalence\<close>
 
-(*
-  The modus ponens base proof: from x and x \<longleftrightarrow> y conclude y, over the two
-  fresh atoms already introduced for iff_sym. Substituting actual formulas
-  for the two atoms turns a proven equivalence A \<longleftrightarrow> B into a derivation of B
-  from the assumption A.
-*)
+text \<open>
+  A fixed modus ponens proof uses two fresh atoms.  Substituting formulas
+  for those atoms turns a proven equivalence into a derivation of its right
+  side from its left side.
+\<close>
+
 definition mp_base_proof where
   "mp_base_proof =
      entails_proof {Atom sym_atom_x, iff_form (Atom sym_atom_x) (Atom sym_atom_y)}
@@ -68,10 +66,11 @@ definition mp_step_len where
 definition mp_step_depth where
   "mp_step_depth = Max (insert 1 (depth_formula ` set (steps mp_base_proof)))"
 
-(*
-  The converter: a no-assumption proof of A \<longleftrightarrow> B followed by the substituted
-  modus ponens base proof is a derivation of B from the single assumption A.
-*)
+text \<open>
+  The converter combines a closed equivalence proof with the substituted
+  modus ponens proof, leaving only the left side as an assumption.
+\<close>
+
 lemma iff_elimination:
   assumes "provable_balanced_iff A B l s d"
       and wfA: "formula_well_formed (alphabet F) A"
@@ -287,12 +286,12 @@ qed
 
 subsection \<open>Folding derivations that carry assumptions\<close>
 
-(*
-  combine_fold_spec generalised: the folded proofs may carry assumptions.
-  The fold is valid, proves the base's thesis, and assumes at most the union
-  of the folded proofs' assumptions plus whatever base assumptions no folded
-  proof establishes as a step.
-*)
+text \<open>
+  Folding proofs that carry assumptions preserves validity and the base
+  conclusion.  The remaining assumptions come from the folded proofs and
+  from base assumptions that no folded proof establishes.
+\<close>
+
 lemma combine_fold_asms:
   shows "valid_proof F base \<longrightarrow> (\<forall>p \<in> set ps. valid_proof F p) \<longrightarrow>
          (valid_proof F (foldr combine_proofs ps base)
@@ -367,11 +366,11 @@ qed
 
 subsection \<open>The instantiated rule step\<close>
 
-(*
-  Applying a rule of F under a substitution as a single derivation step: the
-  instantiated premises are assumptions, the instantiated conclusion follows
-  by the rule itself.
-*)
+text \<open>
+  An instantiated rule is a one-step derivation from its instantiated
+  premises to its instantiated conclusion.
+\<close>
+
 lemma rule_step_proof:
   assumes rin: "r \<in> rules F"
   shows "\<exists>pr. valid_proof F pr
@@ -480,17 +479,15 @@ proof -
   finally show ?thesis .
 qed
 
-subsection \<open>Lemma 7.1: simulating one rule application on balanced translations\<close>
+subsection \<open>Simulating a rule application (Lemma 7.1)\<close>
 
-(*
-  Filmus' Lemma 7.1. A rule P_1(xs), ..., P_k(xs) / Q(xs) of F, instantiated
-  by a substitution sub (Filmus' formulas R_1, ..., R_n for the variables xs),
-  lifts to the balanced translations: from the premise translations
-  t(P_j(R_1,...,R_n)) the system derives t(Q(R_1,...,R_n)) with at most
-  poly bnd M lines, each of length at most poly bnd M and of depth at most
-  c * log 2 (M + 1), where M = sum_j |P_j| + |Q| + sum_i |R_i| and bnd, c are
-  uniform over all rules of F and all substitutions.
-*)
+text \<open>
+  Lemma 7.1 lifts any instantiated rule to the balanced translations of its
+  premises and conclusion.  The resulting derivation has polynomially
+  bounded line count and line size, and logarithmically bounded depth.
+  The constants are uniform across the finite rule set and all substitutions.
+\<close>
+
 lemma transform_rule_simulation:
   shows "\<exists> (bnd :: nat poly) (c :: real).
            \<forall> r sub. r \<in> rules F
@@ -1424,10 +1421,11 @@ qed
 
 subsection \<open>Foundational helpers for the final assembly\<close>
 
-(*
-  Substitution preserves the connective skeleton: if the substituted formula is
-  well-formed, the original (un-substituted) formula has correct arities.
-*)
+text \<open>
+  Substitution preserves the connective skeleton.  If the result is
+  well-formed, the original formula had the correct connective arities.
+\<close>
+
 lemma sub_formula_wf_skeleton:
   assumes "formula_well_formed alph (sub_formula sb f)"
   shows "formula_well_formed alph f"
@@ -1450,10 +1448,11 @@ next
   thus ?case using len_eq by simp
 qed
 
-(*
-  Substitution preserves well-formedness of the values it plugs into a formula:
-  if sub_formula sb f is well-formed and v occurs in f, then sb v is well-formed.
-*)
+text \<open>
+  If a substituted formula is well-formed, every substituted value used by
+  the original formula is also well-formed.
+\<close>
+
 lemma sub_formula_wf_value:
   assumes "formula_well_formed alph (sub_formula sb f)"
       and "v \<in> var_set_form f"
@@ -1474,10 +1473,11 @@ next
   thus ?case using Conn.IH gin vg by blast
 qed
 
-(*
-  A substituted value is no larger than the whole substituted formula whenever
-  the variable occurs in the formula.
-*)
+text \<open>
+  Every substituted value occurring in the formula is no larger than the
+  whole substituted formula.
+\<close>
+
 lemma len_sub_value_le:
   assumes "v \<in> var_set_form f"
   shows "len_formula (sb v) \<le> len_formula (sub_formula sb f)"
@@ -1506,9 +1506,7 @@ next
   show ?case using step lt by linarith
 qed
 
-(*
-  The set of variables of a formula is no larger than its size.
-*)
+text \<open>The number of distinct variables is at most the formula size.\<close>
 lemma card_var_set_le_len:
   "card (var_set_form f) \<le> len_formula f"
 proof (induction f)
@@ -1544,9 +1542,7 @@ next
   finally show ?case .
 qed
 
-(*
-  The identity substitution leaves a formula unchanged.
-*)
+text \<open>The identity substitution leaves a formula unchanged.\<close>
 lemma sub_formula_atom_id: "sub_formula Atom f = f"
 proof (induction f)
   case (Atom a)
@@ -1558,13 +1554,13 @@ next
   thus ?case by simp
 qed
 
-(*
-  Chained combination. Folding a list of proofs (each first proof's steps
-  precede the later ones) discharges every proof's assumptions against the
-  steps of the proofs that come earlier in the fold, leaving only the genuinely
-  external assumptions "outer". This is the discharge that combine_fold_asms
-  does not perform (it only discharges the base's assumptions).
-*)
+text \<open>
+  Chained combination discharges a proof's assumptions against the steps of
+  proofs earlier in the sequence.  Only genuinely external assumptions
+  remain.  This strengthens the preceding fold, which discharges only the
+  base proof's assumptions.
+\<close>
+
 lemma chain_combine:
   assumes vbase: "valid_proof F base"
   shows "(\<forall>p \<in> set ps. valid_proof F p) \<longrightarrow>
@@ -1676,16 +1672,15 @@ next
   qed
 qed
 
-subsection \<open>Per-line simulation: a balanced sub-derivation for each original line\<close>
+subsection \<open>Simulating each proof line\<close>
 
-(*
-  For each line L_i of a no-assumption (well-formed) proof, Lemma 7.1 yields a
-  balanced sub-derivation of t(L_i) from { t(L_j) : j a premise of the rule
-  application, j < i }, hence from { t(L_j) : j < i }.  The size and line bounds
-  collapse to a single polynomial in len_proof pr (because the rule data is
-  uniformly bounded over the finite rule set), and the depth bound collapses to
-  cc * log (len_proof pr + 1).
-*)
+text \<open>
+  Apply Lemma 7.1 to each line of the original proof.  Its balanced
+  sub-derivation uses only balanced earlier lines as premises.  Finiteness
+  of the rule set gives one polynomial for all line and size bounds, and a
+  logarithmic depth bound for every line.
+\<close>
+
 lemma per_line_simulation:
   shows "\<exists>(bnd :: nat poly) (cc :: real). 0 \<le> cc \<and>
            (\<forall>pr. valid_proof F pr \<and> assumptions pr = {}
@@ -2140,13 +2135,15 @@ proof -
   qed
 qed
 
-subsection \<open>Final conversion: from t(phi) back to phi\<close>
+subsection \<open>Recovering the original conclusion\<close>
 
-(*
-  Lemma 6.4 instantiated with the variables of phi (sub = Atom) proves
-  t(phi) <-> phi; the modus ponens converter then derives phi from the single
-  assumption t(phi).  All bounds are polynomial / logarithmic in len phi.
-*)
+text \<open>
+  Instantiating Lemma 6.4 with the identity substitution relates the
+  balanced translation of the conclusion to the conclusion itself.  The
+  modus ponens converter then derives the original conclusion, with
+  polynomial size and logarithmic depth bounds.
+\<close>
+
 lemma final_conversion:
   shows "\<exists>(bnd :: nat poly) (c :: real). 0 \<le> c \<and>
            (\<forall>phi. formula_well_formed (alphabet F) phi \<longrightarrow>
@@ -2447,8 +2444,10 @@ proof -
   qed
 qed
 
-(* theorem 1.1 *)
 subsection \<open>Proof balancing (final theorem)\<close>
+
+text \<open>This is the proof-balancing theorem corresponding to Filmus'
+  Theorem 1.1.\<close>
 
 theorem proof_balancing:
   shows "\<exists> bound :: nat poly. \<exists> c :: real.
