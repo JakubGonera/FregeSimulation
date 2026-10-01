@@ -12,14 +12,7 @@ lemma poly_nat_mono:
   fixes p :: "nat poly" and a b :: nat
   assumes "a \<le> b"
   shows "poly p a \<le> poly p b"
-proof (induction p)
-  case 0 thus ?case by simp
-next
-  case (pCons k p)
-  have "a * poly p a \<le> b * poly p b"
-    using assms pCons.IH by (rule mult_le_mono)
-  thus ?case by simp
-qed
+  using assms by (induction p) (auto intro: mult_le_mono)
 
 lemma poly_le_poly1_pow:
   fixes p :: "nat poly"
@@ -91,17 +84,7 @@ lemma sum_list_pointwise_le:
   fixes f g :: "'a \<Rightarrow> nat"
   assumes "\<forall> x \<in> set xs. f x \<le> g x"
   shows "sum_list (map f xs) \<le> sum_list (map g xs)"
-  using assms
-proof (induction xs)
-  case Nil
-  show ?case by simp
-next
-  case (Cons a xs)
-  hence head: "f a \<le> g a" by simp
-  have tail: "sum_list (map f xs) \<le> sum_list (map g xs)"
-    using Cons.IH Cons.prems by simp
-  from head tail show ?case by simp
-qed
+  using assms by (induction xs) auto
 
 text \<open>The log-step underlying Spira's depth bound (Filmus lemma 4.3 (c)):
       pure real-arithmetic, independent of any formula type.\<close>
@@ -245,12 +228,7 @@ lemma powr_log_swap:
   fixes base other c :: real
   assumes "0 < base" and "0 < other"
   shows "base powr (c * log 2 other) = other powr (c * log 2 base)"
-proof -
-  have "c * log 2 other * ln base = c * log 2 base * ln other"
-    unfolding log_def by simp
-  thus ?thesis
-    using assms by (simp add: powr_def)
-qed
+  using assms unfolding log_def by (simp add: powr_def)
 
 lemma nat_power_le_powr:
   fixes T :: nat and x :: real

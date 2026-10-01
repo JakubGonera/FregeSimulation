@@ -180,6 +180,11 @@ definition valid_proof :: "'c frege \<Rightarrow> 'c frege_proof \<Rightarrow> b
          steps pr ! i \<in> assumptions pr
          \<or> derived (rules F) (take i (steps pr)) (steps pr ! i))"
 
+lemma valid_proof_thesis_mem:
+  assumes "valid_proof F pr"
+  shows "thesis pr \<in> set (steps pr)"
+  using assms unfolding valid_proof_def by auto
+
 fun combine_proofs :: "'c frege_proof \<Rightarrow> 'c frege_proof \<Rightarrow> 'c frege_proof" where
   "combine_proofs pr1 pr2 = \<lparr>assumptions = assumptions pr1 \<union> (assumptions pr2 - set (steps pr1)),
                              thesis = thesis pr2,
@@ -358,64 +363,10 @@ lemma sub_proof_bound:
   assumes "finite var_set" and "\<forall> v. v \<notin> var_set \<longrightarrow> sub v = Atom v"
   shows "len_proof (sub_proof sub pr) \<le> (len_proof pr) * (len_sub var_set sub)"
 proof -
-  let ?L = "len_sub var_set sub"
-  let ?steps = "steps pr"
-
-  have step_bound:
-    "\<forall>f \<in> set ?steps. len_formula (sub_formula sub f) \<le> len_formula f * ?L"
-    using assms sub_formula_bound by blast
-
-  have sum_bound_gen:
-    "sum_list (map (\<lambda>f. len_formula (sub_formula sub f)) xs)
-     \<le> sum_list (map (\<lambda>f. len_formula f * ?L) xs)"
-    for xs
-  proof (induction xs)
-    case Nil
-    then show ?case by simp
-  next
-    case (Cons f fs)
-    have f_bound: "len_formula (sub_formula sub f) \<le> len_formula f * ?L"
-      using assms sub_formula_bound[where f = f and sub = sub and var_set = var_set] by simp
-    have fs_bound:
-      "sum_list (map (\<lambda>f. len_formula (sub_formula sub f)) fs)
-       \<le> sum_list (map (\<lambda>f. len_formula f * ?L) fs)"
-      using Cons.IH by simp
-    have comb:
-      "len_formula (sub_formula sub f) + sum_list (map (\<lambda>f. len_formula (sub_formula sub f)) fs)
-       \<le> len_formula f * ?L + sum_list (map (\<lambda>f. len_formula f * ?L) fs)"
-      using add_mono[OF f_bound fs_bound] by simp
-    show ?case
-      using comb by simp
-  qed
-  have sum_bound:
-    "sum_list (map (\<lambda>f. len_formula (sub_formula sub f)) (steps pr))
-     \<le> sum_list (map (\<lambda>f. len_formula f * ?L) (steps pr))"
-    using sum_bound_gen[of "steps pr"] .
-
-  have scaled_sum_gen:
-    "sum_list (map (\<lambda>f. len_formula f * ?L) xs) = sum_list (map len_formula xs) * ?L"
-    for xs :: "'c formula list"
-  proof (induction xs)
-    case Nil
-    then show ?case by simp
-  next
-    case (Cons f fs)
-    then show ?case
-      by (simp add: algebra_simps)
-  qed
-  have scaled_sum:
-    "sum_list (map (\<lambda>f. len_formula f * ?L) ?steps) = sum_list (map len_formula ?steps) * ?L"
-    using scaled_sum_gen[of ?steps] .
-
-  have lhs:
-    "len_proof (sub_proof sub pr) = sum_list (map (\<lambda>f. len_formula (sub_formula sub f)) ?steps)"
-    by (simp add: comp_def)
-  have rhs:
-    "len_proof pr * ?L = sum_list (map len_formula ?steps) * ?L"
-    by simp
-
-  show ?thesis
-    using lhs rhs sum_bound scaled_sum by simp
+  have "sum_list (map (\<lambda>f. len_formula (sub_formula sub f)) (steps pr))
+      \<le> sum_list (map (\<lambda>f. len_formula f * len_sub var_set sub) (steps pr))"
+    by (rule sum_list_mono) (use sub_formula_bound[OF assms] in simp)
+  thus ?thesis by (simp add: comp_def sum_list_mult_const)
 qed
 
 lemma sub_formula_depth_bound:
@@ -528,6 +479,197 @@ lemma sub_formula_well_formed:
   shows "formula_well_formed alph (sub_formula sub g)"
   using assms by (induction g) auto
 
+lemma map_of_zip_nth_lookup:
+  fixes xs :: "'a list" and ys :: "'b list" and k :: nat
+  assumes "distinct xs" "length xs = length ys" "k < length xs"
+  shows "map_of (zip xs ys) (xs ! k) = Some (ys ! k)"
+  using assms
+proof (induction k arbitrary: xs ys)
+  case 0
+  show ?case
+  proof (cases xs)
+    case Nil
+    thus ?thesis using 0(3) by simp
+  next
+    case (Cons x xs')
+    then obtain y ys' where ys_eq: "ys = y # ys'"
+      using 0(2) by (cases ys) auto
+    show ?thesis using Cons ys_eq by simp
+  qed
+next
+  case (Suc k)
+  obtain x xs' where xs_eq: "xs = x # xs'"
+    using Suc.prems(3) by (cases xs) auto
+  obtain y ys' where ys_eq: "ys = y # ys'"
+    using Suc.prems(2,3) xs_eq by (cases ys) auto
+  from Suc.prems xs_eq ys_eq have
+    dist': "distinct xs'" and len': "length xs' = length ys'" and k_lt': "k < length xs'"
+    by simp_all
+  have IH': "map_of (zip xs' ys') (xs' ! k) = Some (ys' ! k)"
+    using Suc.IH[OF dist' len' k_lt'] .
+  have x_not_in: "x \<notin> set xs'" using Suc.prems(1) xs_eq by simp
+  have nth_in: "xs' ! k \<in> set xs'" using k_lt' nth_mem by blast
+  hence neq: "xs' ! k \<noteq> x" using x_not_in by blast
+  show ?case using xs_eq ys_eq IH' neq by simp
+qed
+
+lemma map_of_zip_None_lookup:
+  fixes xs :: "'a list" and ys :: "'b list" and k :: 'a
+  assumes "k \<notin> set xs"
+  shows "map_of (zip xs ys) k = None"
+  using assms
+proof (induction xs arbitrary: ys)
+  case Nil show ?case by simp
+next
+  case (Cons x xs')
+  show ?case
+  proof (cases ys)
+    case Nil thus ?thesis by simp
+  next
+    case (Cons y ys')
+    have "k \<noteq> x" using Cons.prems by simp
+    moreover have "k \<notin> set xs'" using Cons.prems by simp
+    ultimately show ?thesis using Cons.IH[where ys = ys'] Cons by simp
+  qed
+qed
+
+definition marker_substitution :: "string list \<Rightarrow> ('c formula) list \<Rightarrow> (string \<Rightarrow> 'c formula)" where
+  "marker_substitution names arguments =
+     (\<lambda>v. case map_of (zip names arguments) v of Some g \<Rightarrow> g | None \<Rightarrow> Atom v)"
+
+lemma marker_substitution_nth:
+  assumes "distinct names" and "length arguments = length names" and "k < length names"
+  shows "marker_substitution names arguments (names ! k) = arguments ! k"
+  unfolding marker_substitution_def
+  using map_of_zip_nth_lookup[OF assms(1) assms(2)[symmetric] assms(3)] by simp
+
+lemma marker_substitution_outside:
+  assumes "v \<notin> set names"
+  shows "marker_substitution names arguments v = Atom v"
+proof -
+  have "map_of (zip names arguments) v = None"
+    by (rule map_of_zip_None_lookup[OF assms])
+  thus ?thesis unfolding marker_substitution_def by simp
+qed
+
+lemma marker_substitution_range:
+  "marker_substitution names arguments v \<in> set arguments \<union> {Atom v}"
+proof (cases "map_of (zip names arguments) v")
+  case None
+  thus ?thesis unfolding marker_substitution_def by simp
+next
+  case (Some g)
+  have "(v, g) \<in> set (zip names arguments)"
+    by (rule map_of_SomeD[OF Some])
+  hence "g \<in> set arguments"
+    by (rule set_zip_rightD)
+  thus ?thesis unfolding marker_substitution_def using Some by simp
+qed
+
+lemma marker_substitution_map:
+  assumes "distinct names" "length arguments = length names"
+  shows "map (marker_substitution names arguments) names = arguments"
+  by (rule nth_equalityI)
+     (use assms marker_substitution_nth[OF assms] in auto)
+
+lemma marker_substitution_length:
+  assumes "distinct names" "length arguments = length names"
+  shows "len_sub (set names) (marker_substitution names arguments)
+       = max 1 (sum_list (map len_formula arguments))"
+proof -
+  let ?sub = "marker_substitution names arguments"
+  have "(\<Sum>v\<in>set names. len_formula (?sub v))
+       = sum_list (map (\<lambda>v. len_formula (?sub v)) names)"
+    using assms(1) by (simp add: sum_list_distinct_conv_sum_set)
+  also have "\<dots> = sum_list (map len_formula (map ?sub names))"
+    by (simp add: comp_def)
+  also have "\<dots> = sum_list (map len_formula arguments)"
+    by (simp only: marker_substitution_map[OF assms])
+  finally show ?thesis unfolding len_sub_def by simp
+qed
+
+lemma marker_substitution_depth:
+  assumes "1 \<le> D" "\<And>g. g \<in> set arguments \<Longrightarrow> depth_formula g \<le> D"
+  shows "depth_sub (set names) (marker_substitution names arguments) \<le> D"
+proof -
+  have "depth_formula (marker_substitution names arguments v) \<le> D" for v
+    using marker_substitution_range[of names arguments v] assms by auto
+  with assms(1) show ?thesis unfolding depth_sub_def by (intro Max.boundedI) auto
+qed
+
+lemma depth_formula_child_le:
+  assumes "g \<in> set fs"
+  shows "depth_formula g \<le> depth_formula (Conn c fs)"
+proof -
+  have "depth_formula g \<le> Max (set (map depth_formula fs))"
+    using assms by (intro Max_ge) auto
+  thus ?thesis using assms by (cases fs) auto
+qed
+
+lemma sub_proof_line_bounds:
+  assumes fin: "finite V"
+      and outside: "\<forall>v. v \<notin> V \<longrightarrow> sub v = Atom v"
+      and sz: "\<forall>s\<in>set (steps pr). len_formula s \<le> S"
+      and dep: "\<forall>s\<in>set (steps pr). depth_formula s \<le> D"
+      and wf: "\<forall>s\<in>set (steps pr). formula_well_formed alph s"
+      and sub_wf: "\<And>v. formula_well_formed alph (sub v)"
+  shows "\<forall>s\<in>set (steps (sub_proof sub pr)).
+       len_formula s \<le> S * len_sub V sub
+       \<and> depth_formula s \<le> D + depth_sub V sub
+       \<and> formula_well_formed alph s"
+proof (intro ballI)
+  fix s assume "s \<in> set (steps (sub_proof sub pr))"
+  then obtain t where t: "t \<in> set (steps pr)" "s = sub_formula sub t" by auto
+  have l: "len_formula s \<le> S * len_sub V sub"
+    using sub_formula_bound[OF fin outside, of t] sz t
+    by (meson mult_le_mono1 order_trans)
+  have d: "depth_formula s \<le> D + depth_sub V sub"
+    using sub_formula_depth_bound[OF fin outside, of t] dep t
+    by (meson add_right_mono order_trans)
+  have wft: "formula_well_formed alph t" using wf t(1) by blast
+  have wfs: "formula_well_formed alph (sub_formula sub t)"
+    by (rule sub_formula_well_formed[OF wft sub_wf])
+  show "len_formula s \<le> S * len_sub V sub
+       \<and> depth_formula s \<le> D + depth_sub V sub
+       \<and> formula_well_formed alph s"
+    using l d wfs t(2) by simp
+qed
+
+lemma connective_template_pruned:
+  fixes alph :: "'c alphabet" and dmf :: "dm_conn formula" and f' :: "'c formula"
+  assumes equivalent: "formulas_equiv dmf dm_alphabet f' alph"
+      and well_formed: "formula_well_formed alph f'"
+      and top_arity: "arity alph topc = 0"
+      and top_true: "\<And>val. eval alph val (Conn topc []) = True"
+      and vars_dmf: "var_set_form dmf \<subseteq> V"
+  shows "\<exists> tmpl. formula_well_formed alph tmpl \<and> var_set_form tmpl \<subseteq> V
+              \<and> (\<forall> val. eval alph val tmpl = eval dm_alphabet val dmf)"
+proof -
+  define prune where "prune = (\<lambda>v. if v \<in> V then Atom v else Conn topc [] :: 'c formula)"
+  define tmpl where "tmpl = sub_formula prune f'"
+  have prune_wf: "\<And>v. formula_well_formed alph (prune v)"
+    unfolding prune_def using top_arity by simp
+  have tmpl_wf: "formula_well_formed alph tmpl"
+    unfolding tmpl_def using well_formed prune_wf by (rule sub_formula_well_formed)
+  have tmpl_vars: "var_set_form tmpl \<subseteq> V"
+    unfolding tmpl_def var_set_sub prune_def by (auto split: if_splits)
+  have tmpl_eval: "eval alph val tmpl = eval dm_alphabet val dmf" for val
+  proof -
+    have "eval alph val tmpl = eval alph (\<lambda>a. eval alph val (prune a)) f'"
+      unfolding tmpl_def by (rule sub_formula_eval)
+    also have "\<dots> = eval dm_alphabet (\<lambda>a. eval alph val (prune a)) dmf"
+      using equivalent unfolding formulas_equiv_def by simp
+    also have "\<dots> = eval dm_alphabet val dmf"
+    proof (rule eval_cong)
+      fix v assume "v \<in> var_set_form dmf"
+      hence "v \<in> V" using vars_dmf by blast
+      thus "eval alph val (prune v) = val v" unfolding prune_def by simp
+    qed
+    finally show ?thesis .
+  qed
+  from tmpl_wf tmpl_vars tmpl_eval show ?thesis by blast
+qed
+
 locale frege_system =
   fixes F :: "'c frege"
   assumes sound: "\<forall> r \<in> rules F. sound_rule F r"
@@ -551,6 +693,23 @@ locale frege_system =
   and has_bot:
     "\<exists> b. arity (alphabet F) b = 0 \<and> (\<forall> val. eval (alphabet F) val (Conn b []) = False)"
 begin
+
+lemma func_complete_supported:
+  assumes "var_set_form dmf \<subseteq> V"
+  shows "\<exists>f. formula_well_formed (alphabet F) f
+       \<and> var_set_form f \<subseteq> V
+       \<and> formulas_equiv dmf dm_alphabet f (alphabet F)"
+proof -
+  obtain f where wf: "formula_well_formed (alphabet F) f"
+    and eq: "formulas_equiv dmf dm_alphabet f (alphabet F)"
+    using func_complete by blast
+  obtain t where ar: "arity (alphabet F) t = 0"
+    and top: "\<And>val. eval (alphabet F) val (Conn t []) = True"
+    using has_top by blast
+  show ?thesis
+    using connective_template_pruned[OF eq wf ar top assms]
+    unfolding formulas_equiv_def by blast
+qed
 
 lemma combining_valid_proofs_pr1:
   fixes pr1 :: "'c frege_proof" and pr2 :: "'c frege_proof"
@@ -782,6 +941,138 @@ proof -
     unfolding valid_proof_def by (simp add: last_map)
 qed
 end
+
+section \<open>Bounded derivations and fixed proof instances\<close>
+
+text \<open>These bounds apply to proofs with assumptions as well as closed proofs.
+  Substitution and cutting a closed premise into a fixed derivation are proved
+  once, so the later equivalence macros only need their logical instances.\<close>
+
+definition bounded_derivation ::
+  "'c frege \<Rightarrow> 'c formula set \<Rightarrow> 'c formula \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool" where
+  "bounded_derivation F H A lines sz dep \<longleftrightarrow>
+    (\<exists>pr. valid_proof F pr \<and> assumptions pr \<subseteq> H \<and> frege_proof.thesis pr = A
+      \<and> length (steps pr) \<le> lines
+      \<and> (\<forall>t\<in>set (steps pr). len_formula t \<le> sz \<and> depth_formula t \<le> dep
+                              \<and> formula_well_formed (alphabet F) t))"
+
+lemma bounded_derivation_weaken:
+  assumes "bounded_derivation F H A l s d" "H \<subseteq> H'"
+    "l \<le> l'" "s \<le> s'" "d \<le> d'"
+  shows "bounded_derivation F H' A l' s' d'"
+  using assms unfolding bounded_derivation_def
+  by (elim exE, intro exI conjI) (auto intro: order.trans)
+
+lemma bounded_derivation_from_proof:
+  assumes "valid_proof F pr" "assumptions pr \<subseteq> H" "frege_proof.thesis pr = A"
+    "\<forall>t\<in>set (steps pr). formula_well_formed (alphabet F) t"
+  shows "bounded_derivation F H A (length (steps pr))
+    (Max (insert 1 (len_formula ` set (steps pr))))
+    (Max (insert 1 (depth_formula ` set (steps pr))))"
+  unfolding bounded_derivation_def
+  by (rule exI[of _ pr]) (use assms in \<open>auto intro: Max_ge\<close>)
+
+lemma bounded_derivation_subst:
+  assumes "frege_system F" "bounded_derivation F H A l s d" "finite V"
+    "\<forall>v. v \<notin> V \<longrightarrow> sub v = Atom v"
+    "\<And>v. formula_well_formed (alphabet F) (sub v)"
+  shows "bounded_derivation F (sub_formula sub ` H) (sub_formula sub A)
+    l (s * len_sub V sub) (d + depth_sub V sub)"
+proof -
+  obtain pr where pr: "valid_proof F pr" "assumptions pr \<subseteq> H"
+    "frege_proof.thesis pr = A" "length (steps pr) \<le> l"
+    "\<forall>t\<in>set (steps pr). len_formula t \<le> s"
+    "\<forall>t\<in>set (steps pr). depth_formula t \<le> d"
+    "\<forall>t\<in>set (steps pr). formula_well_formed (alphabet F) t"
+    using assms(2) unfolding bounded_derivation_def by blast
+  have valid: "valid_proof F (sub_proof sub pr)"
+    by (rule frege_system.proof_substitution[OF assms(1) pr(1)])
+  note bounds = sub_proof_line_bounds[OF assms(3,4) pr(5,6,7) assms(5)]
+  show ?thesis unfolding bounded_derivation_def
+    by (rule exI[of _ "sub_proof sub pr"]) (use valid bounds pr(2,3,4) in auto)
+qed
+
+lemma bounded_derivation_marker_instance:
+  assumes fs: "frege_system F"
+    and base: "bounded_derivation F H A l s d"
+    and names: "distinct names" "length arguments = length names"
+    and wf: "\<And>g. g \<in> set arguments \<Longrightarrow> formula_well_formed (alphabet F) g"
+    and dep: "1 \<le> D" "\<And>g. g \<in> set arguments \<Longrightarrow> depth_formula g \<le> D"
+  shows "bounded_derivation F
+    (sub_formula (marker_substitution names arguments) ` H)
+    (sub_formula (marker_substitution names arguments) A)
+    l (s * max 1 (sum_list (map len_formula arguments))) (d + D)"
+proof -
+  let ?sub = "marker_substitution names arguments"
+  have outside: "\<forall>v. v \<notin> set names \<longrightarrow> ?sub v = Atom v"
+    using marker_substitution_outside by blast
+  have sub_wf: "formula_well_formed (alphabet F) (?sub v)" for v
+    using marker_substitution_range[of names arguments v] wf by auto
+  have instantiated: "bounded_derivation F (sub_formula ?sub ` H) (sub_formula ?sub A)
+    l (s * max 1 (sum_list (map len_formula arguments))) (d + depth_sub (set names) ?sub)"
+    using bounded_derivation_subst[OF fs base finite_set outside sub_wf]
+    by (simp only: marker_substitution_length[OF names])
+  show ?thesis
+    by (rule bounded_derivation_weaken[OF instantiated subset_refl le_refl le_refl])
+       (use marker_substitution_depth[OF dep, where names=names] in simp)
+qed
+
+lemma bounded_derivation_cut_max:
+  assumes fs: "frege_system F"
+    and prem: "bounded_derivation F {} A l s d"
+    and rule: "bounded_derivation F (insert A H) B l' s' d'"
+  shows "bounded_derivation F H B (l + l') (max s s') (max d d')"
+proof -
+  obtain p where p: "valid_proof F p" "assumptions p = {}"
+    "frege_proof.thesis p = A" "length (steps p) \<le> l"
+    "\<forall>t\<in>set (steps p). len_formula t \<le> s \<and> depth_formula t \<le> d
+                              \<and> formula_well_formed (alphabet F) t"
+    using prem unfolding bounded_derivation_def by auto
+  obtain q where q: "valid_proof F q" "assumptions q \<subseteq> insert A H"
+    "frege_proof.thesis q = B" "length (steps q) \<le> l'"
+    "\<forall>t\<in>set (steps q). len_formula t \<le> s' \<and> depth_formula t \<le> d'
+                              \<and> formula_well_formed (alphabet F) t"
+    using rule unfolding bounded_derivation_def by auto
+  have valid: "valid_proof F (combine_proofs p q)"
+    using frege_system.combining_valid_proofs[OF fs] p(1) q(1) by blast
+  have asm: "assumptions (combine_proofs p q) \<subseteq> H"
+    using valid_proof_thesis_mem[OF p(1)] p(2,3) q(2) by auto
+  show ?thesis unfolding bounded_derivation_def
+    by (rule exI[of _ "combine_proofs p q"])
+       (use valid asm p(4,5) q(3,4,5) in auto)
+qed
+
+lemma bounded_derivation_cut:
+  assumes "frege_system F"
+    "bounded_derivation F {} A l s d"
+    "bounded_derivation F (insert A H) B l' s' d'"
+  shows "bounded_derivation F H B (l + l') (s + s') (max d d')"
+  by (rule bounded_derivation_weaken[OF bounded_derivation_cut_max[OF assms]
+              subset_refl le_refl _ le_refl]) simp
+
+lemma bounded_derivation_cuts:
+  assumes fs: "frege_system F"
+    and closed: "\<And>i. i \<in> set inds \<Longrightarrow> bounded_derivation F {} (prem i) (lf i) Sc Dc"
+    and base: "bounded_derivation F (prem ` set inds \<union> H) A L S D"
+  shows "bounded_derivation F H A
+    (sum_list (map lf inds) + L) (max Sc S) (max Dc D)"
+  using base closed
+proof (induction inds arbitrary: H)
+  case Nil
+  show ?case
+    by (rule bounded_derivation_weaken[OF Nil.prems(1)])
+       simp_all
+next
+  case (Cons i inds)
+  have rest: "bounded_derivation F (insert (prem i) H) A
+    (sum_list (map lf inds) + L) (max Sc S) (max Dc D)"
+    by (rule Cons.IH)
+       (use Cons.prems in \<open>auto simp: insert_commute\<close>)
+  have head: "bounded_derivation F {} (prem i) (lf i) Sc Dc"
+    using Cons.prems(2) by simp
+  show ?case using bounded_derivation_cut_max[OF fs head rest]
+    by (simp add: add.assoc max.assoc)
+qed
 
 definition equiv_proofs :: "'c1 frege_proof \<Rightarrow> 'c1 frege \<Rightarrow> 'c2 frege_proof \<Rightarrow> 'c2 frege \<Rightarrow> bool" where
   "equiv_proofs pr1 F1 pr2 F2 \<longleftrightarrow> (frege_system F1 \<and> valid_proof F1 pr1 \<and>

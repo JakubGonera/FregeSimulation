@@ -271,39 +271,6 @@ proof -
     unfolding marker_variables_def by (rule someI_ex)
 qed
 
-definition marker_substitution :: "string list \<Rightarrow> ('c formula) list \<Rightarrow> (string \<Rightarrow> 'c formula)" where
-  "marker_substitution names arguments =
-     (\<lambda>v. case map_of (zip names arguments) v of Some g \<Rightarrow> g | None \<Rightarrow> Atom v)"
-
-lemma marker_substitution_nth:
-  assumes "distinct names" and "length arguments = length names" and "k < length names"
-  shows "marker_substitution names arguments (names ! k) = arguments ! k"
-  unfolding marker_substitution_def
-  using map_of_zip_nth_lookup[OF assms(1) assms(2)[symmetric] assms(3)] by simp
-
-lemma marker_substitution_outside:
-  assumes "v \<notin> set names"
-  shows "marker_substitution names arguments v = Atom v"
-proof -
-  have "map_of (zip names arguments) v = None"
-    by (rule map_of_zip_None_lookup[OF assms])
-  thus ?thesis unfolding marker_substitution_def by simp
-qed
-
-lemma marker_substitution_range:
-  "marker_substitution names arguments v \<in> set arguments \<union> {Atom v}"
-proof (cases "map_of (zip names arguments) v")
-  case None
-  thus ?thesis unfolding marker_substitution_def by simp
-next
-  case (Some g)
-  have "(v, g) \<in> set (zip names arguments)"
-    by (rule map_of_SomeD[OF Some])
-  hence "g \<in> set arguments"
-    by (rule set_zip_rightD)
-  thus ?thesis unfolding marker_substitution_def using Some by simp
-qed
-
 subsection \<open>The truth table of a boolean function as a De Morgan formula\<close>
 
 text \<open>
@@ -392,40 +359,6 @@ text \<open>
   substitution.
 \<close>
 
-lemma connective_template_pruned:
-  fixes alph :: "'c alphabet" and dmf :: "dm_conn formula" and f' :: "'c formula"
-  assumes equivalent: "formulas_equiv dmf dm_alphabet f' alph"
-      and well_formed: "formula_well_formed alph f'"
-      and top_arity: "arity alph topc = 0"
-      and top_true: "\<And>val. eval alph val (Conn topc []) = True"
-      and vars_dmf: "var_set_form dmf \<subseteq> V"
-  shows "\<exists> tmpl. formula_well_formed alph tmpl \<and> var_set_form tmpl \<subseteq> V
-              \<and> (\<forall> val. eval alph val tmpl = eval dm_alphabet val dmf)"
-proof -
-  define prune where "prune = (\<lambda>v. if v \<in> V then Atom v else Conn topc [] :: 'c formula)"
-  define tmpl where "tmpl = sub_formula prune f'"
-  have prune_wf: "\<And>v. formula_well_formed alph (prune v)"
-    unfolding prune_def using top_arity by simp
-  have tmpl_wf: "formula_well_formed alph tmpl"
-    unfolding tmpl_def using well_formed prune_wf by (rule sub_formula_well_formed)
-  have tmpl_vars: "var_set_form tmpl \<subseteq> V"
-    unfolding tmpl_def var_set_sub prune_def by (auto split: if_splits)
-  have tmpl_eval: "eval alph val tmpl = eval dm_alphabet val dmf" for val
-  proof -
-    have "eval alph val tmpl = eval alph (\<lambda>a. eval alph val (prune a)) f'"
-      unfolding tmpl_def by (rule sub_formula_eval)
-    also have "\<dots> = eval dm_alphabet (\<lambda>a. eval alph val (prune a)) dmf"
-      using equivalent unfolding formulas_equiv_def by simp
-    also have "\<dots> = eval dm_alphabet val dmf"
-    proof (rule eval_cong)
-      fix v assume "v \<in> var_set_form dmf"
-      hence "v \<in> V" using vars_dmf by blast
-      thus "eval alph val (prune v) = val v" unfolding prune_def by simp
-    qed
-    finally show ?thesis .
-  qed
-  from tmpl_wf tmpl_vars tmpl_eval show ?thesis by blast
-qed
 
 subsection \<open>A pair of Frege systems\<close>
 
@@ -1689,7 +1622,7 @@ text \<open>
   lets the last leg of Reckhow's theorem stay there.  Everything the roundtrip
   construction below inherited before -- \<^text>\<open>entails_proof\<close>, \<^text>\<open>iff_form\<close>,
   \<^text>\<open>provable_balanced_iff\<close>, \<^text>\<open>iff_trans\<close>, \<^text>\<open>iff_refl\<close>,
-  \<^text>\<open>plug_cong\<close>, \<^text>\<open>conn_slot_cong\<close> -- remains available under the same
+  \<^text>\<open>conn_slot_cong\<close> -- remains available under the same
   \<^text>\<open>two_bal.\<close> prefix.
 \<close>
 sublocale two_bal: frege_closure Ftwo
@@ -1863,14 +1796,6 @@ proof -
   let ?x = "two_bal.sym_atom_x" and ?y = "two_bal.sym_atom_y"
   let ?sub = "\<lambda>w. if w = ?x then A else if w = ?y then B else Atom w"
   have neq: "?x \<noteq> ?y" using two_bal.sym_atoms_spec by blast
-  have sub_conn_iff:
-    "\<And>w. w \<in> var_set_form two_bal.conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b'' \<Longrightarrow> ?sub w = Atom w"
-  proof -
-    fix w assume w_ci: "w \<in> var_set_form two_bal.conn_iff" and "w \<noteq> ''a''" and "w \<noteq> ''b''"
-    have "w \<in> two_bal.avoid_atoms" using w_ci unfolding two_bal.avoid_atoms_def by blast
-    hence "w \<noteq> ?x \<and> w \<noteq> ?y" using two_bal.sym_atoms_spec by blast
-    thus "?sub w = Atom w" by simp
-  qed
   define mi where mi_def: "mi = sub_proof ?sub two_mp_base"
   have valid_mi: "valid_proof Ftwo mi"
     unfolding mi_def using two.proof_substitution two_mp_base_spec by blast
@@ -1885,7 +1810,7 @@ proof -
   proof -
     have "sub_formula ?sub (two_bal.iff_form (Atom ?x) (Atom ?y))
         = two_bal.iff_form (sub_formula ?sub (Atom ?x)) (sub_formula ?sub (Atom ?y))"
-      by (rule two_bal.sub_formula_iff_form[OF sub_conn_iff])
+      by (rule two_bal.sub_formula_iff_form)
     also have "\<dots> = two_bal.iff_form A B" using neq by simp
     finally show ?thesis .
   qed
@@ -2148,13 +2073,6 @@ proof -
   let ?x = "two_bal.trans_atom_x"
   let ?sub = "\<lambda>w. if w = ?x then A else Atom w"
   have x_avoid: "?x \<notin> two_bal.avoid_atoms" using two_bal.trans_atoms_spec by blast
-  have sub_conn_iff:
-    "\<And>w. w \<in> var_set_form two_bal.conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b'' \<Longrightarrow> ?sub w = Atom w"
-  proof -
-    fix w assume w_ci: "w \<in> var_set_form two_bal.conn_iff" and "w \<noteq> ''a''" and "w \<noteq> ''b''"
-    have "w \<in> two_bal.avoid_atoms" using w_ci unfolding two_bal.avoid_atoms_def by blast
-    thus "?sub w = Atom w" using x_avoid by auto
-  qed
   define pr where pr_def: "pr = sub_proof ?sub two_refl_base"
   have valid: "valid_proof Ftwo pr"
     unfolding pr_def using two.proof_substitution two_refl_base_spec by blast
@@ -2165,7 +2083,7 @@ proof -
     have "thesis pr = sub_formula ?sub (two_bal.iff_form (Atom ?x) (Atom ?x))"
       unfolding pr_def using two_refl_base_spec by simp
     also have "\<dots> = two_bal.iff_form (sub_formula ?sub (Atom ?x)) (sub_formula ?sub (Atom ?x))"
-      by (rule two_bal.sub_formula_iff_form[OF sub_conn_iff])
+      by (rule two_bal.sub_formula_iff_form)
     also have "\<dots> = two_bal.iff_form A A" by simp
     finally show ?thesis .
   qed
@@ -2213,14 +2131,6 @@ proof -
     and ?z = "two_bal.trans_atom_z"
   let ?sub = "\<lambda>w. if w = ?x then A else if w = ?y then B else if w = ?z then C else Atom w"
   have neq: "?x \<noteq> ?y" "?x \<noteq> ?z" "?y \<noteq> ?z" using two_bal.trans_atoms_spec by blast+
-  have sub_conn_iff:
-    "\<And>w. w \<in> var_set_form two_bal.conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b'' \<Longrightarrow> ?sub w = Atom w"
-  proof -
-    fix w assume w_ci: "w \<in> var_set_form two_bal.conn_iff" and "w \<noteq> ''a''" and "w \<noteq> ''b''"
-    have "w \<in> two_bal.avoid_atoms" using w_ci unfolding two_bal.avoid_atoms_def by blast
-    hence "w \<noteq> ?x \<and> w \<noteq> ?y \<and> w \<noteq> ?z" using two_bal.trans_atoms_spec by blast
-    thus "?sub w = Atom w" by simp
-  qed
   obtain pAB where pAB: "valid_proof Ftwo pAB" "assumptions pAB = {}"
     "frege_proof.thesis pAB = two_bal.iff_form A B" "len_proof pAB \<le> m"
     "\<forall> st \<in> set (steps pAB). formula_well_formed (alphabet Ftwo) st"
@@ -2237,7 +2147,7 @@ proof -
   proof -
     have "sub_formula ?sub (two_bal.iff_form (Atom ?x) (Atom ?y))
         = two_bal.iff_form (sub_formula ?sub (Atom ?x)) (sub_formula ?sub (Atom ?y))"
-      by (rule two_bal.sub_formula_iff_form[OF sub_conn_iff])
+      by (rule two_bal.sub_formula_iff_form)
     also have "\<dots> = two_bal.iff_form A B" using neq by simp
     finally show ?thesis .
   qed
@@ -2246,7 +2156,7 @@ proof -
   proof -
     have "sub_formula ?sub (two_bal.iff_form (Atom ?y) (Atom ?z))
         = two_bal.iff_form (sub_formula ?sub (Atom ?y)) (sub_formula ?sub (Atom ?z))"
-      by (rule two_bal.sub_formula_iff_form[OF sub_conn_iff])
+      by (rule two_bal.sub_formula_iff_form)
     also have "\<dots> = two_bal.iff_form B C" using neq by simp
     finally show ?thesis .
   qed
@@ -2255,7 +2165,7 @@ proof -
   proof -
     have "sub_formula ?sub (two_bal.iff_form (Atom ?x) (Atom ?z))
         = two_bal.iff_form (sub_formula ?sub (Atom ?x)) (sub_formula ?sub (Atom ?z))"
-      by (rule two_bal.sub_formula_iff_form[OF sub_conn_iff])
+      by (rule two_bal.sub_formula_iff_form)
     also have "\<dots> = two_bal.iff_form A C" using neq by simp
     finally show ?thesis .
   qed
@@ -2371,12 +2281,7 @@ lemma two_max_arity_ge: "arity (alphabet Ftwo) c \<le> two_max_arity"
   unfolding two_max_arity_def using two.finite_alphabet by (intro Max_ge) auto
 
 definition two_slot_base :: "'c2 \<Rightarrow> nat \<Rightarrow> 'c2 frege_proof" where
-  "two_slot_base c i = (SOME pr. valid_proof Ftwo pr
-     \<and> assumptions pr = {two_bal.conn_iff}
-     \<and> thesis pr = two_bal.iff_form
-          (Conn c ((map Atom (two_bal.canonical_atoms c))[i := Atom ''a'']))
-          (Conn c ((map Atom (two_bal.canonical_atoms c))[i := Atom ''b'']))
-     \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet Ftwo) st))"
+  "two_slot_base c i = two_bal.base_proof c i"
 
 lemma two_slot_base_spec:
   assumes "i < arity (alphabet Ftwo) c"
@@ -2387,16 +2292,8 @@ lemma two_slot_base_spec:
             (Conn c ((map Atom (two_bal.canonical_atoms c))[i := Atom ''b'']))
        \<and> (\<forall> st \<in> set (steps (two_slot_base c i)).
             formula_well_formed (alphabet Ftwo) st)"
-proof -
-  have ex: "\<exists> pr. valid_proof Ftwo pr \<and> assumptions pr = {two_bal.conn_iff}
-     \<and> thesis pr = two_bal.iff_form
-          (Conn c ((map Atom (two_bal.canonical_atoms c))[i := Atom ''a'']))
-          (Conn c ((map Atom (two_bal.canonical_atoms c))[i := Atom ''b'']))
-     \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet Ftwo) st)"
-    using two_bal.iff_congruent_base[OF assms]
-    unfolding two_bal.iff_form_def two_bal.iff_sub_def by simp
-  show ?thesis unfolding two_slot_base_def by (rule someI_ex[OF ex])
-qed
+  using two_bal.base_proof_spec[OF assms]
+  unfolding two_slot_base_def two_bal.iff_form_def two_bal.iff_sub_def by simp
 
 definition two_slot_bound :: nat where
   "two_slot_bound = Max ((\<lambda>(c,i). len_proof (two_slot_base c i))
@@ -2426,209 +2323,66 @@ lemma two_prov_iff_slot:
                 * max 1 (len_formula (xs ! i) + len_formula B
                           + sum_list (map len_formula xs)))"
 proof -
-  define atoms where "atoms = two_bal.canonical_atoms c"
-  have at_len: "length atoms = arity (alphabet Ftwo) c"
-   and at_dist: "distinct atoms"
-   and at_a: "''a'' \<notin> set atoms" and at_b: "''b'' \<notin> set atoms"
-   and at_ci: "set atoms \<inter> var_set_form two_bal.conn_iff = {}"
-    unfolding atoms_def using two_bal.canonical_atoms_spec by blast+
-  define sg where "sg = (\<lambda>w. if w = ''a'' then xs ! i else if w = ''b'' then B
-                             else marker_substitution atoms xs w)"
-  have i_xs: "i < length xs" using i_lt len_xs by simp
-  have xs_at: "length xs = length atoms" using len_xs at_len by simp
-  \<comment> \<open>the substitution is the identity on the unknown extra atoms of conn_iff\<close>
-  have sub_conn_iff:
-    "\<And>w. w \<in> var_set_form two_bal.conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b'' \<Longrightarrow> sg w = Atom w"
+  let ?atoms = "two_bal.canonical_atoms c"
+  let ?names = "''a'' # ''b'' # ?atoms"
+  let ?args = "(xs ! i) # B # xs"
+  let ?sub = "marker_substitution ?names ?args"
+  let ?base = "two_slot_base c i"
+  let ?inst = "sub_proof ?sub ?base"
+  let ?S = "max 1 (len_formula (xs ! i) + len_formula B + sum_list (map len_formula xs))"
+  have ilt: "i < length xs" using i_lt len_xs by simp
+  have names: "distinct ?names" and lengths: "length ?args = length ?names"
+    using two_bal.canonical_atoms_spec[of c] len_xs by auto
+  have sub_a: "?sub ''a'' = xs ! i" and sub_b: "?sub ''b'' = B"
+    using marker_substitution_nth[OF names lengths, of 0]
+          marker_substitution_nth[OF names lengths, of 1] by simp_all
+  have sub_atoms: "map ?sub ?atoms = xs"
+    using marker_substitution_map[OF names lengths] by simp
+  have side_a: "sub_formula ?sub (Conn c ((map Atom ?atoms)[i := Atom ''a''])) = Conn c xs"
+    using sub_a sub_atoms ilt by (simp add: map_update comp_def)
+  have side_b: "sub_formula ?sub (Conn c ((map Atom ?atoms)[i := Atom ''b'']))
+     = Conn c (xs[i := B])"
+    using sub_b sub_atoms by (simp add: map_update comp_def)
+  have sub_iff: "sub_formula ?sub two_bal.conn_iff = two_bal.iff_form (xs ! i) B"
+    using two_conn_iff_as_iff_form sub_a sub_b
+    by (simp add: two_bal.sub_formula_iff_form)
+  have sub_wf: "formula_well_formed (alphabet Ftwo) (?sub v)" for v
+    using marker_substitution_range[of ?names ?args v] wfB wf_xs ilt
+    by (auto intro: nth_mem)
+  note spec = two_slot_base_spec[OF i_lt]
+  have valid: "valid_proof Ftwo ?inst"
+    using two.proof_substitution spec by blast
+  have asm: "assumptions ?inst = {two_bal.iff_form (xs ! i) B}"
+    using spec sub_iff by simp
+  have th: "frege_proof.thesis ?inst = two_bal.iff_form (Conn c xs) (Conn c (xs[i := B]))"
+    using spec side_a side_b by (simp add: two_bal.sub_formula_iff_form)
+  have wf: "\<forall>t\<in>set (steps ?inst). formula_well_formed (alphabet Ftwo) t"
+    using spec by (auto intro!: sub_formula_well_formed[OF _ sub_wf])
+  have outside: "\<forall>v. v \<notin> set ?names \<longrightarrow> ?sub v = Atom v"
+    using marker_substitution_outside by blast
+  have len_sub: "len_sub (set ?names) ?sub = ?S"
+    using marker_substitution_length[OF names lengths] by (simp add: add.assoc)
+  have size: "len_proof ?inst \<le> two_slot_bound * ?S"
   proof -
-    fix w assume w_ci: "w \<in> var_set_form two_bal.conn_iff" and "w \<noteq> ''a''" and "w \<noteq> ''b''"
-    have "w \<notin> set atoms" using w_ci at_ci by blast
-    thus "sg w = Atom w"
-      unfolding sg_def using \<open>w \<noteq> ''a''\<close> \<open>w \<noteq> ''b''\<close> marker_substitution_outside by simp
-  qed
-  \<comment> \<open>it maps the canonical atoms onto the actual arguments\<close>
-  have map_sg: "map sg atoms = xs"
-  proof (rule nth_equalityI)
-    show "length (map sg atoms) = length xs" using xs_at by simp
-  next
-    fix k assume "k < length (map sg atoms)"
-    hence k_at: "k < length atoms" by simp
-    hence k_xs: "k < length xs" using xs_at by simp
-    have "atoms ! k \<in> set atoms" using k_at by simp
-    hence nab: "atoms ! k \<noteq> ''a''" "atoms ! k \<noteq> ''b''" using at_a at_b by auto
-    have "sg (atoms ! k) = marker_substitution atoms xs (atoms ! k)"
-      unfolding sg_def using nab by simp
-    also have "\<dots> = xs ! k"
-      by (rule marker_substitution_nth[OF at_dist xs_at k_at])
-    finally show "map sg atoms ! k = xs ! k" using k_at by simp
-  qed
-  have side_a: "sub_formula sg (Conn c ((map Atom atoms)[i := Atom ''a''])) = Conn c xs"
-  proof -
-    have "map (sub_formula sg) ((map Atom atoms)[i := Atom ''a''])
-        = (map (sub_formula sg) (map Atom atoms))[i := sub_formula sg (Atom ''a'')]"
-      by (simp add: map_update)
-    also have "\<dots> = (map sg atoms)[i := xs ! i]"
-      unfolding sg_def by (simp add: comp_def)
-    also have "\<dots> = xs[i := xs ! i]" using map_sg by simp
-    also have "\<dots> = xs" using i_xs by simp
-    finally show ?thesis by simp
-  qed
-  have side_b: "sub_formula sg (Conn c ((map Atom atoms)[i := Atom ''b''])) = Conn c (xs[i := B])"
-  proof -
-    have "map (sub_formula sg) ((map Atom atoms)[i := Atom ''b''])
-        = (map (sub_formula sg) (map Atom atoms))[i := sub_formula sg (Atom ''b'')]"
-      by (simp add: map_update)
-    also have "\<dots> = (map sg atoms)[i := B]"
-      unfolding sg_def by (simp add: comp_def)
-    also have "\<dots> = xs[i := B]" using map_sg by simp
-    finally show ?thesis by simp
-  qed
-  \<comment> \<open>instantiate the constant-size per-slot base proof\<close>
-  define ti where ti_def: "ti = sub_proof sg (two_slot_base c i)"
-  have bspec: "valid_proof Ftwo (two_slot_base c i)
-       \<and> assumptions (two_slot_base c i) = {two_bal.conn_iff}
-       \<and> thesis (two_slot_base c i) = two_bal.iff_form
-            (Conn c ((map Atom atoms)[i := Atom ''a'']))
-            (Conn c ((map Atom atoms)[i := Atom ''b'']))
-       \<and> (\<forall> st \<in> set (steps (two_slot_base c i)). formula_well_formed (alphabet Ftwo) st)"
-    unfolding atoms_def using two_slot_base_spec[OF i_lt] by simp
-  have valid_ti: "valid_proof Ftwo ti"
-    unfolding ti_def using two.proof_substitution bspec by blast
-  have ti_asm: "assumptions ti = {two_bal.iff_form (xs ! i) B}"
-  proof -
-    have "assumptions ti = (sub_formula sg) ` {two_bal.conn_iff}"
-      unfolding ti_def using bspec by simp
-    also have "\<dots> = {sub_formula sg (two_bal.iff_form (Atom ''a'') (Atom ''b''))}"
-      using two_conn_iff_as_iff_form by simp
-    also have "\<dots> = {two_bal.iff_form (sub_formula sg (Atom ''a'')) (sub_formula sg (Atom ''b''))}"
-      using two_bal.sub_formula_iff_form[OF sub_conn_iff] by simp
-    also have "\<dots> = {two_bal.iff_form (xs ! i) B}"
-      unfolding sg_def by simp
+    have "len_proof ?inst \<le> len_proof ?base * len_sub (set ?names) ?sub"
+      by (rule sub_proof_bound[OF finite_set outside])
+    also have "\<dots> \<le> two_slot_bound * ?S"
+      using two_slot_bound_ge[OF i_lt] len_sub by (simp add: mult_le_mono1)
     finally show ?thesis .
   qed
-  have ti_th: "thesis ti = two_bal.iff_form (Conn c xs) (Conn c (xs[i := B]))"
-  proof -
-    have "thesis ti = sub_formula sg (two_bal.iff_form
-            (Conn c ((map Atom atoms)[i := Atom ''a'']))
-            (Conn c ((map Atom atoms)[i := Atom ''b''])))"
-      unfolding ti_def using bspec by simp
-    also have "\<dots> = two_bal.iff_form
-            (sub_formula sg (Conn c ((map Atom atoms)[i := Atom ''a''])))
-            (sub_formula sg (Conn c ((map Atom atoms)[i := Atom ''b''])))"
-      by (rule two_bal.sub_formula_iff_form[OF sub_conn_iff])
-    also have "\<dots> = two_bal.iff_form (Conn c xs) (Conn c (xs[i := B]))"
-      using side_a side_b by simp
-    finally show ?thesis .
-  qed
-  have sg_wf: "\<And>v. formula_well_formed (alphabet Ftwo) (sg v)"
-  proof -
-    fix v
-    have "sg v \<in> set xs \<union> {B} \<union> {Atom v}"
-    proof (cases "v = ''a''")
-      case True
-      thus ?thesis unfolding sg_def using i_xs by simp
-    next
-      case False
-      show ?thesis
-      proof (cases "v = ''b''")
-        case True
-        thus ?thesis unfolding sg_def using False by simp
-      next
-        case False2: False
-        have "marker_substitution atoms xs v \<in> set xs \<union> {Atom v}"
-          by (rule marker_substitution_range)
-        thus ?thesis unfolding sg_def using False False2 by auto
-      qed
-    qed
-    thus "formula_well_formed (alphabet Ftwo) (sg v)"
-      using wf_xs wfB by auto
-  qed
-  have ti_wf: "\<forall> st \<in> set (steps ti). formula_well_formed (alphabet Ftwo) st"
-  proof
-    fix st assume "st \<in> set (steps ti)"
-    then obtain s0 where s0: "s0 \<in> set (steps (two_slot_base c i))"
-      and st_eq: "st = sub_formula sg s0"
-      unfolding ti_def by auto
-    have wf0: "formula_well_formed (alphabet Ftwo) s0" using bspec s0 by blast
-    show "formula_well_formed (alphabet Ftwo) st"
-      using st_eq sub_formula_well_formed[OF wf0 sg_wf] by simp
-  qed
-  \<comment> \<open>the substitution's total size\<close>
-  have len_sg: "len_sub ({''a'', ''b''} \<union> set atoms) sg
-              = max 1 (len_formula (xs ! i) + len_formula B + sum_list (map len_formula xs))"
-  proof -
-    have fin_at: "finite (set atoms)" by simp
-    have ab_neq: "(''a'' :: string) \<noteq> ''b''" by simp
-    have eq_set: "{''a'', ''b''} \<union> set atoms = insert ''a'' (insert ''b'' (set atoms))"
-      by simp
-    have "(\<Sum> v \<in> insert ''a'' (insert ''b'' (set atoms)). len_formula (sg v))
-        = len_formula (sg ''a'') + (\<Sum> v \<in> insert ''b'' (set atoms). len_formula (sg v))"
-      using fin_at at_a ab_neq by simp
-    also have "\<dots> = len_formula (sg ''a'') + len_formula (sg ''b'')
-                   + (\<Sum> v \<in> set atoms. len_formula (sg v))"
-      using fin_at at_b by simp
-    also have "\<dots> = len_formula (xs ! i) + len_formula B
-                   + (\<Sum> v \<in> set atoms. len_formula (sg v))"
-      unfolding sg_def by simp
-    finally have split: "(\<Sum> v \<in> {''a'', ''b''} \<union> set atoms. len_formula (sg v))
-        = len_formula (xs ! i) + len_formula B + (\<Sum> v \<in> set atoms. len_formula (sg v))"
-      using eq_set by simp
-    have "(\<Sum> v \<in> set atoms. len_formula (sg v))
-        = sum_list (map (\<lambda>v. len_formula (sg v)) atoms)"
-      using at_dist by (simp add: sum_list_distinct_conv_sum_set)
-    also have "\<dots> = sum_list (map len_formula (map sg atoms))" by (simp add: o_def)
-    also have "\<dots> = sum_list (map len_formula xs)" using map_sg by simp
-    finally have inner: "(\<Sum> v \<in> set atoms. len_formula (sg v))
-        = sum_list (map len_formula xs)" .
-    show ?thesis unfolding len_sub_def using split inner by simp
-  qed
-  have ti_len: "len_proof ti \<le> two_slot_bound
-                  * max 1 (len_formula (xs ! i) + len_formula B
-                            + sum_list (map len_formula xs))"
-  proof -
-    have fin: "finite ({''a'', ''b''} \<union> set atoms)" by simp
-    have outside: "\<forall>v. v \<notin> {''a'', ''b''} \<union> set atoms \<longrightarrow> sg v = Atom v"
-      unfolding sg_def using marker_substitution_outside by auto
-    have "len_proof ti \<le> len_proof (two_slot_base c i)
-                          * len_sub ({''a'', ''b''} \<union> set atoms) sg"
-      unfolding ti_def by (rule sub_proof_bound[OF fin outside])
-    also have "\<dots> \<le> two_slot_bound
-                    * max 1 (len_formula (xs ! i) + len_formula B
-                              + sum_list (map len_formula xs))"
-      using two_slot_bound_ge[OF i_lt] len_sg by (simp add: mult_le_mono1)
-    finally show ?thesis .
-  qed
-  \<comment> \<open>discharge the assumption with the given equivalence proof\<close>
-  obtain pAB where pAB: "valid_proof Ftwo pAB" "assumptions pAB = {}"
-    "frege_proof.thesis pAB = two_bal.iff_form (xs ! i) B" "len_proof pAB \<le> m"
-    "\<forall> st \<in> set (steps pAB). formula_well_formed (alphabet Ftwo) st"
+  obtain p where p: "valid_proof Ftwo p" "assumptions p = {}"
+    "frege_proof.thesis p = two_bal.iff_form (xs ! i) B" "len_proof p \<le> m"
+    "\<forall>t\<in>set (steps p). formula_well_formed (alphabet Ftwo) t"
     using ab unfolding two_prov_iff_def by blast
-  define pr where pr_def: "pr = combine_proofs pAB ti"
-  have valid_pr: "valid_proof Ftwo pr"
-    unfolding pr_def using two.combining_valid_proofs pAB(1) valid_ti by blast
-  have AB_in: "two_bal.iff_form (xs ! i) B \<in> set (steps pAB)"
-  proof -
-    have "frege_proof.thesis pAB \<in> set (steps pAB)"
-      using pAB(1) unfolding valid_proof_def by simp
-    thus ?thesis using pAB(3) by simp
-  qed
-  have pr_asm: "assumptions pr = {}"
-  proof -
-    have "assumptions pr = assumptions pAB \<union> (assumptions ti - set (steps pAB))"
-      unfolding pr_def by simp
-    also have "\<dots> = {} \<union> ({two_bal.iff_form (xs ! i) B} - set (steps pAB))"
-      using pAB(2) ti_asm by simp
-    also have "\<dots> = {}" using AB_in by blast
-    finally show ?thesis .
-  qed
-  have pr_th: "thesis pr = two_bal.iff_form (Conn c xs) (Conn c (xs[i := B]))"
-    unfolding pr_def using ti_th by simp
-  have pr_wf: "\<forall> st \<in> set (steps pr). formula_well_formed (alphabet Ftwo) st"
-    unfolding pr_def using pAB(5) ti_wf by auto
-  have pr_len: "len_proof pr = len_proof pAB + len_proof ti"
-    unfolding pr_def by simp
-  show ?thesis
-    unfolding two_prov_iff_def
-    using valid_pr pr_asm pr_th pr_wf pr_len pAB(4) ti_len by force
+  let ?out = "combine_proofs p ?inst"
+  have out_valid: "valid_proof Ftwo ?out"
+    using two.combining_valid_proofs p(1) valid by blast
+  have out_asm: "assumptions ?out = {}"
+    using valid_proof_thesis_mem[OF p(1)] p(2,3) asm by auto
+  have out_size: "len_proof ?out \<le> m + two_slot_bound * ?S"
+    using add_le_mono[OF p(4) size] by simp
+  show ?thesis unfolding two_prov_iff_def
+    by (rule exI[of _ ?out]) (use out_valid out_asm out_size p(5) wf th in auto)
 qed
 
 subsection \<open>Folding congruence over argument positions\<close>
@@ -3222,7 +2976,7 @@ proof -
       unfolding ti_def using roundtrip_canon_proof_spec by simp
     also have "\<dots> = two_bal.iff_form (sub_formula ?rho (roundtrip_canon c))
                      (sub_formula ?rho (Conn c (map Atom ?canon)))"
-      by (rule two_bal.sub_formula_iff_form[OF rho_id])
+      by (rule two_bal.sub_formula_iff_form)
     also have "\<dots> = two_bal.iff_form
                      (translate_formula (rev.translate_formula (Conn c args)))
                      (Conn c ?args)"

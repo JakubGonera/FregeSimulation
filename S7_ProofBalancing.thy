@@ -102,15 +102,6 @@ proof -
     "\<forall>st \<in> set (steps pAB). depth_formula st \<le> d"
     "\<forall>st \<in> set (steps pAB). formula_well_formed (alphabet F) st"
     unfolding provable_balanced_iff_def by blast
-  have sub_conn_iff:
-    "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
-           \<Longrightarrow> ?sub w = Atom w"
-  proof -
-    fix w assume w_ci: "w \<in> var_set_form conn_iff" and "w \<noteq> ''a''" and "w \<noteq> ''b''"
-    have "w \<in> avoid_atoms" using w_ci unfolding avoid_atoms_def by blast
-    hence "w \<noteq> ?x \<and> w \<noteq> ?y" using sym_atoms_spec by blast
-    thus "?sub w = Atom w" by simp
-  qed
   have sub_id: "\<forall>v. v \<notin> {?x, ?y} \<longrightarrow> ?sub v = Atom v" by auto
   have fin_xy: "finite {?x, ?y}" by simp
   define mi where mi_def: "mi = sub_proof ?sub mp_base_proof"
@@ -120,28 +111,12 @@ proof -
   have mi_steps: "steps mi = map (sub_formula ?sub) (steps mp_base_proof)"
     unfolding mi_def by simp
   have mi_thesis: "frege_proof.thesis mi = B"
-  proof -
-    have "frege_proof.thesis mi = sub_formula ?sub (Atom ?y)"
-      unfolding mi_def using mp_base_proof_spec by simp
-    thus ?thesis using neq by simp
-  qed
+    using neq mp_base_proof_spec unfolding mi_def by simp
   have mi_asm: "assumptions mi = {A, iff_form A B}"
   proof -
     have sub_iff: "sub_formula ?sub (iff_form (Atom ?x) (Atom ?y)) = iff_form A B"
-    proof -
-      have "sub_formula ?sub (iff_form (Atom ?x) (Atom ?y))
-          = iff_form (sub_formula ?sub (Atom ?x)) (sub_formula ?sub (Atom ?y))"
-        by (rule sub_formula_iff_form[OF sub_conn_iff])
-      also have "\<dots> = iff_form A B" using neq by simp
-      finally show ?thesis .
-    qed
-    have "assumptions mi = (sub_formula ?sub) ` (assumptions mp_base_proof)"
-      unfolding mi_def by simp
-    also have "\<dots> = (sub_formula ?sub) `
-         {Atom ?x, iff_form (Atom ?x) (Atom ?y)}"
-      using mp_base_proof_spec by simp
-    also have "\<dots> = {A, iff_form A B}" using sub_iff by simp
-    finally show ?thesis .
+      using neq by (simp add: sub_formula_iff_form)
+    show ?thesis using mp_base_proof_spec sub_iff unfolding mi_def by simp
   qed
   have mi_lines: "length (steps mi) = mp_lines"
     using mi_steps by (simp add: mp_lines_def)

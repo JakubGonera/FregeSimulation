@@ -58,45 +58,15 @@ lemma iff_form_wf:
   by (rule sub_formula_well_formed[OF conn_iff_wf]) (auto simp: iff_sub_def assms)
 
 text \<open>
-  Substitution commutes with the equivalence formula when it leaves the
-  witness's other variables untouched.  This side condition preserves the
-  fixed semantic interpretation of equivalence.
+  The equivalence witness uses only its two parameters, so substitution
+  commutes with equivalence without freshness side conditions.
 \<close>
 
 lemma sub_formula_iff_form:
-  assumes "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
-                 \<Longrightarrow> sub w = Atom w"
-  shows "sub_formula sub (iff_form A B)
+  "sub_formula sub (iff_form A B)
        = iff_form (sub_formula sub A) (sub_formula sub B)"
-proof -
-  have "sub_formula sub (iff_form A B)
-      = sub_formula (\<lambda>w. sub_formula sub (iff_sub A B w)) conn_iff"
-    unfolding iff_form_def by (rule sub_formula_comp)
-  also have "\<dots> = sub_formula (iff_sub (sub_formula sub A) (sub_formula sub B)) conn_iff"
-  proof (rule sub_formula_agree, intro ballI)
-    fix w assume w_in: "w \<in> var_set_form conn_iff"
-    show "sub_formula sub (iff_sub A B w)
-        = iff_sub (sub_formula sub A) (sub_formula sub B) w"
-    proof (cases "w = ''a''")
-      case True
-      thus ?thesis unfolding iff_sub_def by simp
-    next
-      case neq_a: False
-      show ?thesis
-      proof (cases "w = ''b''")
-        case True
-        thus ?thesis using neq_a unfolding iff_sub_def by simp
-      next
-        case neq_b: False
-        have "sub w = Atom w" using assms[OF w_in neq_a neq_b] .
-        thus ?thesis using neq_a neq_b unfolding iff_sub_def by simp
-      qed
-    qed
-  qed
-  also have "\<dots> = iff_form (sub_formula sub A) (sub_formula sub B)"
-    unfolding iff_form_def by (rule refl)
-  finally show ?thesis .
-qed
+  unfolding iff_form_def sub_formula_comp
+  by (rule sub_formula_agree) (use conn_iff_vars in \<open>auto simp: iff_sub_def\<close>)
 
 text \<open>
   Implicational completeness supplies a closed proof of each tautology.
@@ -117,17 +87,10 @@ lemma taut_proof_spec:
        \<and> thesis (taut_proof taut) = taut
        \<and> (\<forall> st \<in> set (steps (taut_proof taut)). formula_well_formed (alphabet F) st)"
 proof -
-  have fs_F: "frege_system F"
-    by (meson frege_balancing_axioms frege_balancing_def)
-  have "(\<forall>f \<in> {}. formula_well_formed (alphabet F) f) \<longrightarrow>
-        formula_well_formed (alphabet F) taut \<longrightarrow>
-        (\<forall>val. (\<forall>f \<in> {}. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val taut) \<longrightarrow>
-        (\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut
-            \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
-    using frege_system.impl_complete[OF fs_F] by blast
-  hence "\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut
-            \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st)"
-    using assms by simp
+  have fs_F: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+  have "\<exists>pr. valid_proof F pr \<and> assumptions pr = {} \<and> thesis pr = taut
+      \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st)"
+    using assms frege_system.impl_complete[OF fs_F] by blast
   thus ?thesis unfolding taut_proof_def by (rule someI_ex)
 qed
 
@@ -146,6 +109,11 @@ definition provable_balanced_iff ::
            \<and> (\<forall>s \<in> set (steps pr). len_formula s \<le> sz)
            \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> dep)
            \<and> (\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s))"
+
+lemma provable_balanced_iff_derivation:
+  "provable_balanced_iff A B l s d \<longleftrightarrow>
+   bounded_derivation F {} (iff_form A B) l s d"
+  unfolding provable_balanced_iff_def bounded_derivation_def by auto
 
 lemma provable_balanced_iff_weaken:
   assumes "provable_balanced_iff A B lines sz dep"
@@ -167,35 +135,6 @@ definition avoid_atoms :: "string set" where
 lemma avoid_atoms_finite: "finite avoid_atoms"
   unfolding avoid_atoms_def by (simp add: var_set_form_finite)
 
-text \<open>
-  Substitution into a fixed proof must leave unrelated variables of the
-  equivalence and balancing witnesses unchanged.  The following hygiene
-  lemma discharges that obligation for the later proof lifts.
-\<close>
-
-lemma fresh_sub_conn:
-  assumes disj: "set atoms \<inter> avoid_atoms = {}"
-      and sid: "\<forall>v. v \<notin> set atoms \<longrightarrow> sub v = Atom v"
-      and "w \<in> var_set_form conn_iff" and "w \<noteq> ''a''" and "w \<noteq> ''b''"
-    shows "sub w = Atom w"
-proof -
-  have "w \<in> avoid_atoms" using assms(3) unfolding avoid_atoms_def by blast
-  hence "w \<notin> set atoms" using disj by blast
-  thus ?thesis using sid by blast
-qed
-
-lemma fresh_sub_cb:
-  assumes disj: "set atoms \<inter> avoid_atoms = {}"
-      and sid: "\<forall>v. v \<notin> set atoms \<longrightarrow> sub v = Atom v"
-      and "v \<in> var_set_form custom_balancing"
-          "v \<noteq> ''x''" "v \<noteq> ''y''" "v \<noteq> ''z''"
-    shows "sub v = Atom v"
-proof -
-  have "v \<in> avoid_atoms" using assms(3) unfolding avoid_atoms_def by blast
-  hence "v \<notin> set atoms" using disj by blast
-  thus ?thesis using sid by blast
-qed
-
 definition fresh_atoms :: "nat \<Rightarrow> string list" where
   "fresh_atoms n =
      (SOME vs. length vs = n \<and> distinct vs \<and> set vs \<inter> avoid_atoms = {})"
@@ -203,11 +142,8 @@ definition fresh_atoms :: "nat \<Rightarrow> string list" where
 lemma fresh_atoms_spec:
   "length (fresh_atoms n) = n \<and> distinct (fresh_atoms n)
    \<and> set (fresh_atoms n) \<inter> avoid_atoms = {}"
-proof -
-  have "\<exists>vs. length vs = n \<and> distinct vs \<and> set vs \<inter> avoid_atoms = {}"
-    using fresh_distinct_atoms_exist_general[OF avoid_atoms_finite] .
-  thus ?thesis unfolding fresh_atoms_def by (rule someI_ex)
-qed
+  using fresh_distinct_atoms_exist_general[OF avoid_atoms_finite]
+  unfolding fresh_atoms_def by (rule someI_ex)
 
 text \<open>Reflexivity comes from substituting into a fixed equivalence
   identity over one fresh atom.\<close>
@@ -222,19 +158,6 @@ text \<open>
 
 definition refl_atom :: string where
   "refl_atom = fresh_atoms 1 ! 0"
-
-lemma refl_atom_fresh: "refl_atom \<notin> avoid_atoms"
-proof -
-  have len1: "length (fresh_atoms 1) = 1" using fresh_atoms_spec[of 1] by simp
-  have "fresh_atoms 1 ! 0 \<in> set (fresh_atoms 1)"
-    using nth_mem[of 0 "fresh_atoms 1"] len1 by simp
-  moreover have "set (fresh_atoms 1) \<inter> avoid_atoms = {}"
-    using fresh_atoms_spec[of 1] by simp
-  ultimately show ?thesis unfolding refl_atom_def by blast
-qed
-
-lemma refl_atom_not_conn_iff: "refl_atom \<notin> var_set_form conn_iff"
-  using refl_atom_fresh unfolding avoid_atoms_def by blast
 
 definition refl_base_proof :: "'c frege_proof" where
   "refl_base_proof = taut_proof (iff_form (Atom refl_atom) (Atom refl_atom))"
@@ -258,78 +181,27 @@ lemma provable_balanced_iff_subst:
   assumes "provable_balanced_iff A B lines sz dep"
       and "finite var_set"
       and "\<forall>v. v \<notin> var_set \<longrightarrow> sub v = Atom v"
-      and "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
-                 \<Longrightarrow> sub w = Atom w"
       and sub_wf: "\<And>v. v \<in> var_set \<Longrightarrow> formula_well_formed (alphabet F) (sub v)"
     shows "provable_balanced_iff (sub_formula sub A) (sub_formula sub B)
              lines (sz * len_sub var_set sub) (dep + depth_sub var_set sub)"
 proof -
-  have fs_F: "frege_system F"
+  have fs: "frege_system F"
     by (meson frege_balancing_axioms frege_balancing_def)
-  from assms(1) obtain pr where pr:
+  obtain pr where pr:
     "valid_proof F pr" "assumptions pr = {}" "frege_proof.thesis pr = iff_form A B"
     "length (steps pr) \<le> lines"
-    "\<forall>s \<in> set (steps pr). len_formula s \<le> sz"
-    "\<forall>s \<in> set (steps pr). depth_formula s \<le> dep"
-    "\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s"
-    unfolding provable_balanced_iff_def by blast
-  have sub_values_wf: "formula_well_formed (alphabet F) (sub v)" for v
-  proof (cases "v \<in> var_set")
-    case True thus ?thesis by (rule sub_wf)
-  next
-    case False thus ?thesis using assms(3) by simp
-  qed
-  let ?pr' = "sub_proof sub pr"
-  have valid': "valid_proof F ?pr'"
-    using frege_system.proof_substitution[OF fs_F] pr(1) by blast
-  have asm': "assumptions ?pr' = {}" using pr(2) by simp
-  have thesis': "frege_proof.thesis ?pr'
-               = iff_form (sub_formula sub A) (sub_formula sub B)"
-  proof -
-    have "frege_proof.thesis ?pr' = sub_formula sub (iff_form A B)"
-      using pr(3) by simp
-    also have "\<dots> = iff_form (sub_formula sub A) (sub_formula sub B)"
-      by (rule sub_formula_iff_form[OF assms(4)])
-    finally show ?thesis .
-  qed
-  have len': "length (steps ?pr') \<le> lines" using pr(4) by simp
-  have step_len': "\<forall>s' \<in> set (steps ?pr').
-                     len_formula s' \<le> sz * len_sub var_set sub"
-  proof
-    fix s' assume "s' \<in> set (steps ?pr')"
-    then obtain s where s_in: "s \<in> set (steps pr)"
-                    and s'_eq: "s' = sub_formula sub s" by auto
-    have "len_formula s' \<le> len_formula s * len_sub var_set sub"
-      using s'_eq sub_formula_bound[OF assms(2,3)] by simp
-    moreover have "len_formula s \<le> sz" using pr(5) s_in by blast
-    ultimately show "len_formula s' \<le> sz * len_sub var_set sub"
-      using mult_le_mono1 le_trans by blast
-  qed
-  have step_dep': "\<forall>s' \<in> set (steps ?pr').
-                     depth_formula s' \<le> dep + depth_sub var_set sub"
-  proof
-    fix s' assume "s' \<in> set (steps ?pr')"
-    then obtain s where s_in: "s \<in> set (steps pr)"
-                    and s'_eq: "s' = sub_formula sub s" by auto
-    have "depth_formula s' \<le> depth_formula s + depth_sub var_set sub"
-      using s'_eq sub_formula_depth_bound[OF assms(2,3)] by simp
-    moreover have "depth_formula s \<le> dep" using pr(6) s_in by blast
-    ultimately show "depth_formula s' \<le> dep + depth_sub var_set sub"
-      using add_le_mono1 le_trans by blast
-  qed
-  have step_wf': "\<forall>s' \<in> set (steps ?pr'). formula_well_formed (alphabet F) s'"
-  proof
-    fix s' assume "s' \<in> set (steps ?pr')"
-    then obtain s where s_in: "s \<in> set (steps pr)"
-                    and s'_eq: "s' = sub_formula sub s"  by auto
-    have "formula_well_formed (alphabet F) s"
-      using pr(7) s_in by blast
-    thus "formula_well_formed (alphabet F) s'"
-      unfolding s'_eq using sub_values_wf by (rule sub_formula_well_formed)
-  qed
-  show ?thesis
-    unfolding provable_balanced_iff_def
-    using valid' asm' thesis' len' step_len' step_dep' step_wf' by blast
+    "\<forall>s\<in>set (steps pr). len_formula s \<le> sz"
+    "\<forall>s\<in>set (steps pr). depth_formula s \<le> dep"
+    "\<forall>s\<in>set (steps pr). formula_well_formed (alphabet F) s"
+    using assms(1) unfolding provable_balanced_iff_def by blast
+  have wf: "formula_well_formed (alphabet F) (sub v)" for v
+    using assms(3) sub_wf by (cases "v \<in> var_set") auto
+  have valid: "valid_proof F (sub_proof sub pr)"
+    by (rule frege_system.proof_substitution[OF fs pr(1)])
+  note bounds = sub_proof_line_bounds[OF assms(2,3) pr(5,6,7) wf]
+  show ?thesis unfolding provable_balanced_iff_def
+    by (rule exI[of _ "sub_proof sub pr"])
+       (use valid bounds pr(2,3,4) in \<open>auto simp: sub_formula_iff_form\<close>)
 qed
 
 text \<open>
@@ -351,24 +223,14 @@ proof -
             \<and> thesis ?pr = iff_form A B
             \<and> (\<forall> st \<in> set (steps ?pr). formula_well_formed (alphabet F) st)"
     using taut_proof_spec[OF iff_form_wf[OF wfA wfB] taut] .
-  have fin_l: "finite (insert 1 (len_formula ` set (steps ?pr)))" by simp
-  have fin_d: "finite (insert 1 (depth_formula ` set (steps ?pr)))" by simp
+  have fin_l: "finite (insert 1 (len_formula ` set (steps ?pr)))"
+    and fin_d: "finite (insert 1 (depth_formula ` set (steps ?pr)))" by simp_all
   have step_len: "\<forall>s \<in> set (steps ?pr).
                     len_formula s \<le> Max (insert 1 (len_formula ` set (steps ?pr)))"
-  proof
-    fix s assume "s \<in> set (steps ?pr)"
-    hence "len_formula s \<in> insert 1 (len_formula ` set (steps ?pr))" by simp
-    thus "len_formula s \<le> Max (insert 1 (len_formula ` set (steps ?pr)))"
-      using Max_ge[OF fin_l] by blast
-  qed
+    using Max_ge[OF fin_l] by auto
   have step_dep: "\<forall>s \<in> set (steps ?pr).
                     depth_formula s \<le> Max (insert 1 (depth_formula ` set (steps ?pr)))"
-  proof
-    fix s assume "s \<in> set (steps ?pr)"
-    hence "depth_formula s \<in> insert 1 (depth_formula ` set (steps ?pr))" by simp
-    thus "depth_formula s \<le> Max (insert 1 (depth_formula ` set (steps ?pr)))"
-      using Max_ge[OF fin_d] by blast
-  qed
+    using Max_ge[OF fin_d] by auto
   show ?thesis
     unfolding provable_balanced_iff_def
     using spec step_len step_dep by blast
@@ -391,9 +253,6 @@ proof -
     by simp
   have fin: "finite {?z}" by simp
   have sub_id: "\<forall>v. v \<notin> {?z} \<longrightarrow> ?sub v = Atom v" by simp
-  have sub_ci: "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
-                 \<Longrightarrow> ?sub w = Atom w"
-    using refl_atom_not_conn_iff by auto
   have sub_wf: "\<And>v. v \<in> {?z} \<Longrightarrow> formula_well_formed (alphabet F) (?sub v)"
     using wfA by simp
   have len_sub_eq: "len_sub {?z} ?sub = len_formula A"
@@ -401,7 +260,7 @@ proof -
   have depth_sub_eq: "depth_sub {?z} ?sub = depth_formula A"
     using depth_formula_ge_1[of A] by (simp add: depth_sub_def)
   show ?thesis
-    using provable_balanced_iff_subst[OF base fin sub_id sub_ci sub_wf]
+    using provable_balanced_iff_subst[OF base fin sub_id sub_wf]
     by (simp add: len_sub_eq depth_sub_eq)
 qed
 
@@ -434,17 +293,10 @@ lemma entails_proof_spec:
        \<and> thesis (entails_proof fs th) = th
        \<and> (\<forall> st \<in> set (steps (entails_proof fs th)). formula_well_formed (alphabet F) st)"
 proof -
-  have fs_F: "frege_system F"
-    by (meson frege_balancing_axioms frege_balancing_def)
-  have "(\<forall>f \<in> fs. formula_well_formed (alphabet F) f) \<longrightarrow>
-        formula_well_formed (alphabet F) th \<longrightarrow>
-        (\<forall>val. (\<forall>f \<in> fs. eval (alphabet F) val f) \<longrightarrow> eval (alphabet F) val th) \<longrightarrow>
-        (\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th
-            \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st))"
-    using frege_system.impl_complete[OF fs_F] by blast
-  hence "\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th
-            \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st)"
-    using assms by simp
+  have fs_F: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+  have "\<exists>pr. valid_proof F pr \<and> assumptions pr = fs \<and> thesis pr = th
+      \<and> (\<forall> st \<in> set (steps pr). formula_well_formed (alphabet F) st)"
+    using assms frege_system.impl_complete[OF fs_F] by blast
   thus ?thesis unfolding entails_proof_def by (rule someI_ex)
 qed
 
@@ -459,33 +311,9 @@ lemma trans_atoms_spec:
    \<and> trans_atom_z \<notin> avoid_atoms
    \<and> trans_atom_x \<noteq> trans_atom_y \<and> trans_atom_x \<noteq> trans_atom_z
    \<and> trans_atom_y \<noteq> trans_atom_z"
-proof -
-  have len3: "length (fresh_atoms 3) = 3" using fresh_atoms_spec[of 3] by simp
-  have dist: "distinct (fresh_atoms 3)" using fresh_atoms_spec[of 3] by simp
-  have disj: "set (fresh_atoms 3) \<inter> avoid_atoms = {}"
-    using fresh_atoms_spec[of 3] by simp
-  have m0: "fresh_atoms 3 ! 0 \<in> set (fresh_atoms 3)"
-    using nth_mem[of 0 "fresh_atoms 3"] len3 by simp
-  have m1: "fresh_atoms 3 ! 1 \<in> set (fresh_atoms 3)"
-    using nth_mem[of 1 "fresh_atoms 3"] len3 by simp
-  have m2: "fresh_atoms 3 ! 2 \<in> set (fresh_atoms 3)"
-    using nth_mem[of 2 "fresh_atoms 3"] len3 by simp
-  have "trans_atom_x \<notin> avoid_atoms" unfolding trans_atom_x_def using m0 disj by blast
-  moreover have "trans_atom_y \<notin> avoid_atoms"
-    unfolding trans_atom_y_def using m1 disj by blast
-  moreover have "trans_atom_z \<notin> avoid_atoms"
-    unfolding trans_atom_z_def using m2 disj by blast
-  moreover have "trans_atom_x \<noteq> trans_atom_y"
-    unfolding trans_atom_x_def trans_atom_y_def
-    using nth_eq_iff_index_eq[OF dist, of 0 1] len3 by simp
-  moreover have "trans_atom_x \<noteq> trans_atom_z"
-    unfolding trans_atom_x_def trans_atom_z_def
-    using nth_eq_iff_index_eq[OF dist, of 0 2] len3 by simp
-  moreover have "trans_atom_y \<noteq> trans_atom_z"
-    unfolding trans_atom_y_def trans_atom_z_def
-    using nth_eq_iff_index_eq[OF dist, of 1 2] len3 by simp
-  ultimately show ?thesis by blast
-qed
+  using fresh_atoms_spec[of 3]
+  unfolding trans_atom_x_def trans_atom_y_def trans_atom_z_def
+  by (auto intro: nth_mem simp: nth_eq_iff_index_eq disjoint_iff)
 
 definition trans_base_proof :: "'c frege_proof" where
   "trans_base_proof =
@@ -543,320 +371,48 @@ lemma iff_trans:
                 + max (depth_formula A)
                       (max (depth_formula B) (depth_formula C)))))"
 proof -
-  have fs_F: "frege_system F"
-    by (meson frege_balancing_axioms frege_balancing_def)
-  let ?x = "trans_atom_x" and ?y = "trans_atom_y" and ?z = "trans_atom_z"
-  let ?sub = "\<lambda>w. if w = ?x then A else if w = ?y then B
-                  else if w = ?z then C else Atom w"
-  let ?lines_t = "l1 + l2 + trans_lines"
-  let ?sz_t = "s1 + s2 + trans_step_len
-                 * (len_formula A + len_formula B + len_formula C)"
-  let ?dep_t = "max d1 (max d2 (trans_step_depth
-                  + max (depth_formula A)
-                        (max (depth_formula B) (depth_formula C))))"
-
-  have neq: "?x \<noteq> ?y" "?x \<noteq> ?z" "?y \<noteq> ?z" using trans_atoms_spec by blast+
-
-  from assms(1) obtain pAB where pAB:
-    "valid_proof F pAB" "assumptions pAB = {}"
-    "frege_proof.thesis pAB = iff_form A B"
-    "length (steps pAB) \<le> l1"
-    "\<forall>s \<in> set (steps pAB). len_formula s \<le> s1"
-    "\<forall>s \<in> set (steps pAB). depth_formula s \<le> d1"
-    "\<forall>s \<in> set (steps pAB). formula_well_formed (alphabet F) s"
-    unfolding provable_balanced_iff_def by blast
-  from assms(2) obtain pBC where pBC:
-    "valid_proof F pBC" "assumptions pBC = {}"
-    "frege_proof.thesis pBC = iff_form B C"
-    "length (steps pBC) \<le> l2"
-    "\<forall>s \<in> set (steps pBC). len_formula s \<le> s2"
-    "\<forall>s \<in> set (steps pBC). depth_formula s \<le> d2"
-    "\<forall>s \<in> set (steps pBC). formula_well_formed (alphabet F) s"
-    unfolding provable_balanced_iff_def by blast
-
-  \<comment> \<open>sub leaves conn_iff's own variables alone.\<close>
-  have sub_conn_iff:
-    "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
-           \<Longrightarrow> ?sub w = Atom w"
-  proof -
-    fix w assume w_ci: "w \<in> var_set_form conn_iff"
-      and "w \<noteq> ''a''" and "w \<noteq> ''b''"
-    have "w \<in> avoid_atoms" using w_ci unfolding avoid_atoms_def by blast
-    hence "w \<noteq> ?x \<and> w \<noteq> ?y \<and> w \<noteq> ?z" using trans_atoms_spec by blast
-    thus "?sub w = Atom w" by simp
-  qed
-  have sub_id: "\<forall>v. v \<notin> {?x, ?y, ?z} \<longrightarrow> ?sub v = Atom v" by auto
-  have fin_xyz: "finite {?x, ?y, ?z}" by simp
-
-  \<comment> \<open>The substituted transitivity proof, kept opaque so its named facts
-      stay usable through the combine steps below.\<close>
-  define ti where ti_def: "ti = sub_proof ?sub trans_base_proof"
-  have valid_ti: "valid_proof F ti"
-    unfolding ti_def
-    using frege_system.proof_substitution[OF fs_F] trans_base_proof_spec by blast
-  have ti_steps: "steps ti = map (sub_formula ?sub) (steps trans_base_proof)"
-    unfolding ti_def by simp
-  have ti_thesis: "frege_proof.thesis ti = iff_form A C"
-  proof -
-    have "frege_proof.thesis ti
-        = sub_formula ?sub (iff_form (Atom ?x) (Atom ?z))"
-      unfolding ti_def using trans_base_proof_spec by simp
-    also have "\<dots> = iff_form (sub_formula ?sub (Atom ?x)) (sub_formula ?sub (Atom ?z))"
-      by (rule sub_formula_iff_form[OF sub_conn_iff])
-    also have "\<dots> = iff_form A C" using neq by simp
-    finally show ?thesis .
-  qed
-  have ti_asm: "assumptions ti = {iff_form A B, iff_form B C}"
-  proof -
-    have sub_xy: "sub_formula ?sub (iff_form (Atom ?x) (Atom ?y)) = iff_form A B"
-    proof -
-      have "sub_formula ?sub (iff_form (Atom ?x) (Atom ?y))
-          = iff_form (sub_formula ?sub (Atom ?x)) (sub_formula ?sub (Atom ?y))"
-        by (rule sub_formula_iff_form[OF sub_conn_iff])
-      also have "\<dots> = iff_form A B" using neq by simp
-      finally show ?thesis .
-    qed
-    have sub_yz: "sub_formula ?sub (iff_form (Atom ?y) (Atom ?z)) = iff_form B C"
-    proof -
-      have "sub_formula ?sub (iff_form (Atom ?y) (Atom ?z))
-          = iff_form (sub_formula ?sub (Atom ?y)) (sub_formula ?sub (Atom ?z))"
-        by (rule sub_formula_iff_form[OF sub_conn_iff])
-      also have "\<dots> = iff_form B C" using neq by simp
-      finally show ?thesis .
-    qed
-    have "assumptions ti = (sub_formula ?sub) ` (assumptions trans_base_proof)"
-      unfolding ti_def by simp
-    also have "\<dots> = (sub_formula ?sub) `
-         {iff_form (Atom ?x) (Atom ?y), iff_form (Atom ?y) (Atom ?z)}"
-      using trans_base_proof_spec by simp
-    also have "\<dots> = {iff_form A B, iff_form B C}"
-      using sub_xy sub_yz by simp
-    finally show ?thesis .
-  qed
-  have ti_lines: "length (steps ti) = trans_lines"
-    using ti_steps by (simp add: trans_lines_def)
-  have ti_wf: "\<forall>s \<in> set (steps ti). formula_well_formed (alphabet F) s"
-  proof
-    fix s assume "s \<in> set (steps ti)"
-    then obtain s0 where s0_in: "s0 \<in> set (steps trans_base_proof)"
-      and s_eq: "s = sub_formula ?sub s0"
-      using ti_steps by auto
-    have vals_wf: "formula_well_formed (alphabet F) (?sub v)" for v
-      using wfA wfB wfC by simp
-    have "formula_well_formed (alphabet F) s0"
-      using trans_base_proof_spec s0_in by blast
-    thus "formula_well_formed (alphabet F) s"
-      unfolding s_eq using vals_wf by (rule sub_formula_well_formed)
-  qed
-
-  \<comment> \<open>Substitution-size facts for the transitivity proof's lines.\<close>
-  have len_sub_eq: "len_sub {?x, ?y, ?z} ?sub
-                  = len_formula A + len_formula B + len_formula C"
-  proof -
-    have "(\<Sum>v \<in> {?x, ?y, ?z}. len_formula (?sub v))
-        = len_formula A + len_formula B + len_formula C"
-      using neq by simp
-    moreover have "len_formula A \<ge> 1" by (rule len_formula_positive)
-    ultimately show ?thesis unfolding len_sub_def by simp
-  qed
-  have depth_sub_le: "depth_sub {?x, ?y, ?z} ?sub
-                    \<le> max (depth_formula A)
-                          (max (depth_formula B) (depth_formula C))"
-  proof -
-    have img: "(\<lambda>v. depth_formula (?sub v)) ` {?x, ?y, ?z}
-             = {depth_formula A, depth_formula B, depth_formula C}"
-      using neq by auto
-    have "depth_sub {?x, ?y, ?z} ?sub
-        = Max (insert 1 {depth_formula A, depth_formula B, depth_formula C})"
-      unfolding depth_sub_def using img by simp
-    also have "\<dots> \<le> max (depth_formula A)
-                        (max (depth_formula B) (depth_formula C))"
-    proof (rule Max.boundedI)
-      show "finite (insert 1 {depth_formula A, depth_formula B, depth_formula C})"
-        by simp
-      show "insert 1 {depth_formula A, depth_formula B, depth_formula C} \<noteq> {}"
-        by simp
-      fix e assume "e \<in> insert 1 {depth_formula A, depth_formula B, depth_formula C}"
-      thus "e \<le> max (depth_formula A) (max (depth_formula B) (depth_formula C))"
-        using depth_formula_ge_1[of A] depth_formula_ge_1[of B]
-              depth_formula_ge_1[of C] by auto
-    qed
-    finally show ?thesis .
-  qed
-
-  have fin_tl: "finite (insert 1 (len_formula ` set (steps trans_base_proof)))"
-    by simp
-  have fin_td: "finite (insert 1 (depth_formula ` set (steps trans_base_proof)))"
-    by simp
-
-  \<comment> \<open>Combine: proof of A \<leftrightarrow> B, proof of B \<leftrightarrow> C, then the transitivity step.\<close>
-  define c1 where c1_def: "c1 = combine_proofs pAB pBC"
-  have valid_c1: "valid_proof F c1"
-    unfolding c1_def
-    using frege_system.combining_valid_proofs[OF fs_F] pAB(1) pBC(1) by blast
-  have c1_asm: "assumptions c1 = {}"
-    unfolding c1_def using pAB(2) pBC(2) by simp
-  have c1_steps: "steps c1 = steps pAB @ steps pBC"
-    unfolding c1_def by simp
-
-  define cb where cb_def: "cb = combine_proofs c1 ti"
-  have valid_cb: "valid_proof F cb"
-    unfolding cb_def
-    using frege_system.combining_valid_proofs[OF fs_F] valid_c1 valid_ti by blast
-
-  have AB_in: "iff_form A B \<in> set (steps pAB)"
-  proof -
-    have ne: "steps pAB \<noteq> []" using pAB(1) unfolding valid_proof_def by simp
-    have "frege_proof.thesis pAB = last (steps pAB)"
-      using pAB(1) unfolding valid_proof_def by simp
-    hence "iff_form A B = last (steps pAB)" using pAB(3) by simp
-    moreover have "last (steps pAB) \<in> set (steps pAB)" using ne by (rule last_in_set)
-    ultimately show ?thesis by simp
-  qed
-  have BC_in: "iff_form B C \<in> set (steps pBC)"
-  proof -
-    have ne: "steps pBC \<noteq> []" using pBC(1) unfolding valid_proof_def by simp
-    have "frege_proof.thesis pBC = last (steps pBC)"
-      using pBC(1) unfolding valid_proof_def by simp
-    hence "iff_form B C = last (steps pBC)" using pBC(3) by simp
-    moreover have "last (steps pBC) \<in> set (steps pBC)" using ne by (rule last_in_set)
-    ultimately show ?thesis by simp
-  qed
-
-  have cb_asm: "assumptions cb = {}"
-  proof -
-    have sub: "{iff_form A B, iff_form B C} \<subseteq> set (steps c1)"
-      using AB_in BC_in c1_steps by auto
-    have "assumptions cb = assumptions c1 \<union> (assumptions ti - set (steps c1))"
-      unfolding cb_def by simp
-    also have "\<dots> = {} \<union> ({iff_form A B, iff_form B C} - set (steps c1))"
-      using c1_asm ti_asm by simp
-    also have "\<dots> = {}" using sub by blast
-    finally show ?thesis .
-  qed
-  have cb_thesis: "frege_proof.thesis cb = iff_form A C"
-    unfolding cb_def using ti_thesis by simp
-  have cb_steps: "steps cb = steps pAB @ steps pBC @ steps ti"
-  proof -
-    have "steps cb = steps c1 @ steps ti" unfolding cb_def by simp
-    thus ?thesis using c1_steps by simp
-  qed
-
-  have cb_lines: "length (steps cb) \<le> ?lines_t"
-  proof -
-    have "length (steps cb)
-        = length (steps pAB) + length (steps pBC) + length (steps ti)"
-      using cb_steps by simp
-    thus ?thesis using pAB(4) pBC(4) ti_lines by linarith
-  qed
-
-  have step_len: "\<forall>s \<in> set (steps cb). len_formula s \<le> ?sz_t"
-  proof
-    fix s assume "s \<in> set (steps cb)"
-    hence "s \<in> set (steps pAB) \<or> s \<in> set (steps pBC) \<or> s \<in> set (steps ti)"
-      using cb_steps by auto
-    thus "len_formula s \<le> ?sz_t"
-    proof (elim disjE)
-      assume "s \<in> set (steps pAB)"
-      hence "len_formula s \<le> s1" using pAB(5) by blast
-      thus ?thesis by linarith
-    next
-      assume "s \<in> set (steps pBC)"
-      hence "len_formula s \<le> s2" using pBC(5) by blast
-      thus ?thesis by linarith
-    next
-      assume "s \<in> set (steps ti)"
-      then obtain s0 where s0_in: "s0 \<in> set (steps trans_base_proof)"
-                       and s_eq: "s = sub_formula ?sub s0"
-        using ti_steps by auto
-      have "len_formula s \<le> len_formula s0 * len_sub {?x, ?y, ?z} ?sub"
-        using s_eq sub_formula_bound[OF fin_xyz sub_id] by simp
-      also have "\<dots> = len_formula s0
-                      * (len_formula A + len_formula B + len_formula C)"
-        using len_sub_eq by simp
-      also have "\<dots> \<le> trans_step_len
-                      * (len_formula A + len_formula B + len_formula C)"
-      proof -
-        have "len_formula s0 \<in> insert 1 (len_formula ` set (steps trans_base_proof))"
-          using s0_in by simp
-        hence "len_formula s0 \<le> trans_step_len"
-          unfolding trans_step_len_def using Max_ge[OF fin_tl] by blast
-        thus ?thesis by (rule mult_le_mono1)
-      qed
-      finally show ?thesis by linarith
-    qed
-  qed
-
-  have step_depth: "\<forall>s \<in> set (steps cb). depth_formula s \<le> ?dep_t"
-  proof
-    fix s assume "s \<in> set (steps cb)"
-    hence "s \<in> set (steps pAB) \<or> s \<in> set (steps pBC) \<or> s \<in> set (steps ti)"
-      using cb_steps by auto
-    thus "depth_formula s \<le> ?dep_t"
-    proof (elim disjE)
-      assume "s \<in> set (steps pAB)"
-      hence "depth_formula s \<le> d1" using pAB(6) by blast
-      moreover have "d1 \<le> ?dep_t" by simp
-      ultimately show ?thesis by linarith
-    next
-      assume "s \<in> set (steps pBC)"
-      hence "depth_formula s \<le> d2" using pBC(6) by blast
-      moreover have "d2 \<le> ?dep_t" by simp
-      ultimately show ?thesis by linarith
-    next
-      assume "s \<in> set (steps ti)"
-      then obtain s0 where s0_in: "s0 \<in> set (steps trans_base_proof)"
-                       and s_eq: "s = sub_formula ?sub s0"
-        using ti_steps by auto
-      have "depth_formula s \<le> depth_formula s0 + depth_sub {?x, ?y, ?z} ?sub"
-        using s_eq sub_formula_depth_bound[OF fin_xyz sub_id] by simp
-      also have "\<dots> \<le> depth_formula s0
-                      + max (depth_formula A)
-                            (max (depth_formula B) (depth_formula C))"
-        using depth_sub_le by simp
-      also have "\<dots> \<le> trans_step_depth
-                      + max (depth_formula A)
-                            (max (depth_formula B) (depth_formula C))"
-      proof -
-        have "depth_formula s0
-            \<in> insert 1 (depth_formula ` set (steps trans_base_proof))"
-          using s0_in by simp
-        hence "depth_formula s0 \<le> trans_step_depth"
-          unfolding trans_step_depth_def using Max_ge[OF fin_td] by blast
-        thus ?thesis by simp
-      qed
-      also have "\<dots> \<le> ?dep_t" by simp
-      finally show ?thesis .
-    qed
-  qed
-
-  have step_wf: "\<forall>s \<in> set (steps cb). formula_well_formed (alphabet F) s"
-  proof
-    fix s assume "s \<in> set (steps cb)"
-    hence "s \<in> set (steps pAB) \<or> s \<in> set (steps pBC) \<or> s \<in> set (steps ti)"
-      using cb_steps by auto
-    thus "formula_well_formed (alphabet F) s"
-      using pAB(7) pBC(7) ti_wf by blast
-  qed
-
+  have fs: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+  let ?names = "[trans_atom_x, trans_atom_y, trans_atom_z]"
+  let ?args = "[A,B,C]"
+  let ?D = "max (depth_formula A) (max (depth_formula B) (depth_formula C))"
+  have base: "bounded_derivation F
+    {iff_form (Atom trans_atom_x) (Atom trans_atom_y),
+     iff_form (Atom trans_atom_y) (Atom trans_atom_z)}
+    (iff_form (Atom trans_atom_x) (Atom trans_atom_z))
+    trans_lines trans_step_len trans_step_depth"
+    unfolding trans_lines_def trans_step_len_def trans_step_depth_def
+    by (rule bounded_derivation_from_proof[where pr=trans_base_proof])
+       (use trans_base_proof_spec in auto)
+  have names: "distinct ?names" using trans_atoms_spec by simp
+  have lengths: "length ?args = length ?names" by simp
+  have wf: "formula_well_formed (alphabet F) g" if "g \<in> set ?args" for g
+    using that wfA wfB wfC by auto
+  have one: "1 \<le> ?D" using depth_formula_ge_1[of A] by simp
+  have dep: "depth_formula g \<le> ?D" if "g \<in> set ?args" for g
+    using that by auto
+  have instantiated: "bounded_derivation F {iff_form A B, iff_form B C} (iff_form A C)
+    trans_lines (trans_step_len * (len_formula A + len_formula B + len_formula C))
+    (trans_step_depth + ?D)"
+    using bounded_derivation_marker_instance[OF fs base names lengths wf one dep]
+      trans_atoms_spec len_formula_positive[of A]
+    by (auto simp: sub_formula_iff_form marker_substitution_def add.assoc)
+  note AB = assms(1)[unfolded provable_balanced_iff_derivation]
+  note BC = assms(2)[unfolded provable_balanced_iff_derivation]
+  have tail: "bounded_derivation F {iff_form A B} (iff_form A C)
+    (l2 + trans_lines)
+    (s2 + trans_step_len * (len_formula A + len_formula B + len_formula C))
+    (max d2 (trans_step_depth + ?D))"
+    by (rule bounded_derivation_cut[OF fs BC])
+       (use instantiated in \<open>simp only: insert_commute\<close>)
   show ?thesis
-    unfolding provable_balanced_iff_def
-  proof (intro exI[where x = cb] conjI)
-    show "valid_proof F cb" using valid_cb .
-    show "assumptions cb = {}" using cb_asm .
-    show "frege_proof.thesis cb = iff_form A C" using cb_thesis .
-    show "length (steps cb) \<le> ?lines_t" using cb_lines .
-    show "\<forall>s \<in> set (steps cb). len_formula s \<le> ?sz_t" using step_len .
-    show "\<forall>s \<in> set (steps cb). depth_formula s \<le> ?dep_t" using step_depth .
-    show "\<forall>s \<in> set (steps cb). formula_well_formed (alphabet F) s" using step_wf .
-  qed
+    using bounded_derivation_cut[OF fs AB tail]
+    by (simp add: provable_balanced_iff_derivation add.assoc)
 qed
 
 text \<open>
-  Balancing congruence cannot be obtained directly from the one-hole
-  congruence lemma, because the balancing formula is specified only by its
-  semantics.  The construction therefore uses a fixed tautology and
-  substitution to lift the input equivalences.
+  A fixed derived rule replaces the three inputs of the balancing formula
+  simultaneously. Substitution instantiates its six parameters, and cutting
+  the three input equivalence proofs gives a fixed depth overhead.
 \<close>
 
 subsection \<open>Balance congruence (Filmus 3.2)\<close>
@@ -869,52 +425,10 @@ text \<open>
 \<close>
 
 lemma sub_formula_balance:
-  assumes "\<And>v. v \<in> var_set_form custom_balancing \<Longrightarrow> v \<noteq> ''x'' \<Longrightarrow> v \<noteq> ''y''
-                 \<Longrightarrow> v \<noteq> ''z'' \<Longrightarrow> sub v = Atom v"
-  shows "sub_formula sub (balance x y z)
+  "sub_formula sub (balance x y z)
        = balance (sub_formula sub x) (sub_formula sub y) (sub_formula sub z)"
-proof -
-  let ?bs = "\<lambda>v. if v = ''x'' then x else if v = ''y'' then y
-                 else if v = ''z'' then z else Atom v"
-  let ?bs' = "\<lambda>v. if v = ''x'' then sub_formula sub x
-                  else if v = ''y'' then sub_formula sub y
-                  else if v = ''z'' then sub_formula sub z else Atom v"
-  have unfold1: "balance x y z = sub_formula ?bs custom_balancing"
-    by (simp add: Let_def)
-  have unfold2: "balance (sub_formula sub x) (sub_formula sub y) (sub_formula sub z)
-               = sub_formula ?bs' custom_balancing"
-    by (simp add: Let_def)
-  have "sub_formula sub (balance x y z)
-      = sub_formula (\<lambda>v. sub_formula sub (?bs v)) custom_balancing"
-    using unfold1 by (simp add: sub_formula_comp)
-  also have "\<dots> = sub_formula ?bs' custom_balancing"
-  proof (rule sub_formula_agree, intro ballI)
-    fix v assume v_in: "v \<in> var_set_form custom_balancing"
-    show "sub_formula sub (?bs v) = ?bs' v"
-    proof (cases "v = ''x''")
-      case True thus ?thesis by simp
-    next
-      case nx: False
-      show ?thesis
-      proof (cases "v = ''y''")
-        case True thus ?thesis using nx by simp
-      next
-        case ny: False
-        show ?thesis
-        proof (cases "v = ''z''")
-          case True thus ?thesis using nx ny by simp
-        next
-          case nz: False
-          have "sub v = Atom v" using assms[OF v_in nx ny nz] .
-          thus ?thesis using nx ny nz by simp
-        qed
-      qed
-    qed
-  qed
-  also have "\<dots> = balance (sub_formula sub x) (sub_formula sub y) (sub_formula sub z)"
-    using unfold2 by simp
-  finally show ?thesis .
-qed
+  unfolding balance.simps Let_def sub_formula_comp
+  by (rule sub_formula_agree) (use custom_balancing_vars in auto)
 
 text \<open>Balancing congruence uses a fixed proof over six fresh atoms:
   equivalent arguments yield equivalent balancing formulas.\<close>
@@ -1041,459 +555,71 @@ lemma balance_cong:
                     (max (depth_formula Y) (max (depth_formula Y')
                       (max (depth_formula Z) (depth_formula Z')))))))))"
 proof -
-  have fs_F: "frege_system F"
-    by (meson frege_balancing_axioms frege_balancing_def)
+  have fs: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
   let ?a0 = "cong_atoms ! 0" and ?a1 = "cong_atoms ! 1"
   and ?a2 = "cong_atoms ! 2" and ?a3 = "cong_atoms ! 3"
   and ?a4 = "cong_atoms ! 4" and ?a5 = "cong_atoms ! 5"
-  let ?vals = "[X, X', Y, Y', Z, Z']"
-  let ?csub = "\<lambda>v. case map_of (zip cong_atoms ?vals) v of
-                    None \<Rightarrow> Atom v | Some f \<Rightarrow> f"
-  let ?sumlens = "len_formula X + len_formula X' + len_formula Y
-                  + len_formula Y' + len_formula Z + len_formula Z'"
-  let ?maxdep6 = "max (depth_formula X) (max (depth_formula X')
-                    (max (depth_formula Y) (max (depth_formula Y')
-                      (max (depth_formula Z) (depth_formula Z')))))"
-  let ?lines_t = "lx + ly + lz + balance_cong_lines"
-  let ?sz_t = "sx + sy + sz + balance_cong_step_len * (6 * ?sumlens)"
-  let ?dep_t = "max dx (max dy (max dz (balance_cong_step_depth + ?maxdep6)))"
-
-  have cong_len: "length cong_atoms = 6" using cong_atoms_spec by simp
-  have cong_dist: "distinct cong_atoms" using cong_atoms_spec by simp
-  have cong_disj: "set cong_atoms \<inter> avoid_atoms = {}" using cong_atoms_spec by simp
-  have lveq: "length cong_atoms = length ?vals" using cong_len by simp
-  have fin_ca: "finite (set cong_atoms)" by simp
-
-  \<comment> \<open>The substitution lifting the six fresh atoms to the actual formulas.\<close>
-  have csub_nth: "\<And>k::nat. k < 6 \<Longrightarrow> ?csub (cong_atoms ! k) = ?vals ! k"
-  proof -
-    fix k :: nat assume "k < 6"
-    hence "map_of (zip cong_atoms ?vals) (cong_atoms ! k) = Some (?vals ! k)"
-      using map_of_zip_nth_lookup[OF cong_dist lveq] cong_len by simp
-    thus "?csub (cong_atoms ! k) = ?vals ! k" by simp
-  qed
-  have csub_off: "\<And>v. v \<notin> set cong_atoms \<Longrightarrow> ?csub v = Atom v"
-  proof -
-    fix v assume "v \<notin> set cong_atoms"
-    hence "map_of (zip cong_atoms ?vals) v = None" by (rule map_of_zip_None_lookup)
-    thus "?csub v = Atom v" by simp
-  qed
-  have sub_id: "\<forall>v. v \<notin> set cong_atoms \<longrightarrow> ?csub v = Atom v"
-    using csub_off by blast
-  note csub_conn = fresh_sub_conn[OF cong_disj sub_id]
-  note csub_cb = fresh_sub_cb[OF cong_disj sub_id]
-  have csub_in_vals: "\<And>v. v \<in> set cong_atoms \<Longrightarrow> ?csub v \<in> set ?vals"
-  proof -
-    fix v assume "v \<in> set cong_atoms"
-    hence "\<exists>w. map_of (zip cong_atoms ?vals) v = Some w"
-      using map_of_zip_is_Some[OF lveq] by blast
-    then obtain w where w: "map_of (zip cong_atoms ?vals) v = Some w" by blast
-    hence "(v, w) \<in> set (zip cong_atoms ?vals)" by (rule map_of_SomeD)
-    hence "w \<in> set ?vals" by (rule set_zip_rightD)
-    thus "?csub v \<in> set ?vals" using w by simp
-  qed
-
-  \<comment> \<open>Substitution-size facts.\<close>
-  have csub_len_le: "\<And>v. v \<in> set cong_atoms \<Longrightarrow> len_formula (?csub v) \<le> ?sumlens"
-  proof -
-    fix v assume "v \<in> set cong_atoms"
-    hence "?csub v \<in> set ?vals" using csub_in_vals by blast
-    hence "?csub v = X \<or> ?csub v = X' \<or> ?csub v = Y \<or> ?csub v = Y'
-           \<or> ?csub v = Z \<or> ?csub v = Z'" by auto
-    thus "len_formula (?csub v) \<le> ?sumlens" by (elim disjE) simp_all
-  qed
-  have csub_depth_le: "\<And>v. v \<in> set cong_atoms \<Longrightarrow> depth_formula (?csub v) \<le> ?maxdep6"
-  proof -
-    fix v assume "v \<in> set cong_atoms"
-    hence "?csub v \<in> set ?vals" using csub_in_vals by blast
-    hence "?csub v = X \<or> ?csub v = X' \<or> ?csub v = Y \<or> ?csub v = Y'
-           \<or> ?csub v = Z \<or> ?csub v = Z'" by auto
-    thus "depth_formula (?csub v) \<le> ?maxdep6" by (elim disjE) simp_all
-  qed
-  have len_sub_le: "len_sub (set cong_atoms) ?csub \<le> 6 * ?sumlens"
-  proof -
-    have "(\<Sum>v \<in> set cong_atoms. len_formula (?csub v))
-        = sum_list (map (\<lambda>v. len_formula (?csub v)) cong_atoms)"
-      by (simp add: sum_list_distinct_conv_sum_set[OF cong_dist])
-    also have "\<dots> \<le> sum_list (map (\<lambda>v. ?sumlens) cong_atoms)"
-      by (rule sum_list_mono[OF csub_len_le])
-    also have "\<dots> = length cong_atoms * ?sumlens"
-      by (simp add: sum_list_triv)
-    also have "\<dots> = 6 * ?sumlens" using cong_len by simp
-    finally have sum_le: "(\<Sum>v \<in> set cong_atoms. len_formula (?csub v))
-                          \<le> 6 * ?sumlens" .
-    have "(1::nat) \<le> 6 * ?sumlens"
-      using len_formula_positive[of X] by simp
-    thus ?thesis unfolding len_sub_def using sum_le by simp
-  qed
-  have depth_sub_le: "depth_sub (set cong_atoms) ?csub \<le> ?maxdep6"
-    unfolding depth_sub_def
-  proof (rule Max.boundedI)
-    show "finite (insert 1 ((\<lambda>v. depth_formula (?csub v)) ` set cong_atoms))"
-      by simp
-    show "insert 1 ((\<lambda>v. depth_formula (?csub v)) ` set cong_atoms) \<noteq> {}"
-      by simp
-    fix e assume e_in: "e \<in> insert 1 ((\<lambda>v. depth_formula (?csub v)) ` set cong_atoms)"
-    show "e \<le> ?maxdep6"
-    proof (cases "e = 1")
-      case True
-      thus ?thesis using depth_formula_ge_1[of X] by auto
-    next
-      case False
-      hence "e \<in> (\<lambda>v. depth_formula (?csub v)) ` set cong_atoms" using e_in by simp
-      then obtain v where v_in: "v \<in> set cong_atoms"
-                      and e_eq: "e = depth_formula (?csub v)" by auto
-      show ?thesis unfolding e_eq by (rule csub_depth_le[OF v_in])
-    qed
-  qed
-
-  from assms(1) obtain pX where pX:
-    "valid_proof F pX" "assumptions pX = {}"
-    "frege_proof.thesis pX = iff_form X X'"
-    "length (steps pX) \<le> lx"
-    "\<forall>s \<in> set (steps pX). len_formula s \<le> sx"
-    "\<forall>s \<in> set (steps pX). depth_formula s \<le> dx"
-    "\<forall>s \<in> set (steps pX). formula_well_formed (alphabet F) s"
-    unfolding provable_balanced_iff_def by blast
-  from assms(2) obtain pY where pY:
-    "valid_proof F pY" "assumptions pY = {}"
-    "frege_proof.thesis pY = iff_form Y Y'"
-    "length (steps pY) \<le> ly"
-    "\<forall>s \<in> set (steps pY). len_formula s \<le> sy"
-    "\<forall>s \<in> set (steps pY). depth_formula s \<le> dy"
-    "\<forall>s \<in> set (steps pY). formula_well_formed (alphabet F) s"
-    unfolding provable_balanced_iff_def by blast
-  from assms(3) obtain pZ where pZ:
-    "valid_proof F pZ" "assumptions pZ = {}"
-    "frege_proof.thesis pZ = iff_form Z Z'"
-    "length (steps pZ) \<le> lz"
-    "\<forall>s \<in> set (steps pZ). len_formula s \<le> sz"
-    "\<forall>s \<in> set (steps pZ). depth_formula s \<le> dz"
-    "\<forall>s \<in> set (steps pZ). formula_well_formed (alphabet F) s"
-    unfolding provable_balanced_iff_def by blast
-
-  \<comment> \<open>The substituted congruence proof.\<close>
-  define ci where ci_def: "ci = sub_proof ?csub balance_cong_base_proof"
-  have valid_ci: "valid_proof F ci"
-    unfolding ci_def
-    using frege_system.proof_substitution[OF fs_F] balance_cong_base_proof_spec
-    by blast
-  have ci_steps: "steps ci = map (sub_formula ?csub) (steps balance_cong_base_proof)"
-    unfolding ci_def by simp
-  have ci_lines: "length (steps ci) = balance_cong_lines"
-    using ci_steps by (simp add: balance_cong_lines_def)
-  have csub_wf: "formula_well_formed (alphabet F) (?csub v)" for v
-  proof (cases "map_of (zip cong_atoms [X, X', Y, Y', Z, Z']) v")
-    case None
-    thus ?thesis by simp
-  next
-    case (Some f)
-    have "(v, f) \<in> set (zip cong_atoms [X, X', Y, Y', Z, Z'])"
-      by (rule map_of_SomeD[OF Some])
-    hence "f \<in> set [X, X', Y, Y', Z, Z']"
-      by (rule set_zip_rightD)
-    thus ?thesis using Some wfX wfX' wfY wfY' wfZ wfZ' by auto
-  qed
-  have ci_wf: "\<forall>s \<in> set (steps ci). formula_well_formed (alphabet F) s"
-  proof
-    fix s assume "s \<in> set (steps ci)"
-    then obtain s0 where s0_in: "s0 \<in> set (steps balance_cong_base_proof)"
-      and s_eq: "s = sub_formula ?csub s0"
-      using ci_steps by auto
-    have "formula_well_formed (alphabet F) s0"
-      using balance_cong_base_proof_spec s0_in by blast
-    thus "formula_well_formed (alphabet F) s"
-      unfolding s_eq using csub_wf by (rule sub_formula_well_formed)
-  qed
-  have ci_thesis: "frege_proof.thesis ci = iff_form (balance X Y Z) (balance X' Y' Z')"
-  proof -
-    have bXYZ: "sub_formula ?csub (balance (Atom ?a0) (Atom ?a2) (Atom ?a4))
-              = balance X Y Z"
-    proof -
-      have "sub_formula ?csub (balance (Atom ?a0) (Atom ?a2) (Atom ?a4))
-          = balance (sub_formula ?csub (Atom ?a0)) (sub_formula ?csub (Atom ?a2))
-                    (sub_formula ?csub (Atom ?a4))"
-        by (rule sub_formula_balance[OF csub_cb])
-      thus ?thesis by (simp add: csub_nth)
-    qed
-    have bXYZ': "sub_formula ?csub (balance (Atom ?a1) (Atom ?a3) (Atom ?a5))
-               = balance X' Y' Z'"
-    proof -
-      have "sub_formula ?csub (balance (Atom ?a1) (Atom ?a3) (Atom ?a5))
-          = balance (sub_formula ?csub (Atom ?a1)) (sub_formula ?csub (Atom ?a3))
-                    (sub_formula ?csub (Atom ?a5))"
-        by (rule sub_formula_balance[OF csub_cb])
-      thus ?thesis by (simp add: csub_nth)
-    qed
-    have "frege_proof.thesis ci
-        = sub_formula ?csub
-            (iff_form (balance (Atom ?a0) (Atom ?a2) (Atom ?a4))
-                      (balance (Atom ?a1) (Atom ?a3) (Atom ?a5)))"
-      unfolding ci_def using balance_cong_base_proof_spec by simp
-    also have "\<dots> = iff_form
-            (sub_formula ?csub (balance (Atom ?a0) (Atom ?a2) (Atom ?a4)))
-            (sub_formula ?csub (balance (Atom ?a1) (Atom ?a3) (Atom ?a5)))"
-      by (rule sub_formula_iff_form[OF csub_conn])
-    also have "\<dots> = iff_form (balance X Y Z) (balance X' Y' Z')"
-      using bXYZ bXYZ' by simp
-    finally show ?thesis .
-  qed
-  have ci_asm: "assumptions ci = {iff_form X X', iff_form Y Y', iff_form Z Z'}"
-  proof -
-    have aXX: "sub_formula ?csub (iff_form (Atom ?a0) (Atom ?a1)) = iff_form X X'"
-    proof -
-      have "sub_formula ?csub (iff_form (Atom ?a0) (Atom ?a1))
-          = iff_form (sub_formula ?csub (Atom ?a0)) (sub_formula ?csub (Atom ?a1))"
-        by (rule sub_formula_iff_form[OF csub_conn])
-      thus ?thesis by (simp add: csub_nth)
-    qed
-    have aYY: "sub_formula ?csub (iff_form (Atom ?a2) (Atom ?a3)) = iff_form Y Y'"
-    proof -
-      have "sub_formula ?csub (iff_form (Atom ?a2) (Atom ?a3))
-          = iff_form (sub_formula ?csub (Atom ?a2)) (sub_formula ?csub (Atom ?a3))"
-        by (rule sub_formula_iff_form[OF csub_conn])
-      thus ?thesis by (simp add: csub_nth)
-    qed
-    have aZZ: "sub_formula ?csub (iff_form (Atom ?a4) (Atom ?a5)) = iff_form Z Z'"
-    proof -
-      have "sub_formula ?csub (iff_form (Atom ?a4) (Atom ?a5))
-          = iff_form (sub_formula ?csub (Atom ?a4)) (sub_formula ?csub (Atom ?a5))"
-        by (rule sub_formula_iff_form[OF csub_conn])
-      thus ?thesis by (simp add: csub_nth)
-    qed
-    have "assumptions ci = (sub_formula ?csub) ` (assumptions balance_cong_base_proof)"
-      unfolding ci_def by simp
-    also have "\<dots> = (sub_formula ?csub) `
-         {iff_form (Atom ?a0) (Atom ?a1), iff_form (Atom ?a2) (Atom ?a3),
-          iff_form (Atom ?a4) (Atom ?a5)}"
-      using balance_cong_base_proof_spec by simp
-    also have "\<dots> = {iff_form X X', iff_form Y Y', iff_form Z Z'}"
-      using aXX aYY aZZ by simp
-    finally show ?thesis .
-  qed
-
-  \<comment> \<open>Combine the three input proofs, then the congruence step.\<close>
-  define c1 where c1_def: "c1 = combine_proofs pX pY"
-  have valid_c1: "valid_proof F c1"
-    unfolding c1_def
-    using frege_system.combining_valid_proofs[OF fs_F] pX(1) pY(1) by blast
-  have c1_asm: "assumptions c1 = {}"
-    unfolding c1_def using pX(2) pY(2) by simp
-  have c1_steps: "steps c1 = steps pX @ steps pY"
-    unfolding c1_def by simp
-
-  define c2 where c2_def: "c2 = combine_proofs c1 pZ"
-  have valid_c2: "valid_proof F c2"
-    unfolding c2_def
-    using frege_system.combining_valid_proofs[OF fs_F] valid_c1 pZ(1) by blast
-  have c2_asm: "assumptions c2 = {}"
-    unfolding c2_def using c1_asm pZ(2) by simp
-  have c2_steps: "steps c2 = steps pX @ steps pY @ steps pZ"
-  proof -
-    have "steps c2 = steps c1 @ steps pZ" unfolding c2_def by simp
-    thus ?thesis using c1_steps by simp
-  qed
-
-  define cb where cb_def: "cb = combine_proofs c2 ci"
-  have valid_cb: "valid_proof F cb"
-    unfolding cb_def
-    using frege_system.combining_valid_proofs[OF fs_F] valid_c2 valid_ci by blast
-
-  have XX_in: "iff_form X X' \<in> set (steps pX)"
-  proof -
-    have ne: "steps pX \<noteq> []" using pX(1) unfolding valid_proof_def by simp
-    have "frege_proof.thesis pX = last (steps pX)"
-      using pX(1) unfolding valid_proof_def by simp
-    hence "iff_form X X' = last (steps pX)" using pX(3) by simp
-    moreover have "last (steps pX) \<in> set (steps pX)" using ne by (rule last_in_set)
-    ultimately show ?thesis by simp
-  qed
-  have YY_in: "iff_form Y Y' \<in> set (steps pY)"
-  proof -
-    have ne: "steps pY \<noteq> []" using pY(1) unfolding valid_proof_def by simp
-    have "frege_proof.thesis pY = last (steps pY)"
-      using pY(1) unfolding valid_proof_def by simp
-    hence "iff_form Y Y' = last (steps pY)" using pY(3) by simp
-    moreover have "last (steps pY) \<in> set (steps pY)" using ne by (rule last_in_set)
-    ultimately show ?thesis by simp
-  qed
-  have ZZ_in: "iff_form Z Z' \<in> set (steps pZ)"
-  proof -
-    have ne: "steps pZ \<noteq> []" using pZ(1) unfolding valid_proof_def by simp
-    have "frege_proof.thesis pZ = last (steps pZ)"
-      using pZ(1) unfolding valid_proof_def by simp
-    hence "iff_form Z Z' = last (steps pZ)" using pZ(3) by simp
-    moreover have "last (steps pZ) \<in> set (steps pZ)" using ne by (rule last_in_set)
-    ultimately show ?thesis by simp
-  qed
-
-  have cb_asm: "assumptions cb = {}"
-  proof -
-    have sub: "{iff_form X X', iff_form Y Y', iff_form Z Z'} \<subseteq> set (steps c2)"
-      using XX_in YY_in ZZ_in c2_steps by auto
-    have "assumptions cb = assumptions c2 \<union> (assumptions ci - set (steps c2))"
-      unfolding cb_def by simp
-    also have "\<dots> = {} \<union> ({iff_form X X', iff_form Y Y', iff_form Z Z'}
-                          - set (steps c2))"
-      using c2_asm ci_asm by simp
-    also have "\<dots> = {}" using sub by blast
-    finally show ?thesis .
-  qed
-  have cb_thesis: "frege_proof.thesis cb = iff_form (balance X Y Z) (balance X' Y' Z')"
-    unfolding cb_def using ci_thesis by simp
-  have cb_steps: "steps cb = steps pX @ steps pY @ steps pZ @ steps ci"
-  proof -
-    have "steps cb = steps c2 @ steps ci" unfolding cb_def by simp
-    thus ?thesis using c2_steps by simp
-  qed
-
-  have cb_lines: "length (steps cb) \<le> ?lines_t"
-  proof -
-    have "length (steps cb)
-        = length (steps pX) + length (steps pY) + length (steps pZ)
-          + length (steps ci)"
-      using cb_steps by simp
-    thus ?thesis using pX(4) pY(4) pZ(4) ci_lines by linarith
-  qed
-
-  have fin_bl: "finite (insert 1 (len_formula ` set (steps balance_cong_base_proof)))"
-    by simp
-  have fin_bd: "finite (insert 1 (depth_formula ` set (steps balance_cong_base_proof)))"
-    by simp
-
-  have step_len: "\<forall>s \<in> set (steps cb). len_formula s \<le> ?sz_t"
-  proof
-    fix s assume "s \<in> set (steps cb)"
-    hence "s \<in> set (steps pX) \<or> s \<in> set (steps pY) \<or> s \<in> set (steps pZ)
-           \<or> s \<in> set (steps ci)"
-      using cb_steps by auto
-    thus "len_formula s \<le> ?sz_t"
-    proof (elim disjE)
-      assume "s \<in> set (steps pX)"
-      hence "len_formula s \<le> sx" using pX(5) by blast
-      thus ?thesis by linarith
-    next
-      assume "s \<in> set (steps pY)"
-      hence "len_formula s \<le> sy" using pY(5) by blast
-      thus ?thesis by linarith
-    next
-      assume "s \<in> set (steps pZ)"
-      hence "len_formula s \<le> sz" using pZ(5) by blast
-      thus ?thesis by linarith
-    next
-      assume "s \<in> set (steps ci)"
-      then obtain s0 where s0_in: "s0 \<in> set (steps balance_cong_base_proof)"
-                       and s_eq: "s = sub_formula ?csub s0"
-        using ci_steps by auto
-      have "len_formula s \<le> len_formula s0 * len_sub (set cong_atoms) ?csub"
-        using s_eq sub_formula_bound[OF fin_ca sub_id] by simp
-      also have "\<dots> \<le> len_formula s0 * (6 * ?sumlens)"
-        using len_sub_le by (rule mult_le_mono2)
-      also have "\<dots> \<le> balance_cong_step_len * (6 * ?sumlens)"
-      proof -
-        have "len_formula s0
-            \<in> insert 1 (len_formula ` set (steps balance_cong_base_proof))"
-          using s0_in by simp
-        hence "len_formula s0 \<le> balance_cong_step_len"
-          unfolding balance_cong_step_len_def using Max_ge[OF fin_bl] by blast
-        thus ?thesis by (rule mult_le_mono1)
-      qed
-      finally show ?thesis by linarith
-    qed
-  qed
-
-  have dx_le: "dx \<le> ?dep_t" by (rule max.cobounded1)
-  have dy_le: "dy \<le> ?dep_t"
-  proof -
-    have "dy \<le> max dy (max dz (balance_cong_step_depth + ?maxdep6))"
-      by (rule max.cobounded1)
-    also have "\<dots> \<le> ?dep_t" by (rule max.cobounded2)
-    finally show ?thesis .
-  qed
-  have dz_le: "dz \<le> ?dep_t"
-  proof -
-    have "dz \<le> max dz (balance_cong_step_depth + ?maxdep6)"
-      by (rule max.cobounded1)
-    also have "\<dots> \<le> max dy (max dz (balance_cong_step_depth + ?maxdep6))"
-      by (rule max.cobounded2)
-    also have "\<dots> \<le> ?dep_t" by (rule max.cobounded2)
-    finally show ?thesis .
-  qed
-  have ci_dep_le: "balance_cong_step_depth + ?maxdep6 \<le> ?dep_t"
-  proof -
-    have "balance_cong_step_depth + ?maxdep6
-        \<le> max dz (balance_cong_step_depth + ?maxdep6)"
-      by (rule max.cobounded2)
-    also have "\<dots> \<le> max dy (max dz (balance_cong_step_depth + ?maxdep6))"
-      by (rule max.cobounded2)
-    also have "\<dots> \<le> ?dep_t" by (rule max.cobounded2)
-    finally show ?thesis .
-  qed
-
-  have step_depth: "\<forall>s \<in> set (steps cb). depth_formula s \<le> ?dep_t"
-  proof
-    fix s assume "s \<in> set (steps cb)"
-    hence "s \<in> set (steps pX) \<or> s \<in> set (steps pY) \<or> s \<in> set (steps pZ)
-           \<or> s \<in> set (steps ci)"
-      using cb_steps by auto
-    thus "depth_formula s \<le> ?dep_t"
-    proof (elim disjE)
-      assume "s \<in> set (steps pX)"
-      hence "depth_formula s \<le> dx" using pX(6) by blast
-      thus ?thesis using dx_le by linarith
-    next
-      assume "s \<in> set (steps pY)"
-      hence "depth_formula s \<le> dy" using pY(6) by blast
-      thus ?thesis using dy_le by linarith
-    next
-      assume "s \<in> set (steps pZ)"
-      hence "depth_formula s \<le> dz" using pZ(6) by blast
-      thus ?thesis using dz_le by linarith
-    next
-      assume "s \<in> set (steps ci)"
-      then obtain s0 where s0_in: "s0 \<in> set (steps balance_cong_base_proof)"
-                       and s_eq: "s = sub_formula ?csub s0"
-        using ci_steps by auto
-      have "depth_formula s \<le> depth_formula s0 + depth_sub (set cong_atoms) ?csub"
-        using s_eq sub_formula_depth_bound[OF fin_ca sub_id] by simp
-      also have "\<dots> \<le> depth_formula s0 + ?maxdep6"
-        using depth_sub_le by linarith
-      also have "\<dots> \<le> balance_cong_step_depth + ?maxdep6"
-      proof -
-        have "depth_formula s0
-            \<in> insert 1 (depth_formula ` set (steps balance_cong_base_proof))"
-          using s0_in by simp
-        hence "depth_formula s0 \<le> balance_cong_step_depth"
-          unfolding balance_cong_step_depth_def using Max_ge[OF fin_bd] by blast
-        thus ?thesis by (rule add_right_mono)
-      qed
-      also have "\<dots> \<le> ?dep_t" using ci_dep_le by linarith
-      finally show ?thesis .
-    qed
-  qed
-
-  have step_wf: "\<forall>s \<in> set (steps cb). formula_well_formed (alphabet F) s"
-  proof
-    fix s assume "s \<in> set (steps cb)"
-    hence "s \<in> set (steps pX) \<or> s \<in> set (steps pY) \<or> s \<in> set (steps pZ)
-         \<or> s \<in> set (steps ci)"
-      using cb_steps by auto
-    thus "formula_well_formed (alphabet F) s"
-      using pX(7) pY(7) pZ(7) ci_wf by blast
-  qed
-
+  let ?args = "[X,X',Y,Y',Z,Z']"
+  let ?sub = "marker_substitution cong_atoms ?args"
+  let ?S = "len_formula X + len_formula X' + len_formula Y
+             + len_formula Y' + len_formula Z + len_formula Z'"
+  let ?D = "max (depth_formula X) (max (depth_formula X')
+            (max (depth_formula Y) (max (depth_formula Y')
+              (max (depth_formula Z) (depth_formula Z')))))"
+  let ?goal = "iff_form (balance X Y Z) (balance X' Y' Z')"
+  have base: "bounded_derivation F
+    {iff_form (Atom ?a0) (Atom ?a1), iff_form (Atom ?a2) (Atom ?a3),
+     iff_form (Atom ?a4) (Atom ?a5)}
+    (iff_form (balance (Atom ?a0) (Atom ?a2) (Atom ?a4))
+              (balance (Atom ?a1) (Atom ?a3) (Atom ?a5)))
+    balance_cong_lines balance_cong_step_len balance_cong_step_depth"
+    unfolding balance_cong_lines_def balance_cong_step_len_def balance_cong_step_depth_def
+    by (rule bounded_derivation_from_proof[where pr=balance_cong_base_proof])
+       (use balance_cong_base_proof_spec in auto)
+  have names: "distinct cong_atoms" and lengths: "length ?args = length cong_atoms"
+    using cong_atoms_spec by auto
+  have slot_value: "?sub (cong_atoms ! j) = ?args ! j" if "j < 6" for j
+    by (rule marker_substitution_nth[OF names lengths])
+       (use that cong_atoms_spec in simp)
+  have v0: "?sub ?a0 = X" and v1: "?sub ?a1 = X'"
+    and v2: "?sub ?a2 = Y" and v3: "?sub ?a3 = Y'"
+    and v4: "?sub ?a4 = Z" and v5: "?sub ?a5 = Z'"
+    using slot_value[of 0] slot_value[of 1] slot_value[of 2] slot_value[of 3] slot_value[of 4] slot_value[of 5]
+    by simp_all
+  have wf: "formula_well_formed (alphabet F) g" if "g \<in> set ?args" for g
+    using that wfX wfX' wfY wfY' wfZ wfZ' by auto
+  have one: "1 \<le> ?D" using depth_formula_ge_1[of X] by simp
+  have dep: "depth_formula g \<le> ?D" if "g \<in> set ?args" for g
+    using that by auto
+  have sum_len: "max 1 (sum_list (map len_formula ?args)) = ?S"
+    using len_formula_positive[of X] by (simp add: add.assoc)
+  have instantiated: "bounded_derivation F
+    {iff_form X X', iff_form Y Y', iff_form Z Z'} ?goal
+    balance_cong_lines (balance_cong_step_len * ?S) (balance_cong_step_depth + ?D)"
+    using bounded_derivation_marker_instance[OF fs base names lengths wf one dep]
+    by (simp only: sub_formula_iff_form sub_formula_balance sub_formula.simps
+                   v0 v1 v2 v3 v4 v5 sum_len image_insert image_empty)
+  note XX = assms(1)[unfolded provable_balanced_iff_derivation]
+  note YY = assms(2)[unfolded provable_balanced_iff_derivation]
+  note ZZ = assms(3)[unfolded provable_balanced_iff_derivation]
+  have tailZ: "bounded_derivation F {iff_form X X', iff_form Y Y'} ?goal
+    (lz + balance_cong_lines) (sz + balance_cong_step_len * ?S)
+    (max dz (balance_cong_step_depth + ?D))"
+    by (rule bounded_derivation_cut[OF fs ZZ])
+       (use instantiated in \<open>simp only: insert_commute\<close>)
+  have tailY: "bounded_derivation F {iff_form X X'} ?goal
+    (ly + (lz + balance_cong_lines)) (sy + (sz + balance_cong_step_len * ?S))
+    (max dy (max dz (balance_cong_step_depth + ?D)))"
+    by (rule bounded_derivation_cut[OF fs YY])
+       (use tailZ in \<open>simp only: insert_commute\<close>)
+  have strong: "provable_balanced_iff (balance X Y Z) (balance X' Y' Z')
+    (lx + ly + lz + balance_cong_lines) (sx + sy + sz + balance_cong_step_len * ?S)
+    (max dx (max dy (max dz (balance_cong_step_depth + ?D))))"
+    using bounded_derivation_cut[OF fs XX tailY]
+    by (simp only: provable_balanced_iff_derivation add.assoc)
   show ?thesis
-    unfolding provable_balanced_iff_def
-  proof (intro exI[where x = cb] conjI)
-    show "valid_proof F cb" using valid_cb .
-    show "assumptions cb = {}" using cb_asm .
-    show "frege_proof.thesis cb = iff_form (balance X Y Z) (balance X' Y' Z')"
-      using cb_thesis .
-    show "length (steps cb) \<le> ?lines_t" using cb_lines .
-    show "\<forall>s \<in> set (steps cb). len_formula s \<le> ?sz_t" using step_len .
-    show "\<forall>s \<in> set (steps cb). depth_formula s \<le> ?dep_t" using step_depth .
-    show "\<forall>s \<in> set (steps cb). formula_well_formed (alphabet F) s" using step_wf .
-  qed
+    by (rule provable_balanced_iff_weaken[OF strong le_refl _ le_refl])
+       (intro add_left_mono mult_le_mono2; simp)
 qed
 
 subsection \<open>Rebalancing: definition and basic facts\<close>
@@ -1602,23 +728,9 @@ definition sym_atom_y :: string where "sym_atom_y = fresh_atoms 2 ! 1"
 lemma sym_atoms_spec:
   "sym_atom_x \<notin> avoid_atoms \<and> sym_atom_y \<notin> avoid_atoms
    \<and> sym_atom_x \<noteq> sym_atom_y"
-proof -
-  have len2: "length (fresh_atoms 2) = 2" using fresh_atoms_spec[of 2] by simp
-  have dist: "distinct (fresh_atoms 2)" using fresh_atoms_spec[of 2] by simp
-  have disj: "set (fresh_atoms 2) \<inter> avoid_atoms = {}"
-    using fresh_atoms_spec[of 2] by simp
-  have m0: "fresh_atoms 2 ! 0 \<in> set (fresh_atoms 2)"
-    using nth_mem[of 0 "fresh_atoms 2"] len2 by simp
-  have m1: "fresh_atoms 2 ! 1 \<in> set (fresh_atoms 2)"
-    using nth_mem[of 1 "fresh_atoms 2"] len2 by simp
-  have "sym_atom_x \<notin> avoid_atoms" unfolding sym_atom_x_def using m0 disj by blast
-  moreover have "sym_atom_y \<notin> avoid_atoms"
-    unfolding sym_atom_y_def using m1 disj by blast
-  moreover have "sym_atom_x \<noteq> sym_atom_y"
-    unfolding sym_atom_x_def sym_atom_y_def
-    using nth_eq_iff_index_eq[OF dist, of 0 1] len2 by simp
-  ultimately show ?thesis by blast
-qed
+  using fresh_atoms_spec[of 2]
+  unfolding sym_atom_x_def sym_atom_y_def
+  by (auto intro: nth_mem simp: nth_eq_iff_index_eq disjoint_iff)
 
 definition sym_base_proof :: "'c frege_proof" where
   "sym_base_proof =
@@ -1666,243 +778,32 @@ lemma iff_sym:
              (max d (sym_step_depth
                 + max (depth_formula A) (depth_formula B)))"
 proof -
-  have fs_F: "frege_system F"
-    by (meson frege_balancing_axioms frege_balancing_def)
-  let ?x = "sym_atom_x" and ?y = "sym_atom_y"
-  let ?sub = "\<lambda>w. if w = ?x then A else if w = ?y then B else Atom w"
-  let ?lines_t = "l + sym_lines"
-  let ?sz_t = "s + sym_step_len * (len_formula A + len_formula B)"
-  let ?dep_t = "max d (sym_step_depth
-                  + max (depth_formula A) (depth_formula B))"
-
-  have neq: "?x \<noteq> ?y" using sym_atoms_spec by blast
-
-  from assms(1) obtain pAB where pAB:
-    "valid_proof F pAB" "assumptions pAB = {}"
-    "frege_proof.thesis pAB = iff_form A B"
-    "length (steps pAB) \<le> l"
-    "\<forall>t \<in> set (steps pAB). len_formula t \<le> s"
-    "\<forall>t \<in> set (steps pAB). depth_formula t \<le> d"
-    "\<forall>t \<in> set (steps pAB). formula_well_formed (alphabet F) t"
-    unfolding provable_balanced_iff_def by blast
-
-  have sub_conn_iff:
-    "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
-           \<Longrightarrow> ?sub w = Atom w"
-  proof -
-    fix w assume w_ci: "w \<in> var_set_form conn_iff"
-      and "w \<noteq> ''a''" and "w \<noteq> ''b''"
-    have "w \<in> avoid_atoms" using w_ci unfolding avoid_atoms_def by blast
-    hence "w \<noteq> ?x \<and> w \<noteq> ?y" using sym_atoms_spec by blast
-    thus "?sub w = Atom w" by simp
-  qed
-  have sub_id: "\<forall>v. v \<notin> {?x, ?y} \<longrightarrow> ?sub v = Atom v" by auto
-  have fin_xy: "finite {?x, ?y}" by simp
-
-  define si where si_def: "si = sub_proof ?sub sym_base_proof"
-  have valid_si: "valid_proof F si"
-    unfolding si_def
-    using frege_system.proof_substitution[OF fs_F] sym_base_proof_spec by blast
-  have si_steps: "steps si = map (sub_formula ?sub) (steps sym_base_proof)"
-    unfolding si_def by simp
-  have si_wf: "\<forall>t \<in> set (steps si). formula_well_formed (alphabet F) t"
-  proof
-    fix t assume "t \<in> set (steps si)"
-    then obtain t0 where t0_in: "t0 \<in> set (steps sym_base_proof)"
-      and t_eq: "t = sub_formula ?sub t0"
-      using si_steps by auto
-    have vals_wf: "formula_well_formed (alphabet F) (?sub v)" for v
-      using wfA wfB by simp
-    have "formula_well_formed (alphabet F) t0"
-      using sym_base_proof_spec t0_in by blast
-    thus "formula_well_formed (alphabet F) t"
-      unfolding t_eq using vals_wf by (rule sub_formula_well_formed)
-  qed
-  have si_thesis: "frege_proof.thesis si = iff_form B A"
-  proof -
-    have "frege_proof.thesis si
-        = sub_formula ?sub (iff_form (Atom ?y) (Atom ?x))"
-      unfolding si_def using sym_base_proof_spec by simp
-    also have "\<dots> = iff_form (sub_formula ?sub (Atom ?y)) (sub_formula ?sub (Atom ?x))"
-      by (rule sub_formula_iff_form[OF sub_conn_iff])
-    also have "\<dots> = iff_form B A" using neq by simp
-    finally show ?thesis .
-  qed
-  have si_asm: "assumptions si = {iff_form A B}"
-  proof -
-    have "sub_formula ?sub (iff_form (Atom ?x) (Atom ?y)) = iff_form A B"
-    proof -
-      have "sub_formula ?sub (iff_form (Atom ?x) (Atom ?y))
-          = iff_form (sub_formula ?sub (Atom ?x)) (sub_formula ?sub (Atom ?y))"
-        by (rule sub_formula_iff_form[OF sub_conn_iff])
-      thus ?thesis using neq by simp
-    qed
-    moreover have "assumptions si
-                 = (sub_formula ?sub) ` (assumptions sym_base_proof)"
-      unfolding si_def by simp
-    ultimately show ?thesis using sym_base_proof_spec by simp
-  qed
-  have si_lines: "length (steps si) = sym_lines"
-    using si_steps by (simp add: sym_lines_def)
-
-  have len_sub_eq: "len_sub {?x, ?y} ?sub = len_formula A + len_formula B"
-  proof -
-    have "(\<Sum>v \<in> {?x, ?y}. len_formula (?sub v))
-        = len_formula A + len_formula B"
-      using neq by simp
-    moreover have "len_formula A \<ge> 1" by (rule len_formula_positive)
-    ultimately show ?thesis unfolding len_sub_def by simp
-  qed
-  have depth_sub_le: "depth_sub {?x, ?y} ?sub
-                    \<le> max (depth_formula A) (depth_formula B)"
-  proof -
-    have img: "(\<lambda>v. depth_formula (?sub v)) ` {?x, ?y}
-             = {depth_formula A, depth_formula B}"
-      using neq by auto
-    have "depth_sub {?x, ?y} ?sub
-        = Max (insert 1 {depth_formula A, depth_formula B})"
-      unfolding depth_sub_def using img by simp
-    also have "\<dots> \<le> max (depth_formula A) (depth_formula B)"
-    proof (rule Max.boundedI)
-      show "finite (insert 1 {depth_formula A, depth_formula B})" by simp
-      show "insert 1 {depth_formula A, depth_formula B} \<noteq> {}" by simp
-      fix e assume "e \<in> insert 1 {depth_formula A, depth_formula B}"
-      thus "e \<le> max (depth_formula A) (depth_formula B)"
-        using depth_formula_ge_1[of A] depth_formula_ge_1[of B] by auto
-    qed
-    finally show ?thesis .
-  qed
-
-  have fin_sl: "finite (insert 1 (len_formula ` set (steps sym_base_proof)))"
-    by simp
-  have fin_sd: "finite (insert 1 (depth_formula ` set (steps sym_base_proof)))"
-    by simp
-
-  define cb where cb_def: "cb = combine_proofs pAB si"
-  have valid_cb: "valid_proof F cb"
-    unfolding cb_def
-    using frege_system.combining_valid_proofs[OF fs_F] pAB(1) valid_si by blast
-
-  have AB_in: "iff_form A B \<in> set (steps pAB)"
-  proof -
-    have ne: "steps pAB \<noteq> []" using pAB(1) unfolding valid_proof_def by simp
-    have "frege_proof.thesis pAB = last (steps pAB)"
-      using pAB(1) unfolding valid_proof_def by simp
-    hence "iff_form A B = last (steps pAB)" using pAB(3) by simp
-    moreover have "last (steps pAB) \<in> set (steps pAB)" using ne by (rule last_in_set)
-    ultimately show ?thesis by simp
-  qed
-
-  have cb_asm: "assumptions cb = {}"
-  proof -
-    have "assumptions cb = assumptions pAB \<union> (assumptions si - set (steps pAB))"
-      unfolding cb_def by simp
-    also have "\<dots> = {} \<union> ({iff_form A B} - set (steps pAB))"
-      using pAB(2) si_asm by simp
-    also have "\<dots> = {}" using AB_in by blast
-    finally show ?thesis .
-  qed
-  have cb_thesis: "frege_proof.thesis cb = iff_form B A"
-    unfolding cb_def using si_thesis by simp
-  have cb_steps: "steps cb = steps pAB @ steps si"
-    unfolding cb_def by simp
-
-  have cb_lines: "length (steps cb) \<le> ?lines_t"
-  proof -
-    have "length (steps cb) = length (steps pAB) + length (steps si)"
-      using cb_steps by simp
-    thus ?thesis using pAB(4) si_lines by linarith
-  qed
-
-  have d_le: "d \<le> ?dep_t" by (rule max.cobounded1)
-  have si_dep_le: "sym_step_depth + max (depth_formula A) (depth_formula B) \<le> ?dep_t"
-    by (rule max.cobounded2)
-
-  have step_len: "\<forall>t \<in> set (steps cb). len_formula t \<le> ?sz_t"
-  proof
-    fix t assume "t \<in> set (steps cb)"
-    hence "t \<in> set (steps pAB) \<or> t \<in> set (steps si)"
-      using cb_steps by auto
-    thus "len_formula t \<le> ?sz_t"
-    proof (elim disjE)
-      assume "t \<in> set (steps pAB)"
-      hence "len_formula t \<le> s" using pAB(5) by blast
-      thus ?thesis by linarith
-    next
-      assume "t \<in> set (steps si)"
-      then obtain t0 where t0_in: "t0 \<in> set (steps sym_base_proof)"
-                       and t_eq: "t = sub_formula ?sub t0"
-        using si_steps by auto
-      have "len_formula t \<le> len_formula t0 * len_sub {?x, ?y} ?sub"
-        using t_eq sub_formula_bound[OF fin_xy sub_id] by simp
-      also have "\<dots> = len_formula t0 * (len_formula A + len_formula B)"
-        using len_sub_eq by simp
-      also have "\<dots> \<le> sym_step_len * (len_formula A + len_formula B)"
-      proof -
-        have "len_formula t0 \<in> insert 1 (len_formula ` set (steps sym_base_proof))"
-          using t0_in by simp
-        hence "len_formula t0 \<le> sym_step_len"
-          unfolding sym_step_len_def using Max_ge[OF fin_sl] by blast
-        thus ?thesis by (rule mult_le_mono1)
-      qed
-      finally show ?thesis by linarith
-    qed
-  qed
-
-  have step_depth: "\<forall>t \<in> set (steps cb). depth_formula t \<le> ?dep_t"
-  proof
-    fix t assume "t \<in> set (steps cb)"
-    hence "t \<in> set (steps pAB) \<or> t \<in> set (steps si)"
-      using cb_steps by auto
-    thus "depth_formula t \<le> ?dep_t"
-    proof (elim disjE)
-      assume "t \<in> set (steps pAB)"
-      hence "depth_formula t \<le> d" using pAB(6) by blast
-      thus ?thesis using d_le by linarith
-    next
-      assume "t \<in> set (steps si)"
-      then obtain t0 where t0_in: "t0 \<in> set (steps sym_base_proof)"
-                       and t_eq: "t = sub_formula ?sub t0"
-        using si_steps by auto
-      have "depth_formula t \<le> depth_formula t0 + depth_sub {?x, ?y} ?sub"
-        using t_eq sub_formula_depth_bound[OF fin_xy sub_id] by simp
-      also have "\<dots> \<le> depth_formula t0
-                      + max (depth_formula A) (depth_formula B)"
-        using depth_sub_le by simp
-      also have "\<dots> \<le> sym_step_depth + max (depth_formula A) (depth_formula B)"
-      proof -
-        have "depth_formula t0
-            \<in> insert 1 (depth_formula ` set (steps sym_base_proof))"
-          using t0_in by simp
-        hence "depth_formula t0 \<le> sym_step_depth"
-          unfolding sym_step_depth_def using Max_ge[OF fin_sd] by blast
-        thus ?thesis by simp
-      qed
-      also have "\<dots> \<le> ?dep_t" using si_dep_le by linarith
-      finally show ?thesis .
-    qed
-  qed
-
-  have step_wf: "\<forall>t \<in> set (steps cb). formula_well_formed (alphabet F) t"
-  proof
-    fix t assume "t \<in> set (steps cb)"
-    hence "t \<in> set (steps pAB) \<or> t \<in> set (steps si)"
-      using cb_steps by auto
-    thus "formula_well_formed (alphabet F) t"
-      using pAB(7) si_wf by blast
-  qed
-
-  show ?thesis
-    unfolding provable_balanced_iff_def
-  proof (intro exI[where x = cb] conjI)
-    show "valid_proof F cb" using valid_cb .
-    show "assumptions cb = {}" using cb_asm .
-    show "frege_proof.thesis cb = iff_form B A" using cb_thesis .
-    show "length (steps cb) \<le> ?lines_t" using cb_lines .
-    show "\<forall>t \<in> set (steps cb). len_formula t \<le> ?sz_t" using step_len .
-    show "\<forall>t \<in> set (steps cb). depth_formula t \<le> ?dep_t" using step_depth .
-    show "\<forall>t \<in> set (steps cb). formula_well_formed (alphabet F) t" using step_wf .
-  qed
+  have fs: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+  let ?names = "[sym_atom_x, sym_atom_y]"
+  let ?args = "[A,B]"
+  let ?D = "max (depth_formula A) (depth_formula B)"
+  have base: "bounded_derivation F
+    {iff_form (Atom sym_atom_x) (Atom sym_atom_y)}
+    (iff_form (Atom sym_atom_y) (Atom sym_atom_x))
+    sym_lines sym_step_len sym_step_depth"
+    unfolding sym_lines_def sym_step_len_def sym_step_depth_def
+    by (rule bounded_derivation_from_proof[where pr=sym_base_proof])
+       (use sym_base_proof_spec in auto)
+  have names: "distinct ?names" using sym_atoms_spec by simp
+  have lengths: "length ?args = length ?names" by simp
+  have wf: "formula_well_formed (alphabet F) g" if "g \<in> set ?args" for g
+    using that wfA wfB by auto
+  have one: "1 \<le> ?D" using depth_formula_ge_1[of A] by simp
+  have dep: "depth_formula g \<le> ?D" if "g \<in> set ?args" for g
+    using that by auto
+  have instantiated: "bounded_derivation F {iff_form A B} (iff_form B A)
+    sym_lines (sym_step_len * (len_formula A + len_formula B)) (sym_step_depth + ?D)"
+    using bounded_derivation_marker_instance[OF fs base names lengths wf one dep]
+      sym_atoms_spec len_formula_positive[of A]
+    by (auto simp: sub_formula_iff_form marker_substitution_def)
+  show ?thesis unfolding provable_balanced_iff_derivation
+    by (rule bounded_derivation_cut[OF fs _ instantiated])
+       (use assms(1) in \<open>simp only: provable_balanced_iff_derivation\<close>)
 qed
 
 subsection \<open>The case-one selector-reassociation identity\<close>
@@ -2440,8 +1341,6 @@ proof -
       by (auto simp add: nth_Cons' numeral_eq_Suc less_Suc_eq)
     ultimately show "formula_well_formed (alphabet F) (?sub v)" by simp
   qed
-  note sig_conn = fresh_sub_conn[OF ra_disj sig_id]
-  note sig_cb = fresh_sub_cb[OF ra_disj sig_id]
   have sv0: "?sub (reassoc_atoms ! 0) = A0" using reassoc_sigma_val[of 0] by simp
   have sv1: "?sub (reassoc_atoms ! 1) = A1" using reassoc_sigma_val[of 1] by simp
   have sv2: "?sub (reassoc_atoms ! 2) = A2" using reassoc_sigma_val[of 2] by simp
@@ -2460,7 +1359,7 @@ proof -
           = balance (sub_formula ?sub (Atom (reassoc_atoms ! 3)))
                     (sub_formula ?sub (Atom (reassoc_atoms ! 2)))
                     (sub_formula ?sub (Atom (reassoc_atoms ! 4)))"
-        by (rule sub_formula_balance[OF sig_cb])
+        by (rule sub_formula_balance)
       thus ?thesis by (simp only: sub_formula.simps sv3 sv2 sv4)
     qed
     have "sub_formula ?sub reassoc_lhs
@@ -2469,7 +1368,7 @@ proof -
                   (sub_formula ?sub
                      (balance (Atom (reassoc_atoms ! 3)) (Atom (reassoc_atoms ! 2))
                               (Atom (reassoc_atoms ! 4))))"
-      unfolding reassoc_lhs_def by (rule sub_formula_balance[OF sig_cb])
+      unfolding reassoc_lhs_def by (rule sub_formula_balance)
     thus ?thesis by (simp only: sub_formula.simps sv1 sv0 inner)
   qed
   have subR: "sub_formula ?sub reassoc_rhs
@@ -2486,7 +1385,7 @@ proof -
           = balance (sub_formula ?sub (Atom (reassoc_atoms ! 1)))
                     (sub_formula ?sub (Atom (reassoc_atoms ! 0)))
                     (sub_formula ?sub (Atom (reassoc_atoms ! 3)))"
-        by (rule sub_formula_balance[OF sig_cb])
+        by (rule sub_formula_balance)
       thus ?thesis by (simp only: sub_formula.simps sv1 sv0 sv3)
     qed
     have inR: "sub_formula ?sub
@@ -2500,7 +1399,7 @@ proof -
           = balance (sub_formula ?sub (Atom (reassoc_atoms ! 1)))
                     (sub_formula ?sub (Atom (reassoc_atoms ! 0)))
                     (sub_formula ?sub (Atom (reassoc_atoms ! 2)))"
-        by (rule sub_formula_balance[OF sig_cb])
+        by (rule sub_formula_balance)
       thus ?thesis by (simp only: sub_formula.simps sv1 sv0 sv2)
     qed
     have "sub_formula ?sub reassoc_rhs
@@ -2511,11 +1410,11 @@ proof -
                      (balance (Atom (reassoc_atoms ! 1)) (Atom (reassoc_atoms ! 0))
                               (Atom (reassoc_atoms ! 2))))
                   (sub_formula ?sub (Atom (reassoc_atoms ! 4)))"
-      unfolding reassoc_rhs_def by (rule sub_formula_balance[OF sig_cb])
+      unfolding reassoc_rhs_def by (rule sub_formula_balance)
     thus ?thesis by (simp only: sub_formula.simps inL inR sv4)
   qed
   show ?thesis
-    using provable_balanced_iff_subst[OF case_one finite_set sig_id sig_conn sig_wf,
+    using provable_balanced_iff_subst[OF case_one finite_set sig_id sig_wf,
                                       unfolded subL subR] .
 qed
 
@@ -3959,8 +2858,6 @@ proof -
   qed
   have sig_id: "\<forall>v. v \<notin> set cong_atoms \<longrightarrow> ?sigma v = Atom v"
     using sig_off by blast
-  note sig_conn = fresh_sub_conn[OF ca_disj sig_id]
-  note sig_cb = fresh_sub_cb[OF ca_disj sig_id]
 
   \<comment> \<open>The selector-commutation tautology, substituted to the subformulas.\<close>
   have subL: "sub_formula ?sigma case_three_lhs
@@ -3979,7 +2876,7 @@ proof -
           = balance (sub_formula ?sigma (Atom (cong_atoms ! 3)))
                     (sub_formula ?sigma (Atom (cong_atoms ! 2)))
                     (sub_formula ?sigma (Atom (cong_atoms ! 5)))"
-        by (rule sub_formula_balance[OF sig_cb])
+        by (rule sub_formula_balance)
       thus ?thesis by (simp only: sub_formula.simps sv3 sv2 sv5)
     qed
     have inR: "sub_formula ?sigma
@@ -3993,7 +2890,7 @@ proof -
           = balance (sub_formula ?sigma (Atom (cong_atoms ! 1)))
                     (sub_formula ?sigma (Atom (cong_atoms ! 0)))
                     (sub_formula ?sigma (Atom (cong_atoms ! 5)))"
-        by (rule sub_formula_balance[OF sig_cb])
+        by (rule sub_formula_balance)
       thus ?thesis by (simp only: sub_formula.simps sv1 sv0 sv5)
     qed
     have "sub_formula ?sigma case_three_lhs
@@ -4004,7 +2901,7 @@ proof -
                      (balance (Atom (cong_atoms ! 1)) (Atom (cong_atoms ! 0))
                               (Atom (cong_atoms ! 5))))
                   (sub_formula ?sigma (Atom (cong_atoms ! 4)))"
-      unfolding case_three_lhs_def by (rule sub_formula_balance[OF sig_cb])
+      unfolding case_three_lhs_def by (rule sub_formula_balance)
     thus ?thesis by (simp only: sub_formula.simps inL inR sv4)
   qed
   have subR: "sub_formula ?sigma case_three_rhs
@@ -4023,7 +2920,7 @@ proof -
           = balance (sub_formula ?sigma (Atom (cong_atoms ! 3)))
                     (sub_formula ?sigma (Atom (cong_atoms ! 1)))
                     (sub_formula ?sigma (Atom (cong_atoms ! 4)))"
-        by (rule sub_formula_balance[OF sig_cb])
+        by (rule sub_formula_balance)
       thus ?thesis by (simp only: sub_formula.simps sv3 sv1 sv4)
     qed
     have inR: "sub_formula ?sigma
@@ -4037,7 +2934,7 @@ proof -
           = balance (sub_formula ?sigma (Atom (cong_atoms ! 2)))
                     (sub_formula ?sigma (Atom (cong_atoms ! 0)))
                     (sub_formula ?sigma (Atom (cong_atoms ! 4)))"
-        by (rule sub_formula_balance[OF sig_cb])
+        by (rule sub_formula_balance)
       thus ?thesis by (simp only: sub_formula.simps sv2 sv0 sv4)
     qed
     have "sub_formula ?sigma case_three_rhs
@@ -4048,7 +2945,7 @@ proof -
                      (balance (Atom (cong_atoms ! 2)) (Atom (cong_atoms ! 0))
                               (Atom (cong_atoms ! 4))))
                   (sub_formula ?sigma (Atom (cong_atoms ! 5)))"
-      unfolding case_three_rhs_def by (rule sub_formula_balance[OF sig_cb])
+      unfolding case_three_rhs_def by (rule sub_formula_balance)
     thus ?thesis by (simp only: sub_formula.simps inL inR sv5)
   qed
 
@@ -4333,8 +3230,7 @@ proof -
     unfolding DBXdef using dsub DS_SDB by linarith
   have dep2: "case_three_step_depth + depth_sub (set cong_atoms) ?sigma \<le> DB"
     by (rule le_trans[OF dep2X DBX_DB])
-  note step2 = provable_balanced_iff_subst[OF case_three finite_set sig_id
-                                              sig_conn sig_wf, unfolded subL subR]
+  note step2 = provable_balanced_iff_subst[OF case_three finite_set sig_id sig_wf, unfolded subL subR]
   note step2' = provable_balanced_iff_weaken[OF step2 order_refl sz2 dep2]
 
   \<comment> \<open>Composition by iff_trans_bnd.\<close>
@@ -4519,18 +3415,8 @@ proof -
             (szQT + szQF + szRT + szRF + rebal_glue_coeff3 * (LS + 1))
             (max depQT (max depQF (max depRT (max depRF
               (rebal_dep_coeff3 * (DS + 1))))))"
-      \<comment> \<open>chain carries four trivially-true side premises (the premises of
-          sig_conn's three-premise statement plus sig_wf's); simp discharges
-          each.\<close>
-      apply (rule provable_balanced_iff_weaken[OF chain])
-            apply simp
-           apply simp
-          apply simp
-         apply (simp add: sig_wf)
-        apply (simp add: case_three_glue_lines_def)
-       apply (rule sz_le)
-      apply (rule chain_dep_le)
-      done
+      by (rule provable_balanced_iff_weaken[OF chain _ sz_le chain_dep_le])
+         (simp_all add: sig_wf case_three_glue_lines_def)
   next
     show "szQT + szQF + szRT + szRF + rebal_glue_coeff3 * (LS + 1)
           \<le> szQT + szQF + szRT + szRF + rebal_glue_coeff3
@@ -4861,12 +3747,6 @@ proof -
     unfolding pos_empty_lines_def pos_empty_step_len_def pos_empty_step_depth_def .
   have fin: "finite {?z}" by simp
   have sig_id: "\<forall>v. v \<notin> {?z} \<longrightarrow> ?sub v = Atom v" by simp
-  have sig_conn: "\<And>w. w \<in> var_set_form conn_iff \<Longrightarrow> w \<noteq> ''a'' \<Longrightarrow> w \<noteq> ''b''
-                       \<Longrightarrow> ?sub w = Atom w"
-    using refl_atom_not_conn_iff by auto
-  have sig_cb: "\<And>v. v \<in> var_set_form custom_balancing \<Longrightarrow> v \<noteq> ''x''
-                     \<Longrightarrow> v \<noteq> ''y'' \<Longrightarrow> v \<noteq> ''z'' \<Longrightarrow> ?sub v = Atom v"
-    using refl_atom_fresh unfolding avoid_atoms_def by auto
   have subL: "sub_formula ?sub pos_empty_lhs = G"
     by (simp add: pos_empty_lhs_def)
   have subR: "sub_formula ?sub pos_empty_rhs = balance true_const false_const G"
@@ -4874,7 +3754,7 @@ proof -
     have "sub_formula ?sub pos_empty_rhs
         = balance (sub_formula ?sub true_const) (sub_formula ?sub false_const)
                   (sub_formula ?sub (Atom ?z))"
-      unfolding pos_empty_rhs_def by (rule sub_formula_balance[OF sig_cb])
+      unfolding pos_empty_rhs_def by (rule sub_formula_balance)
     thus ?thesis by (simp add: true_const_def false_const_def)
   qed
   have lensub: "len_sub {?z} ?sub = len_formula G"
@@ -4884,7 +3764,7 @@ proof -
   have pbi: "provable_balanced_iff G (balance true_const false_const G)
                pos_empty_lines (pos_empty_step_len * len_formula G)
                (pos_empty_step_depth + depth_sub {?z} ?sub)"
-    using provable_balanced_iff_subst[OF base fin sig_id sig_conn sig_wf]
+    using provable_balanced_iff_subst[OF base fin sig_id sig_wf]
     by (simp add: subL subR lensub)
   show ?thesis
   proof (rule provable_balanced_iff_weaken[OF pbi order_refl order_refl])
@@ -4910,247 +3790,14 @@ lemma case_pos_empty_construction:
 
 subsection \<open>Connective (slot) congruence\<close>
 
-text \<open>
-  An equivalence can be carried through one argument of a connective, or more
-  generally through a formula with one distinguished hole. We prove this lifting
-  rule and account for the surrounding formula's size and depth. It will let the
-  small-formula construction move an equivalence along the path to the requested
-  occurrence.
-\<close>
-
-lemma plug_cong_exists:
-  "\<exists> (congbnd :: nat poly) (congc :: nat).
-     \<forall> \<phi> \<psi> \<chi> h l s d.
-       provable_balanced_iff \<phi> \<psi> l s d
-         \<and> formula_well_formed (alphabet F) \<phi>
-         \<and> formula_well_formed (alphabet F) \<psi>
-         \<and> distinguished \<chi> h
-         \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi>
-       \<longrightarrow> provable_balanced_iff (plug h \<phi> \<chi>) (plug h \<psi> \<chi>)
-             (l + poly congbnd (len_formula \<chi>))
-             (max s (poly congbnd
-                       (max (len_formula \<phi>) (len_formula \<psi>) + len_formula \<chi>)))
-             (max d (max (depth_formula \<phi>) (depth_formula \<psi>)
-                     + depth_formula \<chi> + congc))"
-proof -
-  have fs_F: "frege_system F"
-    by (meson frege_balancing_axioms frege_balancing_def)
-  from iff_congruent obtain congc congbnd where IC:
-    "\<forall> \<phi> \<psi> \<chi> h.
-       (let sub  = \<lambda>v. if v = ''a'' then \<phi> else if v = ''b'' then \<psi> else Atom v;
-            sub' = \<lambda>v. if v = ''a'' then plug h \<phi> \<chi>
-                       else if v = ''b'' then plug h \<psi> \<chi> else Atom v;
-            s1 = max (len_formula \<phi>) (len_formula \<psi>);
-            s2 = len_formula \<chi>;
-            d1 = max (depth_formula \<phi>) (depth_formula \<psi>);
-            d2 = depth_formula \<chi>
-        in distinguished \<chi> h \<and> contains_atom \<chi> h
-             \<and> formula_well_formed (alphabet F) \<chi>
-             \<and> formula_well_formed (alphabet F) \<phi>
-             \<and> formula_well_formed (alphabet F) \<psi> \<longrightarrow>
-        (\<exists> pr. valid_proof F pr \<and>
-           assumptions pr = {sub_formula sub conn_iff} \<and>
-           frege_proof.thesis pr = (sub_formula sub' conn_iff) \<and>
-           length (steps pr) \<le> poly congbnd s2 \<and>
-           (\<forall> step \<in> set (steps pr). len_formula step \<le> poly congbnd (s1 + s2) \<and>
-                                     depth_formula step \<le> d1 + d2 + congc) \<and>
-           (\<forall> step \<in> set (steps pr). formula_well_formed (alphabet F) step)))"
-    by blast
-  show ?thesis
-  proof (intro exI[where x = congbnd] exI[where x = congc] allI impI)
-    fix \<phi> \<psi> \<chi> :: "'c formula" and h :: string and l s d :: nat
-    assume A: "provable_balanced_iff \<phi> \<psi> l s d
-                 \<and> formula_well_formed (alphabet F) \<phi>
-                 \<and> formula_well_formed (alphabet F) \<psi>
-                 \<and> distinguished \<chi> h
-                 \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi>"
-    hence prem: "provable_balanced_iff \<phi> \<psi> l s d"
-      and wfphi: "formula_well_formed (alphabet F) \<phi>"
-      and wfpsi: "formula_well_formed (alphabet F) \<psi>"
-      and dist: "distinguished \<chi> h" and cont: "contains_atom \<chi> h"
-      and wfc: "formula_well_formed (alphabet F) \<chi>" by simp_all
-
-    from prem obtain p1 where p1:
-      "valid_proof F p1" "assumptions p1 = {}"
-      "frege_proof.thesis p1 = iff_form \<phi> \<psi>"
-      "length (steps p1) \<le> l"
-      "\<forall>x \<in> set (steps p1). len_formula x \<le> s"
-      "\<forall>x \<in> set (steps p1). depth_formula x \<le> d"
-      "\<forall>x \<in> set (steps p1). formula_well_formed (alphabet F) x"
-      unfolding provable_balanced_iff_def by blast
-
-    have eqL: "sub_formula (\<lambda>v. if v = ''a'' then \<phi> else if v = ''b'' then \<psi>
-                                else Atom v) conn_iff = iff_form \<phi> \<psi>"
-      by (simp add: iff_form_def iff_sub_def)
-    have eqR: "sub_formula (\<lambda>v. if v = ''a'' then plug h \<phi> \<chi>
-                                else if v = ''b'' then plug h \<psi> \<chi> else Atom v) conn_iff
-             = iff_form (plug h \<phi> \<chi>) (plug h \<psi> \<chi>)"
-      by (simp add: iff_form_def iff_sub_def)
-
-    have raw: "\<exists> pr. valid_proof F pr \<and>
-        assumptions pr = {sub_formula (\<lambda>v. if v = ''a'' then \<phi>
-                            else if v = ''b'' then \<psi> else Atom v) conn_iff} \<and>
-        frege_proof.thesis pr = sub_formula (\<lambda>v. if v = ''a'' then plug h \<phi> \<chi>
-                            else if v = ''b'' then plug h \<psi> \<chi> else Atom v) conn_iff \<and>
-        length (steps pr) \<le> poly congbnd (len_formula \<chi>) \<and>
-        (\<forall> step \<in> set (steps pr).
-           len_formula step \<le> poly congbnd
-             (max (len_formula \<phi>) (len_formula \<psi>) + len_formula \<chi>) \<and>
-           depth_formula step \<le> max (depth_formula \<phi>) (depth_formula \<psi>)
-             + depth_formula \<chi> + congc) \<and>
-        (\<forall> step \<in> set (steps pr). formula_well_formed (alphabet F) step)"
-      using IC[unfolded Let_def] dist cont wfc wfphi wfpsi by blast
-    note raw' = raw[unfolded eqL eqR]
-    from raw' obtain pc where pc:
-      "valid_proof F pc"
-      "assumptions pc = {iff_form \<phi> \<psi>}"
-      "frege_proof.thesis pc = iff_form (plug h \<phi> \<chi>) (plug h \<psi> \<chi>)"
-      "length (steps pc) \<le> poly congbnd (len_formula \<chi>)"
-      "\<forall>x \<in> set (steps pc). len_formula x \<le> poly congbnd
-          (max (len_formula \<phi>) (len_formula \<psi>) + len_formula \<chi>)"
-      "\<forall>x \<in> set (steps pc). depth_formula x \<le>
-          max (depth_formula \<phi>) (depth_formula \<psi>) + depth_formula \<chi> + congc"
-      "\<forall>x \<in> set (steps pc). formula_well_formed (alphabet F) x"
-      by blast
-
-    have phipsi_in: "iff_form \<phi> \<psi> \<in> set (steps p1)"
-    proof -
-      have ne: "steps p1 \<noteq> []" using p1(1) unfolding valid_proof_def by simp
-      have "frege_proof.thesis p1 = last (steps p1)"
-        using p1(1) unfolding valid_proof_def by simp
-      hence "iff_form \<phi> \<psi> = last (steps p1)" using p1(3) by simp
-      thus ?thesis using ne by simp
-    qed
-
-    define cb where cb_def: "cb = combine_proofs p1 pc"
-    have valid_cb: "valid_proof F cb"
-      unfolding cb_def
-      using frege_system.combining_valid_proofs[OF fs_F] p1(1) pc(1) by blast
-    have cb_steps: "steps cb = steps p1 @ steps pc"
-      unfolding cb_def by simp
-    have cb_asm: "assumptions cb = {}"
-    proof -
-      have "assumptions cb = assumptions p1 \<union> (assumptions pc - set (steps p1))"
-        unfolding cb_def by simp
-      also have "\<dots> = {} \<union> ({iff_form \<phi> \<psi>} - set (steps p1))"
-        using p1(2) pc(2) by simp
-      also have "\<dots> = {}" using phipsi_in by blast
-      finally show ?thesis .
-    qed
-    have cb_thesis: "frege_proof.thesis cb
-                   = iff_form (plug h \<phi> \<chi>) (plug h \<psi> \<chi>)"
-      unfolding cb_def using pc(3) by simp
-    have cb_lines: "length (steps cb) \<le> l + poly congbnd (len_formula \<chi>)"
-      using cb_steps p1(4) pc(4) by simp
-    have cb_len: "\<forall>x \<in> set (steps cb). len_formula x
-                    \<le> max s (poly congbnd
-                        (max (len_formula \<phi>) (len_formula \<psi>) + len_formula \<chi>))"
-    proof
-      fix x assume "x \<in> set (steps cb)"
-      hence "x \<in> set (steps p1) \<or> x \<in> set (steps pc)" using cb_steps by auto
-      thus "len_formula x \<le> max s (poly congbnd
-              (max (len_formula \<phi>) (len_formula \<psi>) + len_formula \<chi>))"
-      proof
-        assume "x \<in> set (steps p1)"
-        hence "len_formula x \<le> s" using p1(5) by blast
-        thus ?thesis by simp
-      next
-        assume "x \<in> set (steps pc)"
-        hence "len_formula x \<le> poly congbnd
-                 (max (len_formula \<phi>) (len_formula \<psi>) + len_formula \<chi>)"
-          using pc(5) by blast
-        thus ?thesis by simp
-      qed
-    qed
-    have cb_dep: "\<forall>x \<in> set (steps cb). depth_formula x
-                    \<le> max d (max (depth_formula \<phi>) (depth_formula \<psi>)
-                             + depth_formula \<chi> + congc)"
-    proof
-      fix x assume "x \<in> set (steps cb)"
-      hence "x \<in> set (steps p1) \<or> x \<in> set (steps pc)" using cb_steps by auto
-      thus "depth_formula x \<le> max d (max (depth_formula \<phi>) (depth_formula \<psi>)
-              + depth_formula \<chi> + congc)"
-      proof
-        assume "x \<in> set (steps p1)"
-        hence "depth_formula x \<le> d" using p1(6) by blast
-        thus ?thesis by simp
-      next
-        assume "x \<in> set (steps pc)"
-        hence "depth_formula x \<le> max (depth_formula \<phi>) (depth_formula \<psi>)
-                 + depth_formula \<chi> + congc" using pc(6) by blast
-        thus ?thesis by simp
-      qed
-    qed
-
-    have cb_wf: "\<forall>x \<in> set (steps cb). formula_well_formed (alphabet F) x"
-    proof
-      fix x assume "x \<in> set (steps cb)"
-      hence "x \<in> set (steps p1) \<or> x \<in> set (steps pc)" using cb_steps by auto
-      thus "formula_well_formed (alphabet F) x" using p1(7) pc(7) by blast
-    qed
-
-    show "provable_balanced_iff (plug h \<phi> \<chi>) (plug h \<psi> \<chi>)
-            (l + poly congbnd (len_formula \<chi>))
-            (max s (poly congbnd
-                      (max (len_formula \<phi>) (len_formula \<psi>) + len_formula \<chi>)))
-            (max d (max (depth_formula \<phi>) (depth_formula \<psi>)
-                    + depth_formula \<chi> + congc))"
-      unfolding provable_balanced_iff_def
-      using valid_cb cb_asm cb_thesis cb_lines cb_len cb_dep cb_wf by blast
-  qed
-qed
-
-text \<open>
-  The context-congruence line and size costs are bounded by a fixed
-  polynomial, and its depth overhead by a fixed constant.  These witnesses
-  are reused in the later constructions.
-\<close>
-
-definition cong_body :: "nat \<Rightarrow> nat poly \<Rightarrow> bool" where
-  "cong_body congc congbnd \<longleftrightarrow>
-     (\<forall> \<phi> \<psi> \<chi> h l s d.
-        provable_balanced_iff \<phi> \<psi> l s d
-          \<and> formula_well_formed (alphabet F) \<phi>
-          \<and> formula_well_formed (alphabet F) \<psi>
-          \<and> distinguished \<chi> h
-          \<and> contains_atom \<chi> h \<and> formula_well_formed (alphabet F) \<chi>
-        \<longrightarrow> provable_balanced_iff (plug h \<phi> \<chi>) (plug h \<psi> \<chi>)
-              (l + poly congbnd (len_formula \<chi>))
-              (max s (poly congbnd
-                        (max (len_formula \<phi>) (len_formula \<psi>) + len_formula \<chi>)))
-              (max d (max (depth_formula \<phi>) (depth_formula \<psi>)
-                      + depth_formula \<chi> + congc)))"
-
-lemma cong_body_ex: "\<exists>congc congbnd. cong_body congc congbnd"
-  using plug_cong_exists unfolding cong_body_def by blast
+text \<open>One fixed proof for each connective slot replaces general context
+  congruence. Its costs are uniform over the finite alphabet.\<close>
 
 definition cong_poly :: "nat poly" where
-  "cong_poly = (SOME congbnd. \<exists>congc. cong_body congc congbnd)"
+  "cong_poly = monom (base_max_steps + 3 * base_max_step_len) 1"
 
 definition cong_const :: nat where
-  "cong_const = (SOME congc. cong_body congc cong_poly)"
-
-lemma cong_spec: "cong_body cong_const cong_poly"
-proof -
-  have "\<exists>congbnd. \<exists>congc. cong_body congc congbnd" using cong_body_ex by blast
-  hence "\<exists>congc. cong_body congc cong_poly"
-    unfolding cong_poly_def by (rule someI_ex)
-  thus ?thesis unfolding cong_const_def by (rule someI_ex)
-qed
-
-lemma plug_cong:
-  assumes "provable_balanced_iff \<phi> \<psi> l s d"
-      and "formula_well_formed (alphabet F) \<phi>"
-      and "formula_well_formed (alphabet F) \<psi>"
-      and "distinguished \<chi> h" and "contains_atom \<chi> h"
-      and "formula_well_formed (alphabet F) \<chi>"
-    shows "provable_balanced_iff (plug h \<phi> \<chi>) (plug h \<psi> \<chi>)
-             (l + poly cong_poly (len_formula \<chi>))
-             (max s (poly cong_poly
-                       (max (len_formula \<phi>) (len_formula \<psi>) + len_formula \<chi>)))
-             (max d (max (depth_formula \<phi>) (depth_formula \<psi>)
-                     + depth_formula \<chi> + cong_const))"
-  using cong_spec assms unfolding cong_body_def by blast
+  "cong_const = base_max_step_depth"
 
 subsection \<open>Selector reassociation for a general connective\<close>
 
@@ -5376,8 +4023,6 @@ proof -
   qed
   have finVS: "finite (set ?atoms)" by simp
   have sig_id: "\<forall>v. v \<notin> set ?atoms \<longrightarrow> ?sub v = Atom v" using sub_off by blast
-  note sig_conn = fresh_sub_conn[OF adisj sig_id]
-  note sig_cb = fresh_sub_cb[OF adisj sig_id]
 
   have sig_wf: "\<And>v. v \<in> set ?atoms \<Longrightarrow> formula_well_formed (alphabet F) (?sub v)"
   proof -
@@ -5393,8 +4038,7 @@ proof -
       using wf_gs wfE wfG wfZ by (auto simp: subv)
   qed
 
-  note subst_pbi = provable_balanced_iff_subst[OF reassoc_conn_proof[of c i] finVS
-                                                  sig_id sig_conn sig_wf]
+  note subst_pbi = provable_balanced_iff_subst[OF reassoc_conn_proof[of c i] finVS sig_id sig_wf]
 
   have mapslots: "map (sub_formula ?sub) (map Atom ?slots) = gs"
     using sub_slots by (simp add: comp_def)
@@ -5407,7 +4051,7 @@ proof -
         = balance (sub_formula ?sub (Atom (reassoc_conn_p c)))
                   (sub_formula ?sub (Atom (reassoc_conn_q c)))
                   (sub_formula ?sub (Atom (reassoc_conn_r c)))"
-      by (rule sub_formula_balance[OF sig_cb])
+      by (rule sub_formula_balance)
     thus ?thesis by (simp only: sub_formula.simps sub_p sub_q sub_r)
   qed
   have subL: "sub_formula ?sub (reassoc_conn_lhs c i)
@@ -5432,7 +4076,7 @@ proof -
             (sub_formula ?sub
                (Conn c ((map Atom ?slots)[i := Atom (reassoc_conn_q c)])))
             (sub_formula ?sub (Atom (reassoc_conn_r c)))"
-      unfolding reassoc_conn_rhs_def by (rule sub_formula_balance[OF sig_cb])
+      unfolding reassoc_conn_rhs_def by (rule sub_formula_balance)
     thus ?thesis by (simp only: eP eQ sub_formula.simps(1) sub_r)
   qed
 
@@ -5689,95 +4333,6 @@ proof -
   thus ?thesis by simp
 qed
 
-lemma contains_atom_iff_var: "contains_atom g h = (h \<in> var_set_form g)"
-  by (induction g) auto
-
-lemma distinguished_of_fresh: "h \<notin> var_set_form g \<Longrightarrow> distinguished g h"
-  by (induction g) (auto simp: contains_atom_iff_var)
-
-text \<open>
-  An equivalence proof for one argument lifts through a well-formed
-  connective application.  The proof uses the one-hole context congruence
-  result and bounds the cost uniformly for that slot.
-\<close>
-
-lemma sum_list_update_le:
-  "i < length (xs :: nat list) \<Longrightarrow> v \<le> xs ! i
-   \<Longrightarrow> sum_list (xs[i := v]) \<le> sum_list xs"
-proof (induction xs arbitrary: i)
-  case Nil thus ?case by simp
-next
-  case (Cons x xs)
-  show ?case
-  proof (cases i)
-    case 0
-    have "v \<le> x" using Cons.prems(2) 0 by simp
-    hence "v + sum_list xs \<le> x + sum_list xs" by linarith
-    thus ?thesis using 0 by simp
-  next
-    case (Suc i')
-    have "i' < length xs" using Cons.prems(1) Suc by simp
-    moreover have "v \<le> xs ! i'" using Cons.prems(2) Suc by simp
-    ultimately have "sum_list (xs[i' := v]) \<le> sum_list xs"
-      using Cons.IH by blast
-    thus ?thesis using Suc by simp
-  qed
-qed
-
-lemma len_formula_conn_hole_le:
-  assumes "i < length gs" and "len_formula g \<le> len_formula (gs ! i)"
-  shows "len_formula (Conn c (gs[i := g])) \<le> len_formula (Conn c gs)"
-proof -
-  have "len_formula (Conn c (gs[i := g]))
-      = 1 + sum_list ((map len_formula gs)[i := len_formula g])"
-    by (simp add: map_update)
-  also have "\<dots> \<le> 1 + sum_list (map len_formula gs)"
-    using sum_list_update_le[of i "map len_formula gs" "len_formula g"] assms
-    by simp
-  also have "\<dots> = len_formula (Conn c gs)" by simp
-  finally show ?thesis .
-qed
-
-lemma depth_formula_conn_hole_le:
-  assumes "i < length gs" and "depth_formula g \<le> depth_formula (gs ! i)"
-  shows "depth_formula (Conn c (gs[i := g])) \<le> depth_formula (Conn c gs)"
-proof -
-  have ne: "gs \<noteq> []" using assms(1) by auto
-  have fin: "finite (set (map depth_formula gs))" by simp
-  have gi_in: "depth_formula (gs ! i) \<in> set (map depth_formula gs)"
-    using assms(1) by (metis length_map nth_map nth_mem)
-  have dg_le: "depth_formula g \<le> Max (set (map depth_formula gs))"
-    using assms(2) Max_ge[OF fin gi_in] by linarith
-  have "Max (set (map depth_formula (gs[i := g])))
-        \<le> Max (insert (depth_formula g) (set (map depth_formula gs)))"
-  proof (rule Max_mono)
-    have "set (map depth_formula (gs[i := g]))
-        = set ((map depth_formula gs)[i := depth_formula g])"
-      by (simp add: map_update)
-    also have "\<dots> \<subseteq> insert (depth_formula g) (set (map depth_formula gs))"
-      by (rule set_update_subset_insert)
-    finally show "set (map depth_formula (gs[i := g]))
-          \<subseteq> insert (depth_formula g) (set (map depth_formula gs))" .
-    show "set (map depth_formula (gs[i := g])) \<noteq> {}" using ne by simp
-    show "finite (insert (depth_formula g) (set (map depth_formula gs)))"
-      by simp
-  qed
-  also have "\<dots> = Max (set (map depth_formula gs))"
-  proof -
-    have "set (map depth_formula gs) \<noteq> {}" using ne by simp
-    hence "Max (insert (depth_formula g) (set (map depth_formula gs)))
-         = max (depth_formula g) (Max (set (map depth_formula gs)))"
-      using fin by simp
-    thus ?thesis using dg_le by simp
-  qed
-  finally show ?thesis using ne by simp
-qed
-
-text \<open>
-  Balancing substitutes three formulas into a fixed witness, so its size
-  and depth are bounded by those of the witness and its arguments.
-\<close>
-
 lemma conn_slot_cong:
   assumes prem: "provable_balanced_iff A B l s d"
       and wfA: "formula_well_formed (alphabet F) A"
@@ -5793,135 +4348,115 @@ lemma conn_slot_cong:
            \<and> dep \<le> max d (max (depth_formula A) (depth_formula B)
                             + depth_formula (Conn c gs) + cong_const)"
 proof -
-  have finS: "finite (var_set_form (Conn c gs))" by (rule var_set_form_finite)
-  obtain h where h_fresh: "h \<notin> var_set_form (Conn c gs)"
-    using ex_new_if_finite[OF infinite_UNIV_listI finS] by blast
-  let ?chi = "Conn c (gs[i := Atom h])"
-
-  have contains_chi: "contains_atom ?chi h"
-  proof -
-    have "Atom h \<in> set (gs[i := Atom h])"
-      using i_lt by (metis nth_list_update_eq nth_mem length_list_update)
-    hence "\<exists>f \<in> set (gs[i := Atom h]). contains_atom f h"
-      by (intro bexI[where x = "Atom h"]) simp_all
-    thus ?thesis by simp
-  qed
-  have ulen: "i < length (gs[i := Atom h])" using i_lt by simp
-  have uslot: "contains_atom ((gs[i := Atom h]) ! i) h" using i_lt by simp
-
-  have dist_chi: "distinguished ?chi h"
-  proof -
-    have all_dist: "\<forall>f \<in> set (gs[i := Atom h]). distinguished f h"
-    proof
-      fix f assume f_in: "f \<in> set (gs[i := Atom h])"
-      show "distinguished f h"
-      proof (cases "f = Atom h")
-        case True thus ?thesis by simp
-      next
-        case False
-        hence "f \<in> set gs" using f_in set_update_subset_insert by fastforce
-        hence "h \<notin> var_set_form f" using h_fresh by auto
-        thus ?thesis by (rule distinguished_of_fresh)
-      qed
-    qed
-    have uniq: "\<exists>!j. j < length (gs[i := Atom h])
-                     \<and> contains_atom ((gs[i := Atom h]) ! j) h"
-    proof (rule ex1I[where a = i])
-      show "i < length (gs[i := Atom h])
-            \<and> contains_atom ((gs[i := Atom h]) ! i) h"
-        using ulen uslot by simp
-    next
-      fix j assume j: "j < length (gs[i := Atom h])
-                       \<and> contains_atom ((gs[i := Atom h]) ! j) h"
-      show "j = i"
-      proof (rule ccontr)
-        assume jne: "j \<noteq> i"
-        have "(gs[i := Atom h]) ! j = gs ! j"
-          using jne by (simp add: nth_list_update)
-        moreover have "gs ! j \<in> set gs" using j i_lt by simp
-        ultimately have "h \<notin> var_set_form ((gs[i := Atom h]) ! j)"
-          using h_fresh by auto
-        hence "\<not> contains_atom ((gs[i := Atom h]) ! j) h"
-          by (simp add: contains_atom_iff_var)
-        thus False using j by simp
-      qed
-    qed
-    show ?thesis using contains_chi uniq all_dist by simp
-  qed
-
-  have wf_chi: "formula_well_formed (alphabet F) ?chi"
-  proof -
-    have "\<forall>f \<in> set (gs[i := Atom h]). formula_well_formed (alphabet F) f"
-    proof
-      fix f assume "f \<in> set (gs[i := Atom h])"
-      thus "formula_well_formed (alphabet F) f"
-      proof (cases "f = Atom h")
-        case True thus ?thesis by simp
-      next
-        case False
-        hence "f \<in> set gs"
-          using \<open>f \<in> set (gs[i := Atom h])\<close> set_update_subset_insert by fastforce
-        thus ?thesis using wfgs by auto
-      qed
-    qed
-    moreover have "length (gs[i := Atom h]) = arity (alphabet F) c"
-      using wfgs by auto
-    ultimately show ?thesis by auto
-  qed
-
-  have plugA: "plug h A ?chi = Conn c (gs[i := A])"
-  proof -
-    have "plug h A ?chi
-        = Conn c ((gs[i := Atom h])[i := plug h A ((gs[i := Atom h]) ! i)])"
-      using plug_distinguished_unfold[OF dist_chi contains_chi ulen uslot] .
-    also have "\<dots> = Conn c (gs[i := A])"
-      using i_lt by (simp add: plug_def)
-    finally show ?thesis .
-  qed
-  have plugB: "plug h B ?chi = Conn c (gs[i := B])"
-  proof -
-    have "plug h B ?chi
-        = Conn c ((gs[i := Atom h])[i := plug h B ((gs[i := Atom h]) ! i)])"
-      using plug_distinguished_unfold[OF dist_chi contains_chi ulen uslot] .
-    also have "\<dots> = Conn c (gs[i := B])"
-      using i_lt by (simp add: plug_def)
-    finally show ?thesis .
-  qed
-
-  have pc: "provable_balanced_iff (Conn c (gs[i := A])) (Conn c (gs[i := B]))
-              (l + poly cong_poly (len_formula ?chi))
-              (max s (poly cong_poly
-                        (max (len_formula A) (len_formula B) + len_formula ?chi)))
-              (max d (max (depth_formula A) (depth_formula B)
-                      + depth_formula ?chi + cong_const))"
-    using plug_cong[OF prem wfA wfB dist_chi contains_chi wf_chi]
-    unfolding plugA plugB .
-  have lc: "len_formula ?chi \<le> len_formula (Conn c gs)"
-    using len_formula_conn_hole_le[OF i_lt] len_formula_positive[of "gs ! i"]
+  let ?atoms = "canonical_atoms c"
+  let ?names = "''a'' # ''b'' # ?atoms"
+  let ?values = "A # B # gs"
+  let ?sub = "marker_substitution ?names ?values"
+  let ?V = "set ?names"
+  let ?M = "max (len_formula A) (len_formula B)"
+  let ?C = "len_formula (Conn c gs)"
+  let ?D = "max (depth_formula A) (depth_formula B) + depth_formula (Conn c gs)"
+  have fs: "frege_system F" using frege_balancing_axioms
+    unfolding frege_balancing_def by blast
+  have ar: "length gs = arity (alphabet F) c" using wfgs by simp
+  have ilt: "i < arity (alphabet F) c" using i_lt ar by simp
+  have distinct: "distinct ?names" and lengths: "length ?values = length ?names"
+    using canonical_atoms_spec ar by auto
+  have sub_a: "?sub ''a'' = A" and sub_b: "?sub ''b'' = B"
+    using marker_substitution_nth[OF distinct lengths, of 0]
+          marker_substitution_nth[OF distinct lengths, of 1] by simp_all
+  have sub_atoms: "map ?sub ?atoms = gs"
+    using marker_substitution_map[OF distinct lengths] sub_a sub_b by simp
+  have outside: "\<forall>v. v \<notin> ?V \<longrightarrow> ?sub v = Atom v"
+    using marker_substitution_outside by blast
+  have sub_wf: "formula_well_formed (alphabet F) (?sub v)" for v
+    using marker_substitution_range[of ?names ?values v] wfA wfB wfgs by auto
+  have sub_iff: "sub_formula ?sub conn_iff = iff_form A B"
+    unfolding iff_form_def
+    by (rule sub_formula_cong) (use conn_iff_vars sub_a sub_b in \<open>auto simp: iff_sub_def\<close>)
+  have sides: "sub_formula ?sub (Conn c ((map Atom ?atoms)[i := Atom ''a'']))
+        = Conn c (gs[i := A])"
+      "sub_formula ?sub (Conn c ((map Atom ?atoms)[i := Atom ''b'']))
+        = Conn c (gs[i := B])"
+    using sub_a sub_b sub_atoms by (simp_all add: map_update comp_def)
+  let ?base = "base_proof c i"
+  let ?inst = "sub_proof ?sub ?base"
+  note spec = base_proof_spec[OF ilt]
+  have valid: "valid_proof F ?inst"
+    using frege_system.proof_substitution[OF fs] spec by blast
+  have asm: "assumptions ?inst = {iff_form A B}"
+    using spec sub_iff by simp
+  have base_th: "thesis ?base = iff_form
+       (Conn c ((map Atom ?atoms)[i := Atom ''a'']))
+       (Conn c ((map Atom ?atoms)[i := Atom ''b'']))"
+    using spec unfolding iff_form_def iff_sub_def by simp
+  have th: "thesis ?inst = iff_form (Conn c (gs[i := A])) (Conn c (gs[i := B]))"
+    using base_th sides by (simp add: sub_formula_iff_form)
+  have idx: "(c,i) \<in> base_index_set" using ilt unfolding base_index_set_def by simp
+  have lines: "length (steps ?inst) \<le> base_max_steps"
+    using base_max_steps_bound[OF idx] by simp
+  have lb: "\<forall>t\<in>set (steps ?base). len_formula t \<le> base_max_step_len"
+    using base_max_step_len_bound[OF idx] by blast
+  have db: "\<forall>t\<in>set (steps ?base). depth_formula t \<le> base_max_step_depth"
+    using base_max_step_depth_bound[OF idx] by blast
+  have base_wf: "\<forall>t\<in>set (steps ?base). formula_well_formed (alphabet F) t"
+    using spec by blast
+  note bounds = sub_proof_line_bounds[OF finite_set outside lb db base_wf sub_wf]
+  have inst_bounds: "\<forall>t\<in>set (steps ?inst).
+       len_formula t \<le> base_max_step_len * len_sub ?V ?sub
+       \<and> depth_formula t \<le> base_max_step_depth + depth_sub ?V ?sub
+       \<and> formula_well_formed (alphabet F) t"
+    using bounds spec by blast
+  have len_sub: "len_sub ?V ?sub \<le> 3 * (?M + ?C)"
+    using marker_substitution_length[OF distinct lengths] len_formula_positive[of A]
     by simp
-  have dc: "depth_formula ?chi \<le> depth_formula (Conn c gs)"
-    using depth_formula_conn_hole_le[OF i_lt] depth_formula_ge_1[of "gs ! i"]
-    by simp
-  have b1: "l + poly cong_poly (len_formula ?chi)
-            \<le> l + poly cong_poly (len_formula (Conn c gs))"
-    using poly_nat_mono[OF lc] by simp
-  have b2: "max s (poly cong_poly
-              (max (len_formula A) (len_formula B) + len_formula ?chi))
-            \<le> max s (poly cong_poly
-              (max (len_formula A) (len_formula B) + len_formula (Conn c gs)))"
-  proof -
-    have "poly cong_poly (max (len_formula A) (len_formula B) + len_formula ?chi)
-          \<le> poly cong_poly (max (len_formula A) (len_formula B)
-                              + len_formula (Conn c gs))"
-      by (rule poly_nat_mono[OF add_left_mono[OF lc]])
-    thus ?thesis by (rule max.mono[OF order_refl])
+  have child_depth: "depth_formula g \<le> ?D" if "g \<in> set gs" for g
+    using depth_formula_child_le[OF that, of c] by linarith
+  have dep_sub: "depth_sub ?V ?sub \<le> ?D"
+    by (rule marker_substitution_depth)
+       (use depth_formula_ge_1[of A] child_depth in auto)
+  obtain pr where pr: "valid_proof F pr" "assumptions pr = {}"
+    "frege_proof.thesis pr = iff_form A B" "length (steps pr) \<le> l"
+    "\<forall>t\<in>set (steps pr). len_formula t \<le> s"
+    "\<forall>t\<in>set (steps pr). depth_formula t \<le> d"
+    "\<forall>t\<in>set (steps pr). formula_well_formed (alphabet F) t"
+    using prem unfolding provable_balanced_iff_def by blast
+  let ?out = "combine_proofs pr ?inst"
+  have out_valid: "valid_proof F ?out"
+    using frege_system.combining_valid_proofs[OF fs] pr(1) valid by blast
+  have out_asm: "assumptions ?out = {}"
+    using valid_proof_thesis_mem[OF pr(1)] pr(2,3) asm by auto
+  have count: "length (steps ?out) \<le> l + poly cong_poly ?C"
+    using pr(4) lines len_formula_positive[of "Conn c gs"]
+    unfolding cong_poly_def by (simp add: poly_monom)
+  have inst_width: "\<forall>t\<in>set (steps ?inst).
+       len_formula t \<le> poly cong_poly (?M + ?C)"
+  proof (intro ballI)
+    fix t assume "t \<in> set (steps ?inst)"
+    hence "len_formula t \<le> base_max_step_len * len_sub ?V ?sub"
+      using inst_bounds by blast
+    also have "\<dots> \<le> base_max_step_len * (3 * (?M + ?C))"
+      by (rule mult_le_mono2[OF len_sub])
+    also have "\<dots> \<le> poly cong_poly (?M + ?C)"
+      unfolding cong_poly_def by (simp add: poly_monom algebra_simps)
+    finally show "len_formula t \<le> poly cong_poly (?M + ?C)" .
   qed
-  have b3: "max d (max (depth_formula A) (depth_formula B)
-              + depth_formula ?chi + cong_const)
-            \<le> max d (max (depth_formula A) (depth_formula B)
-              + depth_formula (Conn c gs) + cong_const)"
-    using dc by simp
-  show ?thesis using pc b1 b2 b3 by blast
+  have width: "\<forall>t\<in>set (steps ?out). len_formula t \<le> max s (poly cong_poly (?M + ?C))"
+    using pr(5) inst_width by auto
+  have depth: "\<forall>t\<in>set (steps ?out). depth_formula t \<le> max d (?D + cong_const)"
+    using pr(6) inst_bounds dep_sub unfolding cong_const_def by auto
+  have wf: "\<forall>t\<in>set (steps ?out). formula_well_formed (alphabet F) t"
+    using pr(7) inst_bounds by auto
+  have result: "provable_balanced_iff (Conn c (gs[i := A])) (Conn c (gs[i := B]))
+      (l + poly cong_poly ?C) (max s (poly cong_poly (?M + ?C)))
+      (max d (?D + cong_const))"
+    unfolding provable_balanced_iff_def
+    by (rule exI[of _ ?out]) (use out_valid out_asm count width depth wf th in auto)
+  show ?thesis
+    by (rule exI[of _ "l + poly cong_poly ?C"],
+        rule exI[of _ "max s (poly cong_poly (?M + ?C))"],
+        rule exI[of _ "max d (?D + cong_const)"])
+       (use result in simp)
 qed
 
 text \<open>The next bounds account for the formulas assembled by the

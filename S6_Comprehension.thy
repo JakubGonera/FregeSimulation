@@ -176,12 +176,7 @@ proof -
   have slots_nth: "\<And>j. j < ?k \<Longrightarrow> ?slots ! j = ?atoms ! j"
     unfolding shc_slots_def by simp
   have sub_nth: "\<And>j. j < ?k + 1 \<Longrightarrow> ?sub (?atoms ! j) = ?vals ! j"
-  proof -
-    fix j assume j: "j < ?k + 1"
-    hence "map_of (zip ?atoms ?vals) (?atoms ! j) = Some (?vals ! j)"
-      using map_of_zip_nth_lookup[OF adist lveq] alen by simp
-    thus "?sub (?atoms ! j) = ?vals ! j" unfolding shc_sub_def by simp
-  qed
+    using adist lveq alen unfolding shc_sub_def by (auto simp: map_of_zip_nth_lookup)
   have sub_z: "?sub (shc_z d) = Z"
   proof -
     have "?sub (shc_z d) = ?vals ! ?k" using sub_nth[of ?k] unfolding shc_z_def by simp
@@ -199,14 +194,8 @@ proof -
     finally show "map ?sub ?slots ! j = gs ! j" .
   qed
   have sig_id: "\<forall>v. v \<notin> set ?atoms \<longrightarrow> ?sub v = Atom v"
-  proof (intro allI impI)
-    fix v assume "v \<notin> set ?atoms"
-    hence "map_of (zip ?atoms ?vals) v = None" by (rule map_of_zip_None_lookup)
-    thus "?sub v = Atom v" unfolding shc_sub_def by simp
-  qed
+    unfolding shc_sub_def by (auto simp: map_of_zip_None_lookup)
   have finVS: "finite (set ?atoms)" by simp
-  note sig_conn = fresh_sub_conn[OF adisj sig_id]
-  note sig_cb = fresh_sub_cb[OF adisj sig_id]
   have sig_wf: "\<And>v. v \<in> set ?atoms \<Longrightarrow> formula_well_formed (alphabet F) (?sub v)"
   proof -
     fix v assume v_in: "v \<in> set ?atoms"
@@ -220,7 +209,7 @@ proof -
       using wf_gs wfZ by (auto simp: subv)
   qed
   note subst_pbi =
-    provable_balanced_iff_subst[OF shc_proof[OF ar] finVS sig_id sig_conn sig_wf]
+    provable_balanced_iff_subst[OF shc_proof[OF ar] finVS sig_id sig_wf]
   have mapslots: "map (sub_formula ?sub) (map Atom ?slots) = gs"
     using sub_slots by (simp add: comp_def)
   have tc: "sub_formula ?sub true_const = true_const" by (simp add: true_const_def)
@@ -232,7 +221,7 @@ proof -
         = balance (sub_formula ?sub (Conn d ((map Atom ?slots)[i := true_const])))
                   (sub_formula ?sub (Conn d ((map Atom ?slots)[i := false_const])))
                   (sub_formula ?sub (Atom (shc_z d)))"
-      unfolding shc_lhs_def by (rule sub_formula_balance[OF sig_cb])
+      unfolding shc_lhs_def by (rule sub_formula_balance)
     thus ?thesis
       by (simp only: sub_formula.simps map_update mapslots tc fc sub_z)
   qed
@@ -2778,63 +2767,6 @@ proof -
   ultimately show ?thesis by blast
 qed
 
-lemma combine_fold_spec:
-  assumes vbase: "valid_proof F base"
-  shows "(\<forall>p \<in> set ps. valid_proof F p \<and> assumptions p = {}) \<longrightarrow>
-         (valid_proof F (foldr combine_proofs ps base)
-          \<and> assumptions (foldr combine_proofs ps base)
-              = assumptions base - (\<Union>p \<in> set ps. set (steps p))
-          \<and> thesis (foldr combine_proofs ps base) = thesis base
-          \<and> steps (foldr combine_proofs ps base) = concat (map steps ps) @ steps base)"
-proof (induction ps)
-  case Nil
-  show ?case using vbase by simp
-next
-  case (Cons p ps)
-  show ?case
-  proof (intro impI)
-    assume hyps: "\<forall>q \<in> set (p # ps). valid_proof F q \<and> assumptions q = {}"
-    have fs: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
-    have vp: "valid_proof F p" and ap: "assumptions p = {}" using hyps by auto
-    have cp_th: "\<And>X. thesis (combine_proofs p X) = thesis X" by simp
-    have cp_st: "\<And>X. steps (combine_proofs p X) = steps p @ steps X" by simp
-    have cp_as: "\<And>X. assumptions (combine_proofs p X)
-                       = assumptions p \<union> (assumptions X - set (steps p))" by simp
-    have inner: "valid_proof F (foldr combine_proofs ps base)
-          \<and> assumptions (foldr combine_proofs ps base)
-              = assumptions base - (\<Union>q \<in> set ps. set (steps q))
-          \<and> thesis (foldr combine_proofs ps base) = thesis base
-          \<and> steps (foldr combine_proofs ps base) = concat (map steps ps) @ steps base"
-      using Cons.IH hyps by (auto simp del: combine_proofs.simps)
-    have vin: "valid_proof F (foldr combine_proofs ps base)" using inner by blast
-    have fcons: "foldr combine_proofs (p # ps) base
-                 = combine_proofs p (foldr combine_proofs ps base)"
-      by (simp del: combine_proofs.simps)
-    show "valid_proof F (foldr combine_proofs (p # ps) base)
-          \<and> assumptions (foldr combine_proofs (p # ps) base)
-              = assumptions base - (\<Union>q \<in> set (p # ps). set (steps q))
-          \<and> thesis (foldr combine_proofs (p # ps) base) = thesis base
-          \<and> steps (foldr combine_proofs (p # ps) base)
-              = concat (map steps (p # ps)) @ steps base"
-      unfolding fcons
-    proof (intro conjI)
-      show "valid_proof F (combine_proofs p (foldr combine_proofs ps base))"
-        using frege_system.combining_valid_proofs[OF fs] vp vin by blast
-    next
-      show "assumptions (combine_proofs p (foldr combine_proofs ps base))
-            = assumptions base - (\<Union>q \<in> set (p # ps). set (steps q))"
-        using cp_as ap inner by (auto simp del: combine_proofs.simps)
-    next
-      show "thesis (combine_proofs p (foldr combine_proofs ps base)) = thesis base"
-        using cp_th inner by (simp del: combine_proofs.simps)
-    next
-      show "steps (combine_proofs p (foldr combine_proofs ps base))
-            = concat (map steps (p # ps)) @ steps base"
-        using cp_st inner by (simp del: combine_proofs.simps)
-    qed
-  qed
-qed
-
 lemma conn_cong:
   fixes Sc Dc :: nat and lf :: "nat \<Rightarrow> nat"
   assumes len_eq: "length Bs = length As"
@@ -2853,463 +2785,114 @@ lemma conn_cong:
            \<and> dep \<le> max Dc (conn_cong_max_step_depth
                     + max (depth_formula (Conn c As)) (depth_formula (Conn c Bs)))"
 proof -
-  have fs_F: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
-  define kk where "kk = arity (alphabet F) c"
-  define atoms where "atoms = conn_cong_atoms c"
-  define vals where "vals = As @ Bs"
-  define csub where "csub = (\<lambda>v. case map_of (zip atoms vals) v of
-                                  None \<Rightarrow> Atom v | Some f \<Rightarrow> f)"
-  define LAB where "LAB = len_formula (Conn c As) + len_formula (Conn c Bs)"
-  define DAB where "DAB = max (depth_formula (Conn c As)) (depth_formula (Conn c Bs))"
-
-  have atlen: "length atoms = 2 * kk"
-    unfolding atoms_def kk_def using conn_cong_atoms_spec by simp
-  have atdist: "distinct atoms" unfolding atoms_def using conn_cong_atoms_spec by simp
-  have atdisj: "set atoms \<inter> avoid_atoms = {}"
-    unfolding atoms_def using conn_cong_atoms_spec by simp
-  have askk: "length As = kk" using ar kk_def by simp
-  have bskk: "length Bs = kk" using len_eq askk by simp
-  have vallen: "length vals = 2 * kk" unfolding vals_def using askk bskk by simp
-  have lveq: "length atoms = length vals" using atlen vallen by simp
-  have fin_at: "finite (set atoms)" by simp
-
-  have csub_nth: "\<And>j. j < 2 * kk \<Longrightarrow> csub (atoms ! j) = vals ! j"
+  have fs: "frege_system F" by (meson frege_balancing_axioms frege_balancing_def)
+  let ?k = "length As"
+  let ?atoms = "conn_cong_atoms c"
+  let ?args = "As @ Bs"
+  let ?sub = "marker_substitution ?atoms ?args"
+  let ?D = "max (depth_formula (Conn c As)) (depth_formula (Conn c Bs))"
+  let ?S = "max 1 (sum_list (map len_formula ?args))"
+  let ?L = "len_formula (Conn c As) + len_formula (Conn c Bs)"
+  let ?prem = "\<lambda>i. iff_form (As ! i) (Bs ! i)"
+  let ?goal = "iff_form (Conn c As) (Conn c Bs)"
+  have names: "distinct ?atoms" and lengths: "length ?args = length ?atoms"
+    using conn_cong_atoms_spec[of c] ar len_eq by auto
+  have arg_map: "map ?sub ?atoms = ?args"
+    by (rule marker_substitution_map[OF names lengths])
+  have map_lhs: "map ?sub (take ?k ?atoms) = As"
+    using arg_map[THEN arg_cong[where f="take ?k"]] by (simp add: take_map)
+  have map_rhs: "map ?sub (drop ?k ?atoms) = Bs"
+    using arg_map[THEN arg_cong[where f="drop ?k"]] by (simp add: drop_map)
+  have side_lhs: "sub_formula ?sub (conn_cong_lhs c) = Conn c As"
+    unfolding conn_cong_lhs_def using ar map_lhs by (simp add: comp_def)
+  have side_rhs: "sub_formula ?sub (conn_cong_rhs c) = Conn c Bs"
+    unfolding conn_cong_rhs_def using ar map_rhs by (simp add: comp_def)
+  have slot_value: "?sub (?atoms ! j) = ?args ! j" if "j < length ?atoms" for j
+    by (rule marker_substitution_nth[OF names lengths that])
+  have slot_lhs: "?sub (?atoms ! i) = As ! i" if "i < ?k" for i
+    using slot_value[of i] conn_cong_atoms_spec[of c] that ar
+    by (simp add: nth_append)
+  have slot_rhs: "?sub (?atoms ! (?k + i)) = Bs ! i" if "i < ?k" for i
+    using slot_value[of "?k + i"] conn_cong_atoms_spec[of c] that ar len_eq
+    by (simp add: nth_append)
+  have sub_asms: "sub_formula ?sub ` conn_cong_asms c = ?prem ` {..< ?k}"
+    unfolding conn_cong_asms_def
+    using ar slot_lhs slot_rhs
+    by (auto simp: sub_formula_iff_form image_iff)
+  have base: "bounded_derivation F (conn_cong_asms c)
+    (iff_form (conn_cong_lhs c) (conn_cong_rhs c))
+    (conn_cong_lines c) (conn_cong_step_len c) (conn_cong_step_depth c)"
+    unfolding conn_cong_lines_def conn_cong_step_len_def conn_cong_step_depth_def
+    by (rule bounded_derivation_from_proof[where pr="conn_cong_base_proof c"])
+       (use conn_cong_base_proof_spec[of c] in auto)
+  have wf: "formula_well_formed (alphabet F) g" if "g \<in> set ?args" for g
+    using that wfAs wfBs by auto
+  have one: "1 \<le> ?D" using depth_formula_ge_1[of "Conn c As"] by simp
+  have dep: "depth_formula g \<le> ?D" if "g \<in> set ?args" for g
+    using that depth_formula_child_le[of g As c] depth_formula_child_le[of g Bs c]
+    by (auto simp: le_max_iff_disj)
+  have instantiated: "bounded_derivation F (?prem ` {..< ?k}) ?goal
+    (conn_cong_lines c) (conn_cong_step_len c * ?S) (conn_cong_step_depth c + ?D)"
+    using bounded_derivation_marker_instance[OF fs base names lengths wf one dep]
+    by (simp only: sub_asms sub_formula_iff_form side_lhs side_rhs)
+  have closed: "bounded_derivation F {} (?prem i) (lf i) Sc Dc" if "i \<in> set [0..< ?k]" for i
   proof -
-    fix j assume j: "j < 2 * kk"
-    have "map_of (zip atoms vals) (atoms ! j) = Some (vals ! j)"
-      using map_of_zip_nth_lookup[OF atdist lveq] atlen j by simp
-    thus "csub (atoms ! j) = vals ! j" unfolding csub_def by simp
+    have ilt: "i < ?k" using that by simp
+    obtain l s d where p: "provable_balanced_iff (As ! i) (Bs ! i) l s d"
+      "l \<le> lf i" "s \<le> Sc" "d \<le> Dc"
+      using prem[OF ilt] by blast
+    show ?thesis
+      using provable_balanced_iff_weaken[OF p]
+      by (simp only: provable_balanced_iff_derivation)
   qed
-  have sub_id: "\<forall>v. v \<notin> set atoms \<longrightarrow> csub v = Atom v"
-  proof (intro allI impI)
-    fix v assume "v \<notin> set atoms"
-    hence "map_of (zip atoms vals) v = None" by (rule map_of_zip_None_lookup)
-    thus "csub v = Atom v" unfolding csub_def by simp
-  qed
-  note csub_conn = fresh_sub_conn[OF atdisj sub_id]
-  have csub_in_vals: "\<And>v. v \<in> set atoms \<Longrightarrow> csub v \<in> set vals"
-  proof -
-    fix v assume "v \<in> set atoms"
-    hence "\<exists>w. map_of (zip atoms vals) v = Some w"
-      using map_of_zip_is_Some[OF lveq] by blast
-    then obtain w where w: "map_of (zip atoms vals) v = Some w" by blast
-    hence "(v, w) \<in> set (zip atoms vals)" by (rule map_of_SomeD)
-    hence "w \<in> set vals" by (rule set_zip_rightD)
-    thus "csub v \<in> set vals" using w unfolding csub_def by simp
-  qed
-  have val_in: "\<And>v. v \<in> set atoms \<Longrightarrow> csub v \<in> set As \<or> csub v \<in> set Bs"
-    using csub_in_vals unfolding vals_def by auto
-
-  \<comment> \<open>substitution size facts\<close>
-  have csub_len_le: "\<And>v. v \<in> set atoms \<Longrightarrow> len_formula (csub v) \<le> LAB"
-  proof -
-    fix v assume vin: "v \<in> set atoms"
-    have "csub v \<in> set As \<or> csub v \<in> set Bs" using val_in[OF vin] .
-    thus "len_formula (csub v) \<le> LAB"
-    proof (elim disjE)
-      assume "csub v \<in> set As"
-      hence "len_formula (csub v) \<le> sum_list (map len_formula As)"
-        by (auto intro: member_le_sum_list)
-      thus ?thesis unfolding LAB_def by simp
-    next
-      assume "csub v \<in> set Bs"
-      hence "len_formula (csub v) \<le> sum_list (map len_formula Bs)"
-        by (auto intro: member_le_sum_list)
-      thus ?thesis unfolding LAB_def by simp
-    qed
-  qed
-  have csub_dep_le: "\<And>v. v \<in> set atoms \<Longrightarrow> depth_formula (csub v) \<le> DAB"
-  proof -
-    fix v assume vin: "v \<in> set atoms"
-    have "csub v \<in> set As \<or> csub v \<in> set Bs" using val_in[OF vin] .
-    thus "depth_formula (csub v) \<le> DAB"
-    proof (elim disjE)
-      assume vAs: "csub v \<in> set As"
-      hence ne: "As \<noteq> []" by auto
-      have "depth_formula (csub v) \<le> Max (set (map depth_formula As))"
-        using vAs by simp
-      also have "\<dots> \<le> depth_formula (Conn c As)"
-      proof -
-        have "depth_formula (Conn c As) = 1 + Max (set (map depth_formula As))"
-          using ne by simp
-        thus ?thesis by linarith
-      qed
-      also have "\<dots> \<le> DAB" unfolding DAB_def by simp
-      finally show ?thesis .
-    next
-      assume vBs: "csub v \<in> set Bs"
-      hence ne: "Bs \<noteq> []" by auto
-      have "depth_formula (csub v) \<le> Max (set (map depth_formula Bs))"
-        using vBs by simp
-      also have "\<dots> \<le> depth_formula (Conn c Bs)"
-      proof -
-        have "depth_formula (Conn c Bs) = 1 + Max (set (map depth_formula Bs))"
-          using ne by simp
-        thus ?thesis by linarith
-      qed
-      also have "\<dots> \<le> DAB" unfolding DAB_def by simp
-      finally show ?thesis .
-    qed
-  qed
-  have len_sub_le: "len_sub (set atoms) csub \<le> 2 * kk * LAB + 1"
-  proof -
-    have "(\<Sum>v \<in> set atoms. len_formula (csub v))
-        = sum_list (map (\<lambda>v. len_formula (csub v)) atoms)"
-      by (simp add: sum_list_distinct_conv_sum_set[OF atdist])
-    also have "\<dots> \<le> sum_list (map (\<lambda>v. LAB) atoms)"
-      by (rule sum_list_mono[OF csub_len_le])
-    also have "\<dots> = length atoms * LAB" by (simp add: sum_list_triv)
-    also have "\<dots> = 2 * kk * LAB" using atlen by simp
-    finally have "(\<Sum>v \<in> set atoms. len_formula (csub v)) \<le> 2 * kk * LAB" .
-    thus ?thesis unfolding len_sub_def by (simp add: max_def)
-  qed
-  have dep_sub_le: "depth_sub (set atoms) csub \<le> DAB"
-    unfolding depth_sub_def
-  proof (rule Max.boundedI)
-    show "finite (insert 1 ((\<lambda>v. depth_formula (csub v)) ` set atoms))" by simp
-    show "insert 1 ((\<lambda>v. depth_formula (csub v)) ` set atoms) \<noteq> {}" by simp
-    fix e assume "e \<in> insert 1 ((\<lambda>v. depth_formula (csub v)) ` set atoms)"
-    thus "e \<le> DAB"
-    proof
-      assume "e = 1"
-      thus ?thesis unfolding DAB_def
-        using depth_formula_ge_1[of "Conn c As"]
-        by (simp add: le_max_iff_disj)
-    next
-      assume "e \<in> (\<lambda>v. depth_formula (csub v)) ` set atoms"
-      then obtain v where "v \<in> set atoms" "e = depth_formula (csub v)" by auto
-      thus ?thesis using csub_dep_le by simp
-    qed
-  qed
-
-  \<comment> \<open>the substituted base proof\<close>
-  define ci where "ci = sub_proof csub (conn_cong_base_proof c)"
-  have valid_ci: "valid_proof F ci"
-    unfolding ci_def
-    using frege_system.proof_substitution[OF fs_F] conn_cong_base_proof_spec by blast
-  have ci_steps: "steps ci = map (sub_formula csub) (steps (conn_cong_base_proof c))"
-    unfolding ci_def by simp
-  have csub_wf: "\<And>v. formula_well_formed (alphabet F) (csub v)"
-  proof -
-    fix v
-    show "formula_well_formed (alphabet F) (csub v)"
-    proof (cases "v \<in> set atoms")
-      case True
-      have "csub v \<in> set As \<or> csub v \<in> set Bs" using val_in[OF True] .
-      thus ?thesis using wfAs wfBs by auto
-    next
-      case False
-      thus ?thesis using sub_id by simp
-    qed
-  qed
-  have ci_wf: "\<forall>s \<in> set (steps ci). formula_well_formed (alphabet F) s"
-  proof
-    fix s assume "s \<in> set (steps ci)"
-    then obtain s0 where s0: "s0 \<in> set (steps (conn_cong_base_proof c))"
-      and seq: "s = sub_formula csub s0" using ci_steps by auto
-    have "formula_well_formed (alphabet F) s0"
-      using conn_cong_base_proof_spec s0 by blast
-    thus "formula_well_formed (alphabet F) s"
-      unfolding seq by (rule sub_formula_well_formed[OF _ csub_wf])
-  qed
-  have ci_lines: "length (steps ci) = conn_cong_lines c"
-    using ci_steps by (simp add: conn_cong_lines_def)
-  have map_lhs: "map csub (take kk atoms) = As"
-  proof (rule nth_equalityI)
-    show "length (map csub (take kk atoms)) = length As" using atlen askk by simp
+  have assembled: "bounded_derivation F {} ?goal
+    (sum_list (map lf [0..< ?k]) + conn_cong_lines c)
+    (max Sc (conn_cong_step_len c * ?S)) (max Dc (conn_cong_step_depth c + ?D))"
+    by (rule bounded_derivation_cuts[OF fs closed])
+       (use instantiated in \<open>auto simp only: set_upt atLeast0LessThan Un_empty_right\<close>)
+  have size: "?S \<le> 2 * ?k * ?L + 1"
+  proof (cases "?k = 0")
+    case True
+    hence "As = []" "Bs = []" using len_eq by auto
+    thus ?thesis by simp
   next
-    fix i assume "i < length (map csub (take kk atoms))"
-    hence i: "i < kk" using atlen by simp
-    have "map csub (take kk atoms) ! i = csub (atoms ! i)"
-      using i atlen by simp
-    also have "\<dots> = vals ! i" using csub_nth i by simp
-    also have "\<dots> = As ! i" using i askk unfolding vals_def by (simp add: nth_append)
-    finally show "map csub (take kk atoms) ! i = As ! i" .
-  qed
-  have map_rhs: "map csub (drop kk atoms) = Bs"
-  proof (rule nth_equalityI)
-    show "length (map csub (drop kk atoms)) = length Bs" using atlen bskk by simp
-  next
-    fix i assume "i < length (map csub (drop kk atoms))"
-    hence i: "i < kk" using atlen by simp
-    have "map csub (drop kk atoms) ! i = csub (atoms ! (kk + i))"
-      using i atlen by simp
-    also have "\<dots> = vals ! (kk + i)" using csub_nth i by simp
-    also have "\<dots> = Bs ! i" using i askk bskk unfolding vals_def by (simp add: nth_append)
-    finally show "map csub (drop kk atoms) ! i = Bs ! i" .
-  qed
-  have sub_lhs: "sub_formula csub (conn_cong_lhs c) = Conn c As"
-    unfolding conn_cong_lhs_def atoms_def[symmetric] kk_def[symmetric]
-    by (simp only: sub_formula.simps list.map map_map comp_def map_lhs)
-  have sub_rhs: "sub_formula csub (conn_cong_rhs c) = Conn c Bs"
-    unfolding conn_cong_rhs_def atoms_def[symmetric] kk_def[symmetric]
-    by (simp only: sub_formula.simps list.map map_map comp_def map_rhs)
-  have ci_thesis: "thesis ci = iff_form (Conn c As) (Conn c Bs)"
-  proof -
-    have "thesis ci = sub_formula csub (iff_form (conn_cong_lhs c) (conn_cong_rhs c))"
-      unfolding ci_def using conn_cong_base_proof_spec by simp
-    also have "\<dots> = iff_form (sub_formula csub (conn_cong_lhs c))
-                              (sub_formula csub (conn_cong_rhs c))"
-      by (rule sub_formula_iff_form[OF csub_conn])
-    also have "\<dots> = iff_form (Conn c As) (Conn c Bs)" using sub_lhs sub_rhs by simp
-    finally show ?thesis .
-  qed
-  have ci_asm: "assumptions ci = (\<lambda>i. iff_form (As ! i) (Bs ! i)) ` {..< kk}"
-  proof -
-    have "assumptions ci = sub_formula csub ` (conn_cong_asms c)"
-      unfolding ci_def using conn_cong_base_proof_spec by simp
-    also have "\<dots> = (\<lambda>i. iff_form (As ! i) (Bs ! i)) ` {..< kk}"
+    case False
+    have "?S \<le> ?L" by simp
+    also have "\<dots> \<le> 2 * ?k * ?L + 1"
     proof -
-      have "\<And>i. i < kk \<Longrightarrow>
-              sub_formula csub (iff_form (Atom (atoms ! i)) (Atom (atoms ! (kk + i))))
-              = iff_form (As ! i) (Bs ! i)"
-      proof -
-        fix i assume i: "i < kk"
-        have "sub_formula csub (iff_form (Atom (atoms ! i)) (Atom (atoms ! (kk + i))))
-            = iff_form (sub_formula csub (Atom (atoms ! i)))
-                       (sub_formula csub (Atom (atoms ! (kk + i))))"
-          by (rule sub_formula_iff_form[OF csub_conn])
-        moreover have "csub (atoms ! i) = As ! i"
-          using csub_nth i askk unfolding vals_def by (simp add: nth_append)
-        moreover have "csub (atoms ! (kk + i)) = Bs ! i"
-          using csub_nth i askk bskk unfolding vals_def by (simp add: nth_append)
-        ultimately show "sub_formula csub (iff_form (Atom (atoms ! i)) (Atom (atoms ! (kk + i))))
-                         = iff_form (As ! i) (Bs ! i)" by simp
-      qed
-      thus ?thesis unfolding conn_cong_asms_def atoms_def[symmetric] kk_def[symmetric]
-        by (auto simp: image_image)
+      have "1 \<le> 2 * ?k" using False by (cases As) auto
+      hence "1 * ?L \<le> 2 * ?k * ?L" by (rule mult_le_mono1)
+      thus ?thesis by simp
     qed
     finally show ?thesis .
   qed
-
-  \<comment> \<open>step bounds for the substituted proof\<close>
-  have ci_len: "\<And>s. s \<in> set (steps ci)
-                 \<Longrightarrow> len_formula s \<le> conn_cong_max_step_len * (2 * kk * LAB + 1)"
+  have width: "max Sc (conn_cong_step_len c * ?S)
+       \<le> Sc + conn_cong_max_step_len * (2 * ?k * ?L + 1)"
   proof -
-    fix s assume "s \<in> set (steps ci)"
-    then obtain s0 where s0: "s0 \<in> set (steps (conn_cong_base_proof c))"
-                     and s_eq: "s = sub_formula csub s0" using ci_steps by auto
-    have "len_formula s \<le> len_formula s0 * len_sub (set atoms) csub"
-      using s_eq sub_formula_bound[OF fin_at sub_id] by simp
-    also have "\<dots> \<le> len_formula s0 * (2 * kk * LAB + 1)"
-      using len_sub_le by (rule mult_le_mono2)
-    also have "\<dots> \<le> conn_cong_max_step_len * (2 * kk * LAB + 1)"
-    proof (rule mult_le_mono1)
-      have "len_formula s0 \<le> conn_cong_step_len c"
-        unfolding conn_cong_step_len_def using s0 by simp
-      thus "len_formula s0 \<le> conn_cong_max_step_len"
-        using conn_cong_max_ge[of c] by linarith
-    qed
-    finally show "len_formula s \<le> conn_cong_max_step_len * (2 * kk * LAB + 1)" .
+    have "conn_cong_step_len c * ?S
+      \<le> conn_cong_max_step_len * (2 * ?k * ?L + 1)"
+      by (rule mult_le_mono) (use conn_cong_max_ge[of c] size in auto)
+    thus ?thesis by simp
   qed
-  have ci_dep: "\<And>s. s \<in> set (steps ci) \<Longrightarrow> depth_formula s \<le> conn_cong_max_step_depth + DAB"
-  proof -
-    fix s assume "s \<in> set (steps ci)"
-    then obtain s0 where s0: "s0 \<in> set (steps (conn_cong_base_proof c))"
-                     and s_eq: "s = sub_formula csub s0" using ci_steps by auto
-    have "depth_formula s \<le> depth_formula s0 + depth_sub (set atoms) csub"
-      using s_eq sub_formula_depth_bound[OF fin_at sub_id] by simp
-    also have "\<dots> \<le> conn_cong_step_depth c + DAB"
-    proof -
-      have "depth_formula s0 \<le> conn_cong_step_depth c"
-        unfolding conn_cong_step_depth_def using s0 by simp
-      thus ?thesis using dep_sub_le by linarith
-    qed
-    also have "\<dots> \<le> conn_cong_max_step_depth + DAB"
-      using conn_cong_max_ge[of c] by linarith
-    finally show "depth_formula s \<le> conn_cong_max_step_depth + DAB" .
-  qed
-
-  \<comment> \<open>the input proofs and the cut\<close>
-  define ip where "ip = (\<lambda>i. SOME pr. valid_proof F pr \<and> assumptions pr = {}
-        \<and> frege_proof.thesis pr = iff_form (As ! i) (Bs ! i)
-        \<and> length (steps pr) \<le> lf i
-        \<and> (\<forall>s \<in> set (steps pr). len_formula s \<le> Sc)
-        \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> Dc)
-        \<and> (\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s))"
-  have ip_spec: "\<And>i. i < kk \<Longrightarrow>
-       valid_proof F (ip i) \<and> assumptions (ip i) = {}
-       \<and> frege_proof.thesis (ip i) = iff_form (As ! i) (Bs ! i)
-       \<and> length (steps (ip i)) \<le> lf i
-       \<and> (\<forall>s \<in> set (steps (ip i)). len_formula s \<le> Sc)
-       \<and> (\<forall>s \<in> set (steps (ip i)). depth_formula s \<le> Dc)
-       \<and> (\<forall>s \<in> set (steps (ip i)). formula_well_formed (alphabet F) s)"
-  proof -
-    fix i assume i: "i < kk"
-    hence "i < length As" using askk by simp
-    then obtain l s d where pbi: "provable_balanced_iff (As ! i) (Bs ! i) l s d"
-      and lLc: "l \<le> lf i" and sSc: "s \<le> Sc" and dDc: "d \<le> Dc" using prem by blast
-    from pbi obtain pr where pr: "valid_proof F pr" "assumptions pr = {}"
-        "frege_proof.thesis pr = iff_form (As ! i) (Bs ! i)" "length (steps pr) \<le> l"
-        "\<forall>s' \<in> set (steps pr). len_formula s' \<le> s"
-        "\<forall>s' \<in> set (steps pr). depth_formula s' \<le> d"
-        "\<forall>s' \<in> set (steps pr). formula_well_formed (alphabet F) s'"
-      unfolding provable_balanced_iff_def by blast
-    have ex: "\<exists>pr. valid_proof F pr \<and> assumptions pr = {}
-          \<and> frege_proof.thesis pr = iff_form (As ! i) (Bs ! i)
-          \<and> length (steps pr) \<le> lf i
-          \<and> (\<forall>s \<in> set (steps pr). len_formula s \<le> Sc)
-          \<and> (\<forall>s \<in> set (steps pr). depth_formula s \<le> Dc)
-          \<and> (\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s)"
-    proof (intro exI[where x = pr] conjI)
-      show "valid_proof F pr" by (rule pr(1))
-      show "assumptions pr = {}" by (rule pr(2))
-      show "frege_proof.thesis pr = iff_form (As ! i) (Bs ! i)" by (rule pr(3))
-      show "length (steps pr) \<le> lf i" using pr(4) lLc by linarith
-      show "\<forall>s \<in> set (steps pr). len_formula s \<le> Sc" using pr(5) sSc by force
-      show "\<forall>s \<in> set (steps pr). depth_formula s \<le> Dc" using pr(6) dDc by force
-      show "\<forall>s \<in> set (steps pr). formula_well_formed (alphabet F) s" by (rule pr(7))
-    qed
-    show "valid_proof F (ip i) \<and> assumptions (ip i) = {}
-       \<and> frege_proof.thesis (ip i) = iff_form (As ! i) (Bs ! i)
-       \<and> length (steps (ip i)) \<le> lf i
-       \<and> (\<forall>s \<in> set (steps (ip i)). len_formula s \<le> Sc)
-       \<and> (\<forall>s \<in> set (steps (ip i)). depth_formula s \<le> Dc)
-       \<and> (\<forall>s \<in> set (steps (ip i)). formula_well_formed (alphabet F) s)"
-      unfolding ip_def by (rule someI_ex[OF ex])
-  qed
-  define ps where "ps = map ip [0..< kk]"
-  have ps_elem: "\<And>p. p \<in> set ps \<Longrightarrow> \<exists>i. i < kk \<and> p = ip i"
-  proof -
-    fix p assume "p \<in> set ps"
-    then obtain i where "i \<in> set [0..< kk]" "p = ip i" unfolding ps_def by auto
-    thus "\<exists>i. i < kk \<and> p = ip i" by auto
-  qed
-  have ps_valid: "\<forall>p \<in> set ps. valid_proof F p \<and> assumptions p = {}"
-  proof
-    fix p assume "p \<in> set ps"
-    then obtain i where "i < kk" "p = ip i" using ps_elem by blast
-    thus "valid_proof F p \<and> assumptions p = {}" using ip_spec by simp
-  qed
-  define cb where "cb = foldr combine_proofs ps ci"
-  have cb_spec: "valid_proof F cb
-       \<and> assumptions cb = assumptions ci - (\<Union>p \<in> set ps. set (steps p))
-       \<and> frege_proof.thesis cb = frege_proof.thesis ci
-       \<and> steps cb = concat (map steps ps) @ steps ci"
-    unfolding cb_def
-    by (rule mp[OF combine_fold_spec[OF valid_ci] ps_valid])
-  have thesis_in: "\<And>i. i < kk \<Longrightarrow>
-       iff_form (As ! i) (Bs ! i) \<in> (\<Union>p \<in> set ps. set (steps p))"
-  proof -
-    fix i assume i: "i < kk"
-    have ipin: "ip i \<in> set ps" using i by (simp add: ps_def)
-    have ne: "steps (ip i) \<noteq> []" using ip_spec[OF i] unfolding valid_proof_def by simp
-    have "frege_proof.thesis (ip i) = last (steps (ip i))"
-      using ip_spec[OF i] unfolding valid_proof_def by simp
-    hence "iff_form (As ! i) (Bs ! i) = last (steps (ip i))" using ip_spec[OF i] by simp
-    hence "iff_form (As ! i) (Bs ! i) \<in> set (steps (ip i))"
-      using ne by simp
-    thus "iff_form (As ! i) (Bs ! i) \<in> (\<Union>p \<in> set ps. set (steps p))" using ipin by blast
-  qed
-  have sub_asm: "assumptions ci \<subseteq> (\<Union>p \<in> set ps. set (steps p))"
-  proof
-    fix x assume "x \<in> assumptions ci"
-    then obtain i where "i < kk" "x = iff_form (As ! i) (Bs ! i)"
-      using ci_asm by auto
-    thus "x \<in> (\<Union>p \<in> set ps. set (steps p))" using thesis_in by auto
-  qed
-  have cb_asm: "assumptions cb = {}"
-  proof -
-    have "assumptions cb = assumptions ci - (\<Union>p \<in> set ps. set (steps p))"
-      using cb_spec by simp
-    thus ?thesis using sub_asm by (simp add: Diff_eq_empty_iff)
-  qed
-  have cb_thesis: "frege_proof.thesis cb = iff_form (Conn c As) (Conn c Bs)"
-    using cb_spec ci_thesis by simp
-  have len_ps: "length ps = kk" unfolding ps_def by simp
-  have cb_lines: "length (steps cb) \<le> sum_list (map lf [0..< length As]) + conn_cong_max_lines"
-  proof -
-    have "length (steps cb) = length (concat (map steps ps)) + length (steps ci)"
-      using cb_spec by simp
-    also have "length (concat (map steps ps)) = sum_list (map (length \<circ> steps) ps)"
-      by (simp add: length_concat comp_def)
-    also have "sum_list (map (length \<circ> steps) ps)
-               = sum_list (map (\<lambda>i. length (steps (ip i))) [0..< kk])"
-      unfolding ps_def by (simp add: comp_def)
-    also have "\<dots> \<le> sum_list (map lf [0..< kk])"
-    proof (rule sum_list_mono)
-      fix i assume "i \<in> set [0..< kk]"
-      hence "i < kk" by simp
-      thus "length (steps (ip i)) \<le> lf i" using ip_spec by simp
-    qed
-    finally have lcb: "length (steps cb) \<le> sum_list (map lf [0..< kk]) + length (steps ci)"
-      by simp
-    have "length (steps ci) \<le> conn_cong_max_lines"
-      using ci_lines conn_cong_max_ge[of c] by simp
-    moreover have "sum_list (map lf [0..< kk]) = sum_list (map lf [0..< length As])"
-      using askk by simp
-    ultimately show ?thesis using lcb by linarith
-  qed
-  have cb_len: "\<forall>s \<in> set (steps cb). len_formula s
-                  \<le> Sc + conn_cong_max_step_len * (2 * kk * LAB + 1)"
-  proof
-    fix s assume "s \<in> set (steps cb)"
-    hence "s \<in> set (concat (map steps ps)) \<or> s \<in> set (steps ci)" using cb_spec by auto
-    thus "len_formula s \<le> Sc + conn_cong_max_step_len * (2 * kk * LAB + 1)"
-    proof
-      assume "s \<in> set (concat (map steps ps))"
-      then obtain p where pps: "p \<in> set ps" and sp: "s \<in> set (steps p)" by auto
-      obtain i where "i < kk" "p = ip i" using ps_elem[OF pps] by blast
-      hence "len_formula s \<le> Sc" using ip_spec sp by simp
-      thus ?thesis by linarith
-    next
-      assume "s \<in> set (steps ci)"
-      hence "len_formula s \<le> conn_cong_max_step_len * (2 * kk * LAB + 1)"
-        using ci_len by simp
-      thus ?thesis by linarith
-    qed
-  qed
-  have cb_dep: "\<forall>s \<in> set (steps cb). depth_formula s
-                  \<le> max Dc (conn_cong_max_step_depth + DAB)"
-  proof
-    fix s assume "s \<in> set (steps cb)"
-    hence "s \<in> set (concat (map steps ps)) \<or> s \<in> set (steps ci)" using cb_spec by auto
-    thus "depth_formula s \<le> max Dc (conn_cong_max_step_depth + DAB)"
-    proof
-      assume "s \<in> set (concat (map steps ps))"
-      then obtain p where pps: "p \<in> set ps" and sp: "s \<in> set (steps p)" by auto
-      obtain i where "i < kk" "p = ip i" using ps_elem[OF pps] by blast
-      hence "depth_formula s \<le> Dc" using ip_spec sp by simp
-      thus ?thesis by simp
-    next
-      assume "s \<in> set (steps ci)"
-      hence "depth_formula s \<le> conn_cong_max_step_depth + DAB" using ci_dep by simp
-      thus ?thesis by simp
-    qed
-  qed
-  have cb_wf: "\<forall>s \<in> set (steps cb). formula_well_formed (alphabet F) s"
-  proof
-    fix s assume "s \<in> set (steps cb)"
-    hence "s \<in> set (concat (map steps ps)) \<or> s \<in> set (steps ci)" using cb_spec by auto
-    thus "formula_well_formed (alphabet F) s"
-    proof
-      assume "s \<in> set (concat (map steps ps))"
-      then obtain p where pps: "p \<in> set ps" and sp: "s \<in> set (steps p)" by auto
-      obtain i where "i < kk" "p = ip i" using ps_elem[OF pps] by blast
-      thus ?thesis using ip_spec sp by blast
-    next
-      assume "s \<in> set (steps ci)" thus ?thesis using ci_wf by blast
-    qed
-  qed
-  have main: "provable_balanced_iff (Conn c As) (Conn c Bs)
-          (sum_list (map lf [0..< length As]) + conn_cong_max_lines)
-          (Sc + conn_cong_max_step_len * (2 * kk * LAB + 1))
-          (max Dc (conn_cong_max_step_depth + DAB))"
-    unfolding provable_balanced_iff_def
-  proof (intro exI[where x = cb] conjI)
-    show "valid_proof F cb" using cb_spec by simp
-    show "assumptions cb = {}" using cb_asm .
-    show "frege_proof.thesis cb = iff_form (Conn c As) (Conn c Bs)" using cb_thesis .
-    show "length (steps cb) \<le> sum_list (map lf [0..< length As]) + conn_cong_max_lines"
-      using cb_lines .
-    show "\<forall>s \<in> set (steps cb). len_formula s
-            \<le> Sc + conn_cong_max_step_len * (2 * kk * LAB + 1)" using cb_len .
-    show "\<forall>s \<in> set (steps cb). depth_formula s
-            \<le> max Dc (conn_cong_max_step_depth + DAB)" using cb_dep .
-    show "\<forall>s \<in> set (steps cb). formula_well_formed (alphabet F) s" using cb_wf .
-  qed
+  have line_bound: "sum_list (map lf [0..< ?k]) + conn_cong_lines c
+    \<le> sum_list (map lf [0..< ?k]) + conn_cong_max_lines"
+    using conn_cong_max_ge[of c] by simp
+  have maxdep: "conn_cong_step_depth c \<le> conn_cong_max_step_depth"
+    using conn_cong_max_ge[of c] by blast
+  have depth_bound: "max Dc (conn_cong_step_depth c + ?D)
+    \<le> max Dc (conn_cong_max_step_depth + ?D)"
+    by (rule max.mono[OF le_refl], rule add_right_mono[OF maxdep])
+  have result: "provable_balanced_iff (Conn c As) (Conn c Bs)
+    (sum_list (map lf [0..< ?k]) + conn_cong_max_lines)
+    (Sc + conn_cong_max_step_len * (2 * ?k * ?L + 1))
+    (max Dc (conn_cong_max_step_depth + ?D))"
+    unfolding provable_balanced_iff_derivation
+    by (rule bounded_derivation_weaken[OF assembled subset_refl line_bound width depth_bound])
   show ?thesis
-    using main[unfolded askk[symmetric] LAB_def DAB_def] by blast
+    by (rule exI[of _ "sum_list (map lf [0..< ?k]) + conn_cong_max_lines"],
+        rule exI[of _ "Sc + conn_cong_max_step_len * (2 * ?k * ?L + 1)"],
+        rule exI[of _ "max Dc (conn_cong_max_step_depth + ?D)"])
+       (intro conjI result le_refl)
 qed
 
 subsubsection \<open>Size and depth bounds for substitution\<close>
